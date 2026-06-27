@@ -1,0 +1,39 @@
+# Core AI & Deep Learning
+torch==2.1.0
+torchvision==0.16.0
+xformers==0.0.22.post7
+spconv-cu121==2.3.8
+
+# Generative AI & HuggingFace Models
+diffusers==0.30.3
+transformers==4.46.3
+peft==0.10.0
+accelerate==0.30.1
+huggingface_hub
+
+# NLP (Scene Graph Parsing)
+spacy>=3.5.0
+
+# 3D Processing & Geometry
+trimesh==4.5.3
+plyfile==0.9
+utils3d
+nvdiffrast
+pymeshfix
+pyvista
+xatlas
+scipy
+
+# API Web Server & Local Tunnel
+fastapi
+uvicorn
+pyngrok
+
+# Image & Video Processing
+pillow==10.4.0
+imageio==2.36.1
+imageio-ffmpeg==0.5.1
+opencv-python-headless
+tqdm
+easydict
+rembg[cpu]
