@@ -1,17 +1,19 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DATN - Node-Graph Generation Pipeline</title>
     <!-- Google Fonts - Outfit -->
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
+        rel="stylesheet">
     <!-- Litegraph.js CSS -->
     <link rel="stylesheet" type="text/css" href="https://unpkg.com/litegraph.js@0.7.10/css/litegraph.css">
     <!-- Google Model Viewer for 3D rendering -->
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
-    
-    <style>
+
     <style>
         :root {
             --bg-dark: #121214;
@@ -28,7 +30,8 @@
             --glass-blur: blur(20px) saturate(185%);
         }
 
-        body, html {
+        body,
+        html {
             margin: 0;
             padding: 0;
             width: 100%;
@@ -105,12 +108,12 @@
             border-radius: 8px;
             padding: 5px 14px;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.4);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
         }
 
         .input-group:focus-within {
             border-color: rgba(255, 255, 255, 0.3);
-            box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), inset 0 2px 4px rgba(0,0,0,0.4);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), inset 0 2px 4px rgba(0, 0, 0, 0.4);
         }
 
         .input-group label {
@@ -263,7 +266,7 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 6px;
             padding: 10px;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
         }
 
         #btn-clear-logs {
@@ -290,7 +293,7 @@
             overflow: hidden;
             transition: border-color 0.3s ease;
         }
-        
+
         .node-3d-container:hover {
             border-color: rgba(255, 255, 255, 0.25) !important;
         }
@@ -303,7 +306,7 @@
 
         /* Grid pattern behind canvas */
         .litegraph .lgraphcanvas {
-            background-image: 
+            background-image:
                 radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
             background-size: 18px 18px;
         }
@@ -323,7 +326,7 @@
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
             pointer-events: auto;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
         }
 
         .viewer-btn {
@@ -361,770 +364,772 @@
             box-sizing: border-box;
             transition: border-color 0.2s, box-shadow 0.2s;
             z-index: 5;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
         }
-        
+
         .node-textarea:focus {
             border-color: rgba(255, 255, 255, 0.35);
-            box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), inset 0 2px 4px rgba(0,0,0,0.3);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), inset 0 2px 4px rgba(0, 0, 0, 0.3);
         }
     </style>
 </head>
+
 <body>
 
-<div id="app-container">
-    <header>
-        <div class="logo-section">
-            <h1>DATN: AUTOMATED 3D SCENE PIPELINE</h1>
-            <span>Thiết kế & Dựng cảnh 3D dựa trên Sơ đồ ngữ nghĩa không gian</span>
-        </div>
-        <div class="controls">
-            <div class="input-group">
-                <label>Kaggle API URL</label>
-                <input type="text" id="ngrok-url" placeholder="https://xxxx.ngrok-free.app" value="">
-                <span class="status-dot" id="status-indicator"></span>
+    <div id="app-container">
+        <header>
+            <div class="logo-section">
+                <h1>DATN: AUTOMATED 3D SCENE PIPELINE</h1>
+                <span>Thiết kế & Dựng cảnh 3D dựa trên Sơ đồ ngữ nghĩa không gian</span>
             </div>
-            <button id="btn-connect" class="secondary">Kết nối GPU</button>
-            <button id="btn-kaggle-help" class="secondary">📖 Hướng dẫn Kaggle</button>
-            <button id="btn-run">▶ Queue Prompt</button>
-        </div>
-    </header>
-    
-    <div id="canvas-container">
-        <canvas id="graphcanvas"></canvas>
-        
-        <!-- Console Terminal Logs -->
-        <div id="log-panel">
-            <h3>Terminal Logs <span id="btn-clear-logs">Clear Logs</span></h3>
-            <div id="log-content">Chưa kết nối máy chủ Kaggle. Vui lòng nhập link Ngrok và nhấn 'Kết nối GPU' để bắt đầu...</div>
+            <div class="controls">
+                <div class="input-group">
+                    <label>Kaggle API URL</label>
+                    <input type="text" id="ngrok-url" placeholder="https://xxxx.ngrok-free.app" value="">
+                    <span class="status-dot" id="status-indicator"></span>
+                </div>
+                <button id="btn-connect" class="secondary">Kết nối GPU</button>
+                <button id="btn-kaggle-help" class="secondary">📖 Hướng dẫn Kaggle</button>
+                <button id="btn-run">▶ Queue Prompt</button>
+            </div>
+        </header>
+
+        <div id="canvas-container">
+            <canvas id="graphcanvas"></canvas>
+
+            <!-- Console Terminal Logs -->
+            <div id="log-panel">
+                <h3>Terminal Logs <span id="btn-clear-logs">Clear Logs</span></h3>
+                <div id="log-content">Chưa kết nối máy chủ Kaggle. Vui lòng nhập link Ngrok và nhấn 'Kết nối GPU' để bắt
+                    đầu...</div>
+            </div>
         </div>
     </div>
-</div>
 
-<!-- Litegraph.js dependencies -->
-<script type="text/javascript" src="https://unpkg.com/litegraph.js@0.7.10/build/litegraph.js"></script>
+    <!-- Litegraph.js dependencies -->
+    <script type="text/javascript" src="https://unpkg.com/litegraph.js@0.7.10/build/litegraph.js"></script>
 
-<script>
-    // Global API Configuration
-    let backendUrl = "";
-    let isConnected = false;
+    <script>
+        // Global API Configuration
+        let backendUrl = "";
+        let isConnected = false;
 
-    // Output logs styling and helper
-    function writeLog(message, type = "info") {
-        const logContent = document.getElementById("log-content");
-        const time = new Date().toLocaleTimeString();
-        let color = "#e4e4e7"; // default zinc
-        
-        if (type === "error") color = "#f87171"; // red
-        if (type === "warning") color = "#fbbf24"; // amber
-        if (type === "system") color = "#60a5fa"; // blue
-        if (type === "success") color = "#34d399"; // emerald
+        // Output logs styling and helper
+        function writeLog(message, type = "info") {
+            const logContent = document.getElementById("log-content");
+            const time = new Date().toLocaleTimeString();
+            let color = "#e4e4e7"; // default zinc
 
-        logContent.innerHTML += `<div style="color: ${color}; margin-bottom: 4px;">[${time}] ${message}</div>`;
-        logContent.scrollTop = logContent.scrollHeight;
-    }
+            if (type === "error") color = "#f87171"; // red
+            if (type === "warning") color = "#fbbf24"; // amber
+            if (type === "system") color = "#60a5fa"; // blue
+            if (type === "success") color = "#34d399"; // emerald
 
-    document.getElementById("btn-clear-logs").onclick = () => {
-        document.getElementById("log-content").innerHTML = "";
-    };
-
-    // Test API connection
-    document.getElementById("btn-connect").onclick = async () => {
-        let url = document.getElementById("ngrok-url").value.trim();
-        if (!url) {
-            writeLog("Vui lòng nhập đường dẫn Ngrok!", "error");
-            return;
+            logContent.innerHTML += `<div style="color: ${color}; margin-bottom: 4px;">[${time}] ${message}</div>`;
+            logContent.scrollTop = logContent.scrollHeight;
         }
-        if (url.endsWith("/")) url = url.slice(0, -1);
 
-        writeLog(`Đang kết nối tới server GPU Kaggle: ${url}...`, "system");
-        try {
-            const res = await fetch(`${url}/api/health`, { 
-                method: 'GET',
-                headers: { "ngrok-skip-browser-warning": "69420" }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                backendUrl = url;
-                isConnected = true;
-                document.getElementById("status-indicator").classList.add("connected");
-                writeLog(`✅ Đã kết nối thành công! Phiên bản: ${data.version || '1.0.0'}`, "success");
-            } else {
-                throw new Error("Mã trạng thái phản hồi lỗi.");
-            }
-        } catch (e) {
-            isConnected = false;
-            document.getElementById("status-indicator").classList.remove("connected");
-            writeLog(`❌ Lỗi kết nối: ${e.message}. Hãy đảm bảo server trên Kaggle đang chạy và Ngrok đã kết nối thành công.`, "error");
-        }
-    };
-
-    // Initialize LiteGraph
-    const graph = new LGraph();
-    const canvas = new LGraphCanvas("#graphcanvas", graph);
-    canvas.show_stats = false; // Hide default performance statistics
-    canvas.background_image = null; // Background handled by CSS grid pattern
-
-    // =========================================================================
-    // COMFYUI-AUTHENTIC THEME
-    // =========================================================================
-    LiteGraph.NODE_DEFAULT_BGCOLOR = "rgba(28, 28, 32, 0.75)";
-    LiteGraph.NODE_DEFAULT_BOXCOLOR = "rgba(255, 255, 255, 0.1)";
-    LiteGraph.NODE_TEXT_COLOR = "#ffffff";
-    LiteGraph.NODE_TITLE_COLOR = "#ffffff";
-    LiteGraph.NODE_SELECTED_TITLE_COLOR = "#ffffff";
-    LiteGraph.NODE_DEFAULT_SHAPE = "box";
-    LiteGraph.LINK_COLOR = "#9A9";
-    LiteGraph.CONNECTING_LINK_COLOR = "#AFA";
-    LiteGraph.DEFAULT_LINK_TYPE_WIDTH = 3;
-    LiteGraph.CANVAS_GRID_SIZE = 16;
-    LiteGraph.NODE_TITLE_HEIGHT = 30;
-    LiteGraph.NODE_SLOT_HEIGHT = 20;
-    
-    // ComfyUI fonts
-    LiteGraph.NODE_TITLE_TEXT_Y = 20;
-    LiteGraph.NODE_TEXT_SIZE = 14;
-    LiteGraph.NODE_SUBTEXT_SIZE = 12;
-    LiteGraph.NODE_TITLE_FONT = "bold 14px 'Outfit'";
-    LiteGraph.NODE_LABEL_FONT = "normal 12px 'Outfit'";
-
-    // ComfyUI wire colors by slot type
-    LGraphCanvas.link_type_colors = {
-        "string": "#6A6",
-        "object": "#5AF",
-        "number": "#DA5",
-        "boolean": "#F5A"
-    };
-    
-    // ComfyUI-style smooth curved links
-    canvas.render_connections_border = false;
-    canvas.connections_width = 3;
-    canvas.render_curved_connections = true;
-    canvas.render_connection_arrows = false;
-    canvas.highquality_render = true;
-    canvas.links_render_mode = LiteGraph.SPLINE_LINK;
-
-    // Redraw loop
-    function resizeCanvas() {
-        const parent = document.getElementById("canvas-container");
-        if (parent) {
-            canvas.resize(parent.clientWidth, parent.clientHeight);
-            canvas.draw(true, true);
-        }
-    }
-    window.addEventListener("resize", resizeCanvas);
-    window.addEventListener("load", resizeCanvas);
-    setTimeout(resizeCanvas, 100);
-
-    // =========================================================================
-    // CUSTOM LITEGRAPH NODES DEFINITION
-    // =========================================================================
-
-    // Node 1: Input Text Prompt
-    function NodePrompt() {
-        this.addOutput("prompt", "string");
-        this.properties = {
-            prompt: "a wooden dining chair next to a small wooden side table, product photography, plain dark background, studio lighting"
+        document.getElementById("btn-clear-logs").onclick = () => {
+            document.getElementById("log-content").innerHTML = "";
         };
-        this.size = [340, 150];
-        this.color = "#5b7a3a";
-        this.bgcolor = "rgba(28, 28, 32, 0.75)";
-    }
-    NodePrompt.title = "✏️ Input Text Prompt";
-    NodePrompt.title_color = "rgba(76, 175, 80, 0.85)";
-    
-    NodePrompt.prototype.onExecute = function() {
-        const textarea = document.getElementById(`prompt-input-${this.id}`);
-        if (textarea) {
-            this.properties.prompt = textarea.value;
-        }
-        this.setOutputData(0, this.properties.prompt);
-    };
 
-    NodePrompt.prototype.updateTextarea = function() {
-        const textareaId = `prompt-input-${this.id}`;
-        let textarea = document.getElementById(textareaId);
-        
-        if (!textarea) {
-            textarea = document.createElement("textarea");
-            textarea.id = textareaId;
-            textarea.className = "node-textarea";
-            textarea.value = this.properties.prompt;
-            textarea.placeholder = "Nhập mô tả tiếng Anh tại đây...";
-            
-            textarea.addEventListener("input", () => {
-                this.properties.prompt = textarea.value;
-            });
-            
-            document.getElementById("canvas-container").appendChild(textarea);
-        }
-        
-        const scale = canvas.ds.scale;
-        const offset = canvas.ds.offset;
-        
-        const x = (this.pos[0] + 15) * scale + offset[0];
-        const y = (this.pos[1] + 45) * scale + offset[1];
-        const w = (this.size[0] - 30) * scale;
-        const h = (this.size[1] - 60) * scale;
-        
-        textarea.style.left = `${x}px`;
-        textarea.style.top = `${y}px`;
-        textarea.style.width = `${w}px`;
-        textarea.style.height = `${h}px`;
-        textarea.style.fontSize = `${Math.max(10, 13 * scale)}px`;
-        
-        if (scale < 0.25) {
-            textarea.style.display = "none";
-        } else {
-            textarea.style.display = "block";
-        }
-    };
-
-    NodePrompt.prototype.onRemoved = function() {
-        const textareaId = `prompt-input-${this.id}`;
-        const textarea = document.getElementById(textareaId);
-        if (textarea) textarea.remove();
-    };
-
-    LiteGraph.registerNodeType("datn/input_prompt", NodePrompt);
-
-
-    // Node 2: Scene Graph Parser (spaCy NLP)
-    function NodeSceneGraph() {
-        this.addInput("prompt", "string");
-        this.addOutput("scene_graph", "object");
-        this.properties = { graphData: null };
-        this.size = [340, 200];
-        this.color = "#2e7d32";
-        this.bgcolor = "rgba(28, 28, 32, 0.75)";
-    }
-    NodeSceneGraph.title = "🧠 Scene Graph Parser";
-    NodeSceneGraph.title_color = "rgba(46, 125, 50, 0.85)";
-    NodeSceneGraph.prototype.onExecute = async function() {
-        const inputPrompt = this.getInputData(0);
-        if (!inputPrompt || !isConnected) return;
-        
-        if (this._lastPrompt === inputPrompt && this.properties.graphData) {
-            this.setOutputData(0, this.properties.graphData);
-            return;
-        }
-        
-        this._lastPrompt = inputPrompt;
-        writeLog("Gửi prompt phân tích quan hệ cú pháp không gian (Scene Graph)...", "system");
-        
-        try {
-            const res = await fetch(`${backendUrl}/api/parse_scene_graph`, {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "69420"
-                },
-                body: JSON.stringify({ text: inputPrompt })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                this.properties.graphData = data;
-                this.setOutputData(0, data);
-                writeLog("✅ Trích xuất Scene Graph thành công!", "success");
+        // Test API connection
+        document.getElementById("btn-connect").onclick = async () => {
+            let url = document.getElementById("ngrok-url").value.trim();
+            if (!url) {
+                writeLog("Vui lòng nhập đường dẫn Ngrok!", "error");
+                return;
             }
-        } catch (e) {
-            writeLog(`❌ Lỗi Scene Graph: ${e.message}`, "error");
-        }
-    };
-    NodeSceneGraph.prototype.onDrawForeground = function(ctx) {
-        if (!this.properties.graphData) {
-            ctx.fillStyle = "#52525b";
-            ctx.font = "italic 13px 'Outfit'";
-            ctx.fillText("Chờ dữ liệu prompt...", 20, 60);
-            return;
-        }
-        
-        ctx.fillStyle = "#818cf8";
-        ctx.font = "bold 13px 'Outfit'";
-        ctx.fillText("Vật thể phát hiện (Nodes):", 15, 55);
-        
-        const nodes = this.properties.graphData.nodes || [];
-        nodes.forEach((n, idx) => {
-            ctx.fillStyle = "#a5b4fc";
-            ctx.font = "12px 'Fira Code'";
-            ctx.fillText(`• [${n.id}] ${n.label} (${n.full})`, 25, 78 + (idx * 20));
-        });
+            if (url.endsWith("/")) url = url.slice(0, -1);
 
-        const edges = this.properties.graphData.edges || [];
-        if (edges.length > 0) {
-            ctx.fillStyle = "#ec4899";
-            ctx.font = "bold 13px 'Outfit'";
-            ctx.fillText("Quan hệ không gian (Edges):", 15, 78 + (nodes.length * 20) + 12);
-            
-            edges.forEach((e, idx) => {
-                ctx.fillStyle = "#f472b6";
-                ctx.font = "12px 'Fira Code'";
-                ctx.fillText(`• ${e.subject} --[${e.relation}]--> ${e.object}`, 25, 78 + (nodes.length * 20) + 30 + (idx * 20));
-            });
-        }
-    };
-    LiteGraph.registerNodeType("datn/scene_graph", NodeSceneGraph);
-
-
-    // Node 3: 2D Layout Generator (Bounding Box layout rules)
-    function NodeLayout2D() {
-        this.addInput("scene_graph", "object");
-        this.addOutput("layout", "object");
-        this.properties = { layoutData: null };
-        this.size = [380, 260];
-        this.color = "#6a4dc7";
-        this.bgcolor = "rgba(28, 28, 32, 0.75)";
-    }
-    NodeLayout2D.title = "📐 2D Layout Generator";
-    NodeLayout2D.title_color = "rgba(106, 77, 199, 0.85)";
-    NodeLayout2D.prototype.onExecute = async function() {
-        const graphData = this.getInputData(0);
-        if (!graphData || !isConnected) return;
-        
-        if (this._lastGraph === graphData && this.properties.layoutData) {
-            this.setOutputData(0, this.properties.layoutData);
-            return;
-        }
-        
-        this._lastGraph = graphData;
-        writeLog("Tính toán bố cục lưới Bounding Box 2D...", "system");
-        
-        try {
-            const res = await fetch(`${backendUrl}/api/generate_layout`, {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "69420"
-                },
-                body: JSON.stringify(graphData)
-            });
-            if (res.ok) {
-                const data = await res.json();
-                this.properties.layoutData = data;
-                this.setOutputData(0, data);
-                writeLog("✅ Đã sinh tọa độ bố cục 2D.", "success");
-            }
-        } catch (e) {
-            writeLog(`❌ Lỗi tính toán Layout: ${e.message}`, "error");
-        }
-    };
-    NodeLayout2D.prototype.onDrawForeground = function(ctx) {
-        if (!this.properties.layoutData) {
-            ctx.fillStyle = "#52525b";
-            ctx.font = "italic 13px 'Outfit'";
-            ctx.fillText("Chờ cấu trúc Graph...", 20, 60);
-            return;
-        }
-        
-        const boxes = this.properties.layoutData.layout || {};
-        
-        // Render canvas container inside node (Kích thước lớn hơn: 200x200)
-        ctx.save();
-        ctx.fillStyle = "#09090b";
-        ctx.fillRect(15, 45, 200, 200);
-        ctx.strokeStyle = "#27272a";
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(15, 45, 200, 200);
-        
-        // Draw grid lines inside preview
-        ctx.strokeStyle = "rgba(255,255,255,0.02)";
-        ctx.lineWidth = 1;
-        for (let i = 1; i < 4; i++) {
-            ctx.beginPath();
-            ctx.moveTo(15 + (i * 50), 45);
-            ctx.lineTo(15 + (i * 50), 245);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(15, 45 + (i * 50));
-            ctx.lineTo(215, 45 + (i * 50));
-            ctx.stroke();
-        }
-        
-        const colors = ["#818cf8", "#34d399", "#fb7185", "#fbbf24"];
-        let colorIdx = 0;
-        
-        for (const [nid, box] of Object.entries(boxes)) {
-            const scale = 200 / 512;
-            const bx = 15 + (box.x * scale);
-            const by = 45 + (box.y * scale);
-            const bw = box.w * scale;
-            const bh = box.h * scale;
-            
-            const color = colors[colorIdx % colors.length];
-            ctx.fillStyle = color + "20"; // 12% opacity fill
-            ctx.fillRect(bx, by, bw, bh);
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            ctx.strokeRect(bx, by, bw, bh);
-            
-            ctx.fillStyle = color;
-            ctx.font = "bold 10px 'Outfit'";
-            ctx.fillText(nid, bx + 4, by + 14);
-            colorIdx++;
-        }
-        
-        ctx.fillStyle = "#e4e4e7";
-        ctx.font = "bold 13px 'Outfit'";
-        ctx.fillText("Bố cục Bounding Box (px):", 230, 55);
-        let textY = 75;
-        for (const [nid, box] of Object.entries(boxes)) {
-            ctx.fillStyle = colors[(colorIdx - 1) % colors.length];
-            ctx.font = "12px 'Fira Code'";
-            ctx.fillText(`${nid}:`, 230, textY);
-            ctx.fillStyle = "#a1a1aa";
-            ctx.fillText(`x=${box.x}, y=${box.y}`, 240, textY + 16);
-            ctx.fillText(`w=${box.w}, h=${box.h}`, 240, textY + 30);
-            textY += 48;
-        }
-        ctx.restore();
-    };
-    LiteGraph.registerNodeType("datn/layout_2d", NodeLayout2D);
-
-
-    // Node 4: SDXL + LoRA Image Generator
-    function NodeSDXLGen() {
-        this.addInput("layout", "object");
-        this.addInput("prompt", "string");
-        this.addOutput("image_url", "string");
-        
-        this.properties = {
-            imageUrl: "",
-            loraScale: 0.6
-        };
-        
-        this.addWidget("number", "LoRA Weight Scale", this.properties.loraScale, (v) => {
-            this.properties.loraScale = v;
-        }, { min: 0.1, max: 1.0, step: 0.1 });
-        
-        this.size = [400, 360];
-        this.color = "#c62828";
-        this.bgcolor = "rgba(28, 28, 32, 0.75)";
-    }
-    NodeSDXLGen.title = "🎨 SDXL + LoRA Generator";
-    NodeSDXLGen.title_color = "rgba(198, 40, 40, 0.85)";
-    NodeSDXLGen.prototype.onExecute = async function() {
-        const layoutData = this.getInputData(0);
-        const prompt = this.getInputData(1);
-        if (!layoutData || !prompt || !isConnected) return;
-        
-        if (this._lastLayout === layoutData && this._lastPrompt === prompt && this.properties.imageUrl) {
-            this.setOutputData(0, this.properties.imageUrl);
-            return;
-        }
-        
-        this._lastLayout = layoutData;
-        this._lastPrompt = prompt;
-        writeLog("Chạy mô hình khuếch tán SDXL base + LoRA (Khoảng 20 giây)...", "system");
-        
-        try {
-            const res = await fetch(`${backendUrl}/api/generate_image`, {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "69420"
-                },
-                body: JSON.stringify({
-                    prompt: prompt,
-                    layout: layoutData,
-                    lora_scale: this.properties.loraScale
-                })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                this.properties.imageUrl = `${backendUrl}${data.image_url}`;
-                this.setOutputData(0, this.properties.imageUrl);
-                writeLog("✅ Đã sinh ảnh 2D kết quả thành công!", "success");
-                this.setDirtyCanvas(true, true);
-            }
-        } catch (e) {
-            writeLog(`❌ Lỗi sinh ảnh SDXL: ${e.message}`, "error");
-        }
-    };
-    NodeSDXLGen.prototype.onDrawBackground = function(ctx) {
-        if (!this.properties.imageUrl) {
-            ctx.fillStyle = "#52525b";
-            ctx.font = "italic 13px 'Outfit'";
-            ctx.fillText("Chờ xử lý pipeline...", 20, 95);
-            return;
-        }
-        
-        if (!this._imageObj) {
-            this._imageObj = new Image();
-            this._imageObj.src = this.properties.imageUrl;
-            this._imageObj.onload = () => this.setDirtyCanvas(true, true);
-        }
-        
-        try {
-            // Draw image preview inside node (Kích thước lớn hơn: 410x285)
-            ctx.drawImage(this._imageObj, 15, 80, 410, 285);
-            ctx.strokeStyle = "rgba(255,255,255,0.08)";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(15, 80, 410, 285);
-        } catch (e) {}
-    };
-    LiteGraph.registerNodeType("datn/sdxl_gen", NodeSDXLGen);
-
-
-    // Node 5: Grounded-SAM2 segment extractor
-    function NodeGroundedSAM2() {
-        this.addInput("image_url", "string");
-        this.addInput("layout", "object");
-        this.addOutput("crops_data", "object");
-        
-        this.properties = { crops: [] };
-        this.size = [400, 250];
-        this.color = "#e65100";
-        this.bgcolor = "rgba(28, 28, 32, 0.75)";
-    }
-    NodeGroundedSAM2.title = "✂️ Grounded-SAM2 Segment";
-    NodeGroundedSAM2.title_color = "rgba(230, 81, 0, 0.85)";
-    NodeGroundedSAM2.prototype.onExecute = async function() {
-        const imageUrl = this.getInputData(0);
-        const layoutData = this.getInputData(1);
-        if (!imageUrl || !layoutData || !isConnected) return;
-        
-        if (this._lastImageUrl === imageUrl && this.properties.crops.length > 0) {
-            this.setOutputData(0, this.properties.crops);
-            return;
-        }
-        
-        this._lastImageUrl = imageUrl;
-        writeLog("Chạy GroundingDINO nhận diện & SAM2 cắt tách nền vật thể...", "system");
-        
-        try {
-            const res = await fetch(`${backendUrl}/api/run_sam2`, {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "69420"
-                },
-                body: JSON.stringify({
-                    image_url: imageUrl,
-                    layout: layoutData
-                })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                this.properties.crops = data.crops || [];
-                this.setOutputData(0, this.properties.crops);
-                writeLog(`✅ SAM2 trích xuất thành công ${this.properties.crops.length} vật thể RGBA!`, "success");
-                
-                this._cropImages = [];
-                this.setDirtyCanvas(true, true);
-            }
-        } catch (e) {
-            writeLog(`❌ Lỗi Grounded-SAM2: ${e.message}`, "error");
-        }
-    };
-    NodeGroundedSAM2.prototype.onDrawBackground = function(ctx) {
-        if (!this.properties.crops || this.properties.crops.length === 0) {
-            ctx.fillStyle = "#52525b";
-            ctx.font = "italic 13px 'Outfit'";
-            ctx.fillText("Chờ nhận diện ảnh...", 20, 80);
-            return;
-        }
-        
-        if (!this._cropImages || this._cropImages.length === 0) {
-            this._cropImages = [];
-            this.properties.crops.forEach((crop) => {
-                const img = new Image();
-                img.src = `${backendUrl}${crop.crop_url}`;
-                img.onload = () => this.setDirtyCanvas(true, true);
-                this._cropImages.push(img);
-            });
-        }
-        
-        const cardWidth = 120;
-        const cardHeight = 120;
-        const startX = 15;
-        const startY = 80;
-        
-        this._cropImages.forEach((img, idx) => {
-            const x = startX + (idx * (cardWidth + 20));
-            const y = startY;
-            
-            // Draw transparent grid background pattern
-            ctx.fillStyle = "#1e1e24";
-            ctx.fillRect(x, y, cardWidth, cardHeight);
-            
-            // Draw checkerboard transparency pattern
-            ctx.fillStyle = "#27272a";
-            const checkSize = 10;
-            for (let cx = 0; cx < cardWidth; cx += checkSize * 2) {
-                for (let cy = 0; cy < cardHeight; cy += checkSize * 2) {
-                    ctx.fillRect(x + cx, y + cy, checkSize, checkSize);
-                    ctx.fillRect(x + cx + checkSize, y + cy + checkSize, checkSize, checkSize);
-                }
-            }
-            
-            // Draw crop image
+            writeLog(`Đang kết nối tới server GPU Kaggle: ${url}...`, "system");
             try {
-                ctx.drawImage(img, x, y, cardWidth, cardHeight);
-            } catch (e) {}
-            
-            ctx.strokeStyle = "rgba(255,255,255,0.08)";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(x, y, cardWidth, cardHeight);
-            
-            // Text Label
-            ctx.fillStyle = "#e4e4e7";
-            ctx.font = "bold 12px 'Outfit'";
-            const info = this.properties.crops[idx] || {};
-            ctx.fillText(info.label || "unknown", x + 4, y + cardHeight + 18);
-        });
-    };
-    LiteGraph.registerNodeType("datn/grounded_sam2", NodeGroundedSAM2);
-
-
-    // Node 6: TRELLIS 3D Single-Object Reconstruction
-    function NodeTrellis3D() {
-        this.addInput("crops_data", "object");
-        this.addOutput("models_data", "object");
-        this.properties = { models: [] };
-        this.size = [380, 220];
-        this.color = "#1565c0";
-        this.bgcolor = "rgba(28, 28, 32, 0.75)";
-    }
-    NodeTrellis3D.title = "🧊 TRELLIS 3D Generator";
-    NodeTrellis3D.title_color = "rgba(21, 101, 192, 0.85)";
-    NodeTrellis3D.prototype.onExecute = async function() {
-        const cropsData = this.getInputData(0);
-        if (!cropsData || !isConnected) return;
-        
-        if (this._lastCrops === cropsData && this.properties.models.length > 0) {
-            this.setOutputData(0, this.properties.models);
-            return;
-        }
-        
-        this._lastCrops = cropsData;
-        writeLog("Chạy khuếch tán 3D TRELLIS Image-to-3D (Mất khoảng 2-3 phút, vui lòng đợi)...", "system");
-        
-        try {
-            const res = await fetch(`${backendUrl}/api/generate_3d`, {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "69420"
-                },
-                body: JSON.stringify({ crops: cropsData })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                this.properties.models = data.models || [];
-                this.setOutputData(0, this.properties.models);
-                writeLog("✅ TRELLIS dựng hình 3D Mesh hoàn thành!", "success");
-                this.setDirtyCanvas(true, true);
+                const res = await fetch(`${url}/api/health`, {
+                    method: 'GET',
+                    headers: { "ngrok-skip-browser-warning": "69420" }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    backendUrl = url;
+                    isConnected = true;
+                    document.getElementById("status-indicator").classList.add("connected");
+                    writeLog(`✅ Đã kết nối thành công! Phiên bản: ${data.version || '1.0.0'}`, "success");
+                } else {
+                    throw new Error("Mã trạng thái phản hồi lỗi.");
+                }
+            } catch (e) {
+                isConnected = false;
+                document.getElementById("status-indicator").classList.remove("connected");
+                writeLog(`❌ Lỗi kết nối: ${e.message}. Hãy đảm bảo server trên Kaggle đang chạy và Ngrok đã kết nối thành công.`, "error");
             }
-        } catch (e) {
-            writeLog(`❌ Lỗi chạy TRELLIS: ${e.message}`, "error");
-        }
-    };
-    NodeTrellis3D.prototype.onDrawForeground = function(ctx) {
-        if (!this.properties.models || this.properties.models.length === 0) {
-            ctx.fillStyle = "#52525b";
-            ctx.font = "italic 13px 'Outfit'";
-            ctx.fillText("Chờ xử lý mô hình 3D...", 20, 60);
-            return;
-        }
-        
-        ctx.fillStyle = "#818cf8";
-        ctx.font = "bold 13px 'Outfit'";
-        ctx.fillText("Mô hình GLB trích xuất:", 15, 60);
-        
-        this.properties.models.forEach((m, idx) => {
-            ctx.fillStyle = "#34d399";
-            ctx.font = "12px 'Outfit'";
-            ctx.fillText(`✓ [${m.name}] ${m.label}:`, 20, 85 + (idx * 34));
-            
-            ctx.fillStyle = "#71717a";
-            ctx.font = "10px 'Fira Code'";
-            ctx.fillText(m.model_url.substring(0, 52) + "...", 25, 99 + (idx * 34));
-        });
-    };
-    LiteGraph.registerNodeType("datn/trellis_3d", NodeTrellis3D);
-
-
-    // Node 7: 3D Scene Combiner (Integrates the Interactive 3D Model-Viewer Web Component)
-    function NodeSceneCombiner() {
-        this.addInput("models_data", "object");
-        this.addInput("layout", "object");
-        this.addOutput("scene_url", "string");
-        
-        this.properties = { 
-            sceneUrl: "", 
-            scaleFactor: 0.01 
         };
-        
-        this.addWidget("number", "3D System Scale", this.properties.scaleFactor, (v) => {
-            this.properties.scaleFactor = v;
-        }, { min: 0.002, max: 0.05, step: 0.002 });
-        
-        this.size = [420, 400];
-        this.color = "#6a1b9a";
-        this.bgcolor = "rgba(28, 28, 32, 0.75)";
-    }
-    NodeSceneCombiner.title = "🌐 3D Scene Combiner";
-    NodeSceneCombiner.title_color = "rgba(106, 27, 154, 0.85)";
-    NodeSceneCombiner.prototype.onExecute = async function() {
-        const modelsData = this.getInputData(0);
-        const layoutData = this.getInputData(1);
-        if (!modelsData || !layoutData || !isConnected) return;
-        
-        if (this._lastModels === modelsData && this._lastLayout === layoutData && this.properties.sceneUrl) {
-            this.setOutputData(0, this.properties.sceneUrl);
-            return;
-        }
-        
-        this._lastModels = modelsData;
-        this._lastLayout = layoutData;
-        writeLog("Trimesh đang căn chỉnh tọa độ và đóng gói file Scene 3D...", "system");
-        
-        try {
-            const res = await fetch(`${backendUrl}/api/combine_scene`, {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "69420"
-                },
-                body: JSON.stringify({
-                    models: modelsData,
-                    layout: layoutData,
-                    scale_factor: this.properties.scaleFactor
-                })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                this.properties.sceneUrl = `${backendUrl}${data.scene_url}`;
-                this.setOutputData(0, this.properties.sceneUrl);
-                writeLog("🎉 HỆ THỐNG ĐÃ HOÀN TẤT DỰNG CẢNH 3D!", "success");
-                
-                this.update3DViewer();
-            }
-        } catch (e) {
-            writeLog(`❌ Lỗi ghép cảnh: ${e.message}`, "error");
-        }
-    };
 
-    // Update overlay interactive 3D view on DOM
-    NodeSceneCombiner.prototype.update3DViewer = function() {
-        if (!this.properties.sceneUrl) return;
-        
-        const viewerId = `viewer-${this.id}`;
-        let viewer = document.getElementById(viewerId);
-        
-        if (!viewer) {
-            viewer = document.createElement("div");
-            viewer.id = viewerId;
-            viewer.className = "node-3d-container";
-            viewer.style.border = "1px solid rgba(255, 255, 255, 0.1)";
-            viewer.style.borderRadius = "8px";
-            viewer.style.zIndex = 1000;
-            
-            document.getElementById("canvas-container").appendChild(viewer);
+        // Initialize LiteGraph
+        const graph = new LGraph();
+        const canvas = new LGraphCanvas("#graphcanvas", graph);
+        canvas.show_stats = false; // Hide default performance statistics
+        canvas.background_image = null; // Background handled by CSS grid pattern
+
+        // =========================================================================
+        // COMFYUI-AUTHENTIC THEME
+        // =========================================================================
+        LiteGraph.NODE_DEFAULT_BGCOLOR = "rgba(28, 28, 32, 0.75)";
+        LiteGraph.NODE_DEFAULT_BOXCOLOR = "rgba(255, 255, 255, 0.1)";
+        LiteGraph.NODE_TEXT_COLOR = "#ffffff";
+        LiteGraph.NODE_TITLE_COLOR = "#ffffff";
+        LiteGraph.NODE_SELECTED_TITLE_COLOR = "#ffffff";
+        LiteGraph.NODE_DEFAULT_SHAPE = "box";
+        LiteGraph.LINK_COLOR = "#9A9";
+        LiteGraph.CONNECTING_LINK_COLOR = "#AFA";
+        LiteGraph.DEFAULT_LINK_TYPE_WIDTH = 3;
+        LiteGraph.CANVAS_GRID_SIZE = 16;
+        LiteGraph.NODE_TITLE_HEIGHT = 30;
+        LiteGraph.NODE_SLOT_HEIGHT = 20;
+
+        // ComfyUI fonts
+        LiteGraph.NODE_TITLE_TEXT_Y = 20;
+        LiteGraph.NODE_TEXT_SIZE = 14;
+        LiteGraph.NODE_SUBTEXT_SIZE = 12;
+        LiteGraph.NODE_TITLE_FONT = "bold 14px 'Outfit'";
+        LiteGraph.NODE_LABEL_FONT = "normal 12px 'Outfit'";
+
+        // ComfyUI wire colors by slot type
+        LGraphCanvas.link_type_colors = {
+            "string": "#6A6",
+            "object": "#5AF",
+            "number": "#DA5",
+            "boolean": "#F5A"
+        };
+
+        // ComfyUI-style smooth curved links
+        canvas.render_connections_border = false;
+        canvas.connections_width = 3;
+        canvas.render_curved_connections = true;
+        canvas.render_connection_arrows = false;
+        canvas.highquality_render = true;
+        canvas.links_render_mode = LiteGraph.SPLINE_LINK;
+
+        // Redraw loop
+        function resizeCanvas() {
+            const parent = document.getElementById("canvas-container");
+            if (parent) {
+                canvas.resize(parent.clientWidth, parent.clientHeight);
+                canvas.draw(true, true);
+            }
         }
-        
-        // Google model-viewer template with camera controls & rotation
-        viewer.innerHTML = `
+        window.addEventListener("resize", resizeCanvas);
+        window.addEventListener("load", resizeCanvas);
+        setTimeout(resizeCanvas, 100);
+
+        // =========================================================================
+        // CUSTOM LITEGRAPH NODES DEFINITION
+        // =========================================================================
+
+        // Node 1: Input Text Prompt
+        function NodePrompt() {
+            this.addOutput("prompt", "string");
+            this.properties = {
+                prompt: "a wooden dining chair next to a small wooden side table, product photography, plain dark background, studio lighting"
+            };
+            this.size = [340, 150];
+            this.color = "#5b7a3a";
+            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+        }
+        NodePrompt.title = "✏️ Input Text Prompt";
+        NodePrompt.title_color = "rgba(76, 175, 80, 0.85)";
+
+        NodePrompt.prototype.onExecute = function () {
+            const textarea = document.getElementById(`prompt-input-${this.id}`);
+            if (textarea) {
+                this.properties.prompt = textarea.value;
+            }
+            this.setOutputData(0, this.properties.prompt);
+        };
+
+        NodePrompt.prototype.updateTextarea = function () {
+            const textareaId = `prompt-input-${this.id}`;
+            let textarea = document.getElementById(textareaId);
+
+            if (!textarea) {
+                textarea = document.createElement("textarea");
+                textarea.id = textareaId;
+                textarea.className = "node-textarea";
+                textarea.value = this.properties.prompt;
+                textarea.placeholder = "Nhập mô tả tiếng Anh tại đây...";
+
+                textarea.addEventListener("input", () => {
+                    this.properties.prompt = textarea.value;
+                });
+
+                document.getElementById("canvas-container").appendChild(textarea);
+            }
+
+            const scale = canvas.ds.scale;
+            const offset = canvas.ds.offset;
+
+            const x = (this.pos[0] + 15) * scale + offset[0];
+            const y = (this.pos[1] + 45) * scale + offset[1];
+            const w = (this.size[0] - 30) * scale;
+            const h = (this.size[1] - 60) * scale;
+
+            textarea.style.left = `${x}px`;
+            textarea.style.top = `${y}px`;
+            textarea.style.width = `${w}px`;
+            textarea.style.height = `${h}px`;
+            textarea.style.fontSize = `${Math.max(10, 13 * scale)}px`;
+
+            if (scale < 0.25) {
+                textarea.style.display = "none";
+            } else {
+                textarea.style.display = "block";
+            }
+        };
+
+        NodePrompt.prototype.onRemoved = function () {
+            const textareaId = `prompt-input-${this.id}`;
+            const textarea = document.getElementById(textareaId);
+            if (textarea) textarea.remove();
+        };
+
+        LiteGraph.registerNodeType("datn/input_prompt", NodePrompt);
+
+
+        // Node 2: Scene Graph Parser (spaCy NLP)
+        function NodeSceneGraph() {
+            this.addInput("prompt", "string");
+            this.addOutput("scene_graph", "object");
+            this.properties = { graphData: null };
+            this.size = [340, 200];
+            this.color = "#2e7d32";
+            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+        }
+        NodeSceneGraph.title = "🧠 Scene Graph Parser";
+        NodeSceneGraph.title_color = "rgba(46, 125, 50, 0.85)";
+        NodeSceneGraph.prototype.onExecute = async function () {
+            const inputPrompt = this.getInputData(0);
+            if (!inputPrompt || !isConnected) return;
+
+            if (this._lastPrompt === inputPrompt && this.properties.graphData) {
+                this.setOutputData(0, this.properties.graphData);
+                return;
+            }
+
+            this._lastPrompt = inputPrompt;
+            writeLog("Gửi prompt phân tích quan hệ cú pháp không gian (Scene Graph)...", "system");
+
+            try {
+                const res = await fetch(`${backendUrl}/api/parse_scene_graph`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "69420"
+                    },
+                    body: JSON.stringify({ text: inputPrompt })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.properties.graphData = data;
+                    this.setOutputData(0, data);
+                    writeLog("✅ Trích xuất Scene Graph thành công!", "success");
+                }
+            } catch (e) {
+                writeLog(`❌ Lỗi Scene Graph: ${e.message}`, "error");
+            }
+        };
+        NodeSceneGraph.prototype.onDrawForeground = function (ctx) {
+            if (!this.properties.graphData) {
+                ctx.fillStyle = "#52525b";
+                ctx.font = "italic 13px 'Outfit'";
+                ctx.fillText("Chờ dữ liệu prompt...", 20, 60);
+                return;
+            }
+
+            ctx.fillStyle = "#818cf8";
+            ctx.font = "bold 13px 'Outfit'";
+            ctx.fillText("Vật thể phát hiện (Nodes):", 15, 55);
+
+            const nodes = this.properties.graphData.nodes || [];
+            nodes.forEach((n, idx) => {
+                ctx.fillStyle = "#a5b4fc";
+                ctx.font = "12px 'Fira Code'";
+                ctx.fillText(`• [${n.id}] ${n.label} (${n.full})`, 25, 78 + (idx * 20));
+            });
+
+            const edges = this.properties.graphData.edges || [];
+            if (edges.length > 0) {
+                ctx.fillStyle = "#ec4899";
+                ctx.font = "bold 13px 'Outfit'";
+                ctx.fillText("Quan hệ không gian (Edges):", 15, 78 + (nodes.length * 20) + 12);
+
+                edges.forEach((e, idx) => {
+                    ctx.fillStyle = "#f472b6";
+                    ctx.font = "12px 'Fira Code'";
+                    ctx.fillText(`• ${e.subject} --[${e.relation}]--> ${e.object}`, 25, 78 + (nodes.length * 20) + 30 + (idx * 20));
+                });
+            }
+        };
+        LiteGraph.registerNodeType("datn/scene_graph", NodeSceneGraph);
+
+
+        // Node 3: 2D Layout Generator (Bounding Box layout rules)
+        function NodeLayout2D() {
+            this.addInput("scene_graph", "object");
+            this.addOutput("layout", "object");
+            this.properties = { layoutData: null };
+            this.size = [380, 260];
+            this.color = "#6a4dc7";
+            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+        }
+        NodeLayout2D.title = "📐 2D Layout Generator";
+        NodeLayout2D.title_color = "rgba(106, 77, 199, 0.85)";
+        NodeLayout2D.prototype.onExecute = async function () {
+            const graphData = this.getInputData(0);
+            if (!graphData || !isConnected) return;
+
+            if (this._lastGraph === graphData && this.properties.layoutData) {
+                this.setOutputData(0, this.properties.layoutData);
+                return;
+            }
+
+            this._lastGraph = graphData;
+            writeLog("Tính toán bố cục lưới Bounding Box 2D...", "system");
+
+            try {
+                const res = await fetch(`${backendUrl}/api/generate_layout`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "69420"
+                    },
+                    body: JSON.stringify(graphData)
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.properties.layoutData = data;
+                    this.setOutputData(0, data);
+                    writeLog("✅ Đã sinh tọa độ bố cục 2D.", "success");
+                }
+            } catch (e) {
+                writeLog(`❌ Lỗi tính toán Layout: ${e.message}`, "error");
+            }
+        };
+        NodeLayout2D.prototype.onDrawForeground = function (ctx) {
+            if (!this.properties.layoutData) {
+                ctx.fillStyle = "#52525b";
+                ctx.font = "italic 13px 'Outfit'";
+                ctx.fillText("Chờ cấu trúc Graph...", 20, 60);
+                return;
+            }
+
+            const boxes = this.properties.layoutData.layout || {};
+
+            // Render canvas container inside node (Kích thước lớn hơn: 200x200)
+            ctx.save();
+            ctx.fillStyle = "#09090b";
+            ctx.fillRect(15, 45, 200, 200);
+            ctx.strokeStyle = "#27272a";
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(15, 45, 200, 200);
+
+            // Draw grid lines inside preview
+            ctx.strokeStyle = "rgba(255,255,255,0.02)";
+            ctx.lineWidth = 1;
+            for (let i = 1; i < 4; i++) {
+                ctx.beginPath();
+                ctx.moveTo(15 + (i * 50), 45);
+                ctx.lineTo(15 + (i * 50), 245);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(15, 45 + (i * 50));
+                ctx.lineTo(215, 45 + (i * 50));
+                ctx.stroke();
+            }
+
+            const colors = ["#818cf8", "#34d399", "#fb7185", "#fbbf24"];
+            let colorIdx = 0;
+
+            for (const [nid, box] of Object.entries(boxes)) {
+                const scale = 200 / 512;
+                const bx = 15 + (box.x * scale);
+                const by = 45 + (box.y * scale);
+                const bw = box.w * scale;
+                const bh = box.h * scale;
+
+                const color = colors[colorIdx % colors.length];
+                ctx.fillStyle = color + "20"; // 12% opacity fill
+                ctx.fillRect(bx, by, bw, bh);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(bx, by, bw, bh);
+
+                ctx.fillStyle = color;
+                ctx.font = "bold 10px 'Outfit'";
+                ctx.fillText(nid, bx + 4, by + 14);
+                colorIdx++;
+            }
+
+            ctx.fillStyle = "#e4e4e7";
+            ctx.font = "bold 13px 'Outfit'";
+            ctx.fillText("Bố cục Bounding Box (px):", 230, 55);
+            let textY = 75;
+            for (const [nid, box] of Object.entries(boxes)) {
+                ctx.fillStyle = colors[(colorIdx - 1) % colors.length];
+                ctx.font = "12px 'Fira Code'";
+                ctx.fillText(`${nid}:`, 230, textY);
+                ctx.fillStyle = "#a1a1aa";
+                ctx.fillText(`x=${box.x}, y=${box.y}`, 240, textY + 16);
+                ctx.fillText(`w=${box.w}, h=${box.h}`, 240, textY + 30);
+                textY += 48;
+            }
+            ctx.restore();
+        };
+        LiteGraph.registerNodeType("datn/layout_2d", NodeLayout2D);
+
+
+        // Node 4: SDXL + LoRA Image Generator
+        function NodeSDXLGen() {
+            this.addInput("layout", "object");
+            this.addInput("prompt", "string");
+            this.addOutput("image_url", "string");
+
+            this.properties = {
+                imageUrl: "",
+                loraScale: 0.6
+            };
+
+            this.addWidget("number", "LoRA Weight Scale", this.properties.loraScale, (v) => {
+                this.properties.loraScale = v;
+            }, { min: 0.1, max: 1.0, step: 0.1 });
+
+            this.size = [400, 360];
+            this.color = "#c62828";
+            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+        }
+        NodeSDXLGen.title = "🎨 SDXL + LoRA Generator";
+        NodeSDXLGen.title_color = "rgba(198, 40, 40, 0.85)";
+        NodeSDXLGen.prototype.onExecute = async function () {
+            const layoutData = this.getInputData(0);
+            const prompt = this.getInputData(1);
+            if (!layoutData || !prompt || !isConnected) return;
+
+            if (this._lastLayout === layoutData && this._lastPrompt === prompt && this.properties.imageUrl) {
+                this.setOutputData(0, this.properties.imageUrl);
+                return;
+            }
+
+            this._lastLayout = layoutData;
+            this._lastPrompt = prompt;
+            writeLog("Chạy mô hình khuếch tán SDXL base + LoRA (Khoảng 20 giây)...", "system");
+
+            try {
+                const res = await fetch(`${backendUrl}/api/generate_image`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "69420"
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        layout: layoutData,
+                        lora_scale: this.properties.loraScale
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.properties.imageUrl = `${backendUrl}${data.image_url}`;
+                    this.setOutputData(0, this.properties.imageUrl);
+                    writeLog("✅ Đã sinh ảnh 2D kết quả thành công!", "success");
+                    this.setDirtyCanvas(true, true);
+                }
+            } catch (e) {
+                writeLog(`❌ Lỗi sinh ảnh SDXL: ${e.message}`, "error");
+            }
+        };
+        NodeSDXLGen.prototype.onDrawBackground = function (ctx) {
+            if (!this.properties.imageUrl) {
+                ctx.fillStyle = "#52525b";
+                ctx.font = "italic 13px 'Outfit'";
+                ctx.fillText("Chờ xử lý pipeline...", 20, 95);
+                return;
+            }
+
+            if (!this._imageObj) {
+                this._imageObj = new Image();
+                this._imageObj.src = this.properties.imageUrl;
+                this._imageObj.onload = () => this.setDirtyCanvas(true, true);
+            }
+
+            try {
+                // Draw image preview inside node (Kích thước lớn hơn: 410x285)
+                ctx.drawImage(this._imageObj, 15, 80, 410, 285);
+                ctx.strokeStyle = "rgba(255,255,255,0.08)";
+                ctx.lineWidth = 1;
+                ctx.strokeRect(15, 80, 410, 285);
+            } catch (e) { }
+        };
+        LiteGraph.registerNodeType("datn/sdxl_gen", NodeSDXLGen);
+
+
+        // Node 5: Grounded-SAM2 segment extractor
+        function NodeGroundedSAM2() {
+            this.addInput("image_url", "string");
+            this.addInput("layout", "object");
+            this.addOutput("crops_data", "object");
+
+            this.properties = { crops: [] };
+            this.size = [400, 250];
+            this.color = "#e65100";
+            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+        }
+        NodeGroundedSAM2.title = "✂️ Grounded-SAM2 Segment";
+        NodeGroundedSAM2.title_color = "rgba(230, 81, 0, 0.85)";
+        NodeGroundedSAM2.prototype.onExecute = async function () {
+            const imageUrl = this.getInputData(0);
+            const layoutData = this.getInputData(1);
+            if (!imageUrl || !layoutData || !isConnected) return;
+
+            if (this._lastImageUrl === imageUrl && this.properties.crops.length > 0) {
+                this.setOutputData(0, this.properties.crops);
+                return;
+            }
+
+            this._lastImageUrl = imageUrl;
+            writeLog("Chạy GroundingDINO nhận diện & SAM2 cắt tách nền vật thể...", "system");
+
+            try {
+                const res = await fetch(`${backendUrl}/api/run_sam2`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "69420"
+                    },
+                    body: JSON.stringify({
+                        image_url: imageUrl,
+                        layout: layoutData
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.properties.crops = data.crops || [];
+                    this.setOutputData(0, this.properties.crops);
+                    writeLog(`✅ SAM2 trích xuất thành công ${this.properties.crops.length} vật thể RGBA!`, "success");
+
+                    this._cropImages = [];
+                    this.setDirtyCanvas(true, true);
+                }
+            } catch (e) {
+                writeLog(`❌ Lỗi Grounded-SAM2: ${e.message}`, "error");
+            }
+        };
+        NodeGroundedSAM2.prototype.onDrawBackground = function (ctx) {
+            if (!this.properties.crops || this.properties.crops.length === 0) {
+                ctx.fillStyle = "#52525b";
+                ctx.font = "italic 13px 'Outfit'";
+                ctx.fillText("Chờ nhận diện ảnh...", 20, 80);
+                return;
+            }
+
+            if (!this._cropImages || this._cropImages.length === 0) {
+                this._cropImages = [];
+                this.properties.crops.forEach((crop) => {
+                    const img = new Image();
+                    img.src = `${backendUrl}${crop.crop_url}`;
+                    img.onload = () => this.setDirtyCanvas(true, true);
+                    this._cropImages.push(img);
+                });
+            }
+
+            const cardWidth = 120;
+            const cardHeight = 120;
+            const startX = 15;
+            const startY = 80;
+
+            this._cropImages.forEach((img, idx) => {
+                const x = startX + (idx * (cardWidth + 20));
+                const y = startY;
+
+                // Draw transparent grid background pattern
+                ctx.fillStyle = "#1e1e24";
+                ctx.fillRect(x, y, cardWidth, cardHeight);
+
+                // Draw checkerboard transparency pattern
+                ctx.fillStyle = "#27272a";
+                const checkSize = 10;
+                for (let cx = 0; cx < cardWidth; cx += checkSize * 2) {
+                    for (let cy = 0; cy < cardHeight; cy += checkSize * 2) {
+                        ctx.fillRect(x + cx, y + cy, checkSize, checkSize);
+                        ctx.fillRect(x + cx + checkSize, y + cy + checkSize, checkSize, checkSize);
+                    }
+                }
+
+                // Draw crop image
+                try {
+                    ctx.drawImage(img, x, y, cardWidth, cardHeight);
+                } catch (e) { }
+
+                ctx.strokeStyle = "rgba(255,255,255,0.08)";
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x, y, cardWidth, cardHeight);
+
+                // Text Label
+                ctx.fillStyle = "#e4e4e7";
+                ctx.font = "bold 12px 'Outfit'";
+                const info = this.properties.crops[idx] || {};
+                ctx.fillText(info.label || "unknown", x + 4, y + cardHeight + 18);
+            });
+        };
+        LiteGraph.registerNodeType("datn/grounded_sam2", NodeGroundedSAM2);
+
+
+        // Node 6: TRELLIS 3D Single-Object Reconstruction
+        function NodeTrellis3D() {
+            this.addInput("crops_data", "object");
+            this.addOutput("models_data", "object");
+            this.properties = { models: [] };
+            this.size = [380, 220];
+            this.color = "#1565c0";
+            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+        }
+        NodeTrellis3D.title = "🧊 TRELLIS 3D Generator";
+        NodeTrellis3D.title_color = "rgba(21, 101, 192, 0.85)";
+        NodeTrellis3D.prototype.onExecute = async function () {
+            const cropsData = this.getInputData(0);
+            if (!cropsData || !isConnected) return;
+
+            if (this._lastCrops === cropsData && this.properties.models.length > 0) {
+                this.setOutputData(0, this.properties.models);
+                return;
+            }
+
+            this._lastCrops = cropsData;
+            writeLog("Chạy khuếch tán 3D TRELLIS Image-to-3D (Mất khoảng 2-3 phút, vui lòng đợi)...", "system");
+
+            try {
+                const res = await fetch(`${backendUrl}/api/generate_3d`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "69420"
+                    },
+                    body: JSON.stringify({ crops: cropsData })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.properties.models = data.models || [];
+                    this.setOutputData(0, this.properties.models);
+                    writeLog("✅ TRELLIS dựng hình 3D Mesh hoàn thành!", "success");
+                    this.setDirtyCanvas(true, true);
+                }
+            } catch (e) {
+                writeLog(`❌ Lỗi chạy TRELLIS: ${e.message}`, "error");
+            }
+        };
+        NodeTrellis3D.prototype.onDrawForeground = function (ctx) {
+            if (!this.properties.models || this.properties.models.length === 0) {
+                ctx.fillStyle = "#52525b";
+                ctx.font = "italic 13px 'Outfit'";
+                ctx.fillText("Chờ xử lý mô hình 3D...", 20, 60);
+                return;
+            }
+
+            ctx.fillStyle = "#818cf8";
+            ctx.font = "bold 13px 'Outfit'";
+            ctx.fillText("Mô hình GLB trích xuất:", 15, 60);
+
+            this.properties.models.forEach((m, idx) => {
+                ctx.fillStyle = "#34d399";
+                ctx.font = "12px 'Outfit'";
+                ctx.fillText(`✓ [${m.name}] ${m.label}:`, 20, 85 + (idx * 34));
+
+                ctx.fillStyle = "#71717a";
+                ctx.font = "10px 'Fira Code'";
+                ctx.fillText(m.model_url.substring(0, 52) + "...", 25, 99 + (idx * 34));
+            });
+        };
+        LiteGraph.registerNodeType("datn/trellis_3d", NodeTrellis3D);
+
+
+        // Node 7: 3D Scene Combiner (Integrates the Interactive 3D Model-Viewer Web Component)
+        function NodeSceneCombiner() {
+            this.addInput("models_data", "object");
+            this.addInput("layout", "object");
+            this.addOutput("scene_url", "string");
+
+            this.properties = {
+                sceneUrl: "",
+                scaleFactor: 0.01
+            };
+
+            this.addWidget("number", "3D System Scale", this.properties.scaleFactor, (v) => {
+                this.properties.scaleFactor = v;
+            }, { min: 0.002, max: 0.05, step: 0.002 });
+
+            this.size = [420, 400];
+            this.color = "#6a1b9a";
+            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+        }
+        NodeSceneCombiner.title = "🌐 3D Scene Combiner";
+        NodeSceneCombiner.title_color = "rgba(106, 27, 154, 0.85)";
+        NodeSceneCombiner.prototype.onExecute = async function () {
+            const modelsData = this.getInputData(0);
+            const layoutData = this.getInputData(1);
+            if (!modelsData || !layoutData || !isConnected) return;
+
+            if (this._lastModels === modelsData && this._lastLayout === layoutData && this.properties.sceneUrl) {
+                this.setOutputData(0, this.properties.sceneUrl);
+                return;
+            }
+
+            this._lastModels = modelsData;
+            this._lastLayout = layoutData;
+            writeLog("Trimesh đang căn chỉnh tọa độ và đóng gói file Scene 3D...", "system");
+
+            try {
+                const res = await fetch(`${backendUrl}/api/combine_scene`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "69420"
+                    },
+                    body: JSON.stringify({
+                        models: modelsData,
+                        layout: layoutData,
+                        scale_factor: this.properties.scaleFactor
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.properties.sceneUrl = `${backendUrl}${data.scene_url}`;
+                    this.setOutputData(0, this.properties.sceneUrl);
+                    writeLog("🎉 HỆ THỐNG ĐÃ HOÀN TẤT DỰNG CẢNH 3D!", "success");
+
+                    this.update3DViewer();
+                }
+            } catch (e) {
+                writeLog(`❌ Lỗi ghép cảnh: ${e.message}`, "error");
+            }
+        };
+
+        // Update overlay interactive 3D view on DOM
+        NodeSceneCombiner.prototype.update3DViewer = function () {
+            if (!this.properties.sceneUrl) return;
+
+            const viewerId = `viewer-${this.id}`;
+            let viewer = document.getElementById(viewerId);
+
+            if (!viewer) {
+                viewer = document.createElement("div");
+                viewer.id = viewerId;
+                viewer.className = "node-3d-container";
+                viewer.style.border = "1px solid rgba(255, 255, 255, 0.1)";
+                viewer.style.borderRadius = "8px";
+                viewer.style.zIndex = 1000;
+
+                document.getElementById("canvas-container").appendChild(viewer);
+            }
+
+            // Google model-viewer template with camera controls & rotation
+            viewer.innerHTML = `
             <model-viewer 
                 src="${this.properties.sceneUrl}" 
                 camera-controls 
@@ -1139,192 +1144,201 @@
                 </div>
             </model-viewer>
         `;
-        
-        const modelViewer = viewer.querySelector("model-viewer");
-        
-        // Add interactive controls event handlers
-        viewer.querySelector(`#btn-spin-${this.id}`).onclick = (e) => {
-            e.stopPropagation();
-            modelViewer.autoRotate = !modelViewer.autoRotate;
-            e.target.innerText = modelViewer.autoRotate ? "Stop Spin" : "Auto Spin";
+
+            const modelViewer = viewer.querySelector("model-viewer");
+
+            // Add interactive controls event handlers
+            viewer.querySelector(`#btn-spin-${this.id}`).onclick = (e) => {
+                e.stopPropagation();
+                modelViewer.autoRotate = !modelViewer.autoRotate;
+                e.target.innerText = modelViewer.autoRotate ? "Stop Spin" : "Auto Spin";
+            };
+
+            viewer.querySelector(`#btn-reset-${this.id}`).onclick = (e) => {
+                e.stopPropagation();
+                modelViewer.cameraOrbit = "0deg 75deg auto";
+                modelViewer.fieldOfView = "auto";
+            };
+
+            this.position3DViewer();
         };
-        
-        viewer.querySelector(`#btn-reset-${this.id}`).onclick = (e) => {
-            e.stopPropagation();
-            modelViewer.cameraOrbit = "0deg 75deg auto";
-            modelViewer.fieldOfView = "auto";
+
+        NodeSceneCombiner.prototype.position3DViewer = function () {
+            const viewerId = `viewer-${this.id}`;
+            const viewer = document.getElementById(viewerId);
+            if (!viewer) return;
+
+            const scale = canvas.ds.scale;
+            const offset = canvas.ds.offset;
+
+            const nodeWidth = this.size[0];
+            const nodeHeight = this.size[1];
+
+            // Calculate screen bounding boxes mapping LiteGraph coords to DOM layout
+            const x = (this.pos[0] + 15) * scale + offset[0];
+            const y = (this.pos[1] + 95) * scale + offset[1];
+            const w = (nodeWidth - 30) * scale;
+            const h = (nodeHeight - 115) * scale;
+
+            viewer.style.left = `${x}px`;
+            viewer.style.top = `${y}px`;
+            viewer.style.width = `${w}px`;
+            viewer.style.height = `${h}px`;
+
+            // Prevent rendering when zoomed out excessively to optimize drawing performance
+            if (scale < 0.25) {
+                viewer.style.display = "none";
+            } else {
+                viewer.style.display = "block";
+            }
         };
-        
-        this.position3DViewer();
-    };
 
-    NodeSceneCombiner.prototype.position3DViewer = function() {
-        const viewerId = `viewer-${this.id}`;
-        const viewer = document.getElementById(viewerId);
-        if (!viewer) return;
-        
-        const scale = canvas.ds.scale;
-        const offset = canvas.ds.offset;
-        
-        const nodeWidth = this.size[0];
-        const nodeHeight = this.size[1];
-        
-        // Calculate screen bounding boxes mapping LiteGraph coords to DOM layout
-        const x = (this.pos[0] + 15) * scale + offset[0];
-        const y = (this.pos[1] + 95) * scale + offset[1];
-        const w = (nodeWidth - 30) * scale;
-        const h = (nodeHeight - 115) * scale;
-        
-        viewer.style.left = `${x}px`;
-        viewer.style.top = `${y}px`;
-        viewer.style.width = `${w}px`;
-        viewer.style.height = `${h}px`;
-        
-        // Prevent rendering when zoomed out excessively to optimize drawing performance
-        if (scale < 0.25) {
-            viewer.style.display = "none";
-        } else {
-            viewer.style.display = "block";
-        }
-    };
-    
-    // Auto align overlays when zooming or dragging canvas
-    const originalDraw = LGraphCanvas.prototype.draw;
-    LGraphCanvas.prototype.draw = function() {
-        originalDraw.apply(this, arguments);
-        
-        // Căn chỉnh vị trí 3D Viewer
-        const combiners = graph.findNodesByType("datn/scene_combiner");
-        if (combiners && combiners.length > 0) {
-            combiners.forEach(n => n.position3DViewer());
-        }
-        
-        // Căn chỉnh vị trí Textarea nhập Prompt
-        const prompts = graph.findNodesByType("datn/input_prompt");
-        if (prompts && prompts.length > 0) {
-            prompts.forEach(n => n.updateTextarea());
-        }
-    };
-    
-    NodeSceneCombiner.prototype.onRemoved = function() {
-        const viewerId = `viewer-${this.id}`;
-        const viewer = document.getElementById(viewerId);
-        if (viewer) viewer.remove();
-    };
+        // Auto align overlays when zooming or dragging canvas
+        const originalDraw = LGraphCanvas.prototype.draw;
+        LGraphCanvas.prototype.draw = function () {
+            originalDraw.apply(this, arguments);
 
-    LiteGraph.registerNodeType("datn/scene_combiner", NodeSceneCombiner);
+            // Căn chỉnh vị trí 3D Viewer
+            const combiners = graph.findNodesByType("datn/scene_combiner");
+            if (combiners && combiners.length > 0) {
+                combiners.forEach(n => n.position3DViewer());
+            }
 
-    // =========================================================================
-    // 3. GRAPH SETUP & DEFAULT TEMPLATE
-    // =========================================================================
-    function setupDefaultGraph() {
-        graph.clear();
-        
-        // Clean waterfall layout — minimizes line crossings
-        //
-        //  [Prompt] ──┬──▶ [SceneGraph] ──▶ [Layout] ──┬──▶ [SDXL]
-        //             │                                 │      │
-        //             └─────────────────────────────────▶│──▶ [SAM2] ──▶ [Trellis] ──▶ [Combiner]
-        //                                               └────────────────────────────────┘
-        
-        const nodePrompt = LiteGraph.createNode("datn/input_prompt");
-        nodePrompt.pos = [60, 200];
-        graph.add(nodePrompt);
-        
-        const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
-        nodeSceneGraph.pos = [500, 80];
-        graph.add(nodeSceneGraph);
-        
-        const nodeLayout = LiteGraph.createNode("datn/layout_2d");
-        nodeLayout.pos = [940, 80];
-        graph.add(nodeLayout);
-        
-        const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
-        nodeSDXL.pos = [1420, 80];
-        graph.add(nodeSDXL);
-        
-        // SAM2 directly below SDXL for clean vertical drop
-        const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
-        nodeSAM2.pos = [1420, 500];
-        graph.add(nodeSAM2);
-        const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
-        nodeTrellis.pos = [1920, 520];
-        graph.add(nodeTrellis);
-        
-        const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
-        nodeCombiner.pos = [2400, 280];
-        graph.add(nodeCombiner);
-        
-        // Connect Node slots
-        nodePrompt.connect(0, nodeSceneGraph, 0);
-        nodePrompt.connect(0, nodeSDXL, 1);
-        
-        nodeSceneGraph.connect(0, nodeLayout, 0);
-        
-        nodeLayout.connect(0, nodeSDXL, 0);
-        nodeLayout.connect(0, nodeSAM2, 1);
-        nodeLayout.connect(0, nodeCombiner, 1);
-        
-        nodeSDXL.connect(0, nodeSAM2, 0);
-        
-        nodeSAM2.connect(0, nodeTrellis, 0);
-        
-        nodeTrellis.connect(0, nodeCombiner, 0);
-        
-        // Fit everything on screen
-        canvas.ds.offset = [30, 20];
-        canvas.ds.scale = 0.48;
-        
-        writeLog("Sơ đồ luồng pipeline mặc định đã được nạp thành công.", "info");
-    }
-
-    // Execute graph pipeline
-    document.getElementById("btn-run").onclick = () => {
-        if (!isConnected) {
-            writeLog("Vui lòng kết nối tới server GPU Kaggle bằng Ngrok trước!", "warning");
-            return;
-        }
-        writeLog("🏁 Bắt đầu thực thi pipeline (Queue Prompt)...", "system");
-        graph.runStep();
-    };
-
-    setupDefaultGraph();
-
-
-    // Kaggle Modal Events
-    document.addEventListener("DOMContentLoaded", () => {
-        const modal = document.getElementById("kaggle-modal");
-        const btnHelp = document.getElementById("btn-kaggle-help");
-        const btnClose = document.getElementById("close-modal");
-        const btnCopy = document.getElementById("btn-copy-compile");
-
-        if (btnHelp) btnHelp.onclick = () => { modal.style.display = "flex"; };
-        if (btnClose) btnClose.onclick = () => { modal.style.display = "none"; };
-        window.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
-        if (btnCopy) btnCopy.onclick = () => {
-            const codeText = document.getElementById("code-compile").innerText;
-            navigator.clipboard.writeText(codeText).then(() => {
-                btnCopy.innerText = "Copied!";
-                setTimeout(() => { btnCopy.innerText = "Copy Code"; }, 2000);
-            }).catch(err => console.error("Copy error:", err));
+            // Căn chỉnh vị trí Textarea nhập Prompt
+            const prompts = graph.findNodesByType("datn/input_prompt");
+            if (prompts && prompts.length > 0) {
+                prompts.forEach(n => n.updateTextarea());
+            }
         };
-    });
-</script>
 
-<!-- Kaggle Help Modal Overlay -->
-<div id="kaggle-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); z-index: 99999; align-items: center; justify-content: center;">
-    <div style="background: rgba(30, 30, 35, 0.75); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; width: 720px; max-height: 85vh; padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.6); position: relative; font-family: 'Outfit', sans-serif; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
-        <span id="close-modal" style="position: absolute; top: 16px; right: 20px; font-size: 24px; color: var(--text-muted); cursor: pointer; transition: color 0.2s;">&times;</span>
-        <h2 style="margin-top: 0; font-size: 18px; color: white; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px; font-weight: 600;">📖 Hướng dẫn & Code chạy trên Kaggle</h2>
-        
-        <div style="overflow-y: auto; flex: 1; padding-right: 8px;">
-            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6;">
-                Bạn có thể chạy dự án trực tiếp trên Kaggle GPU bằng cách sử dụng file Notebook <strong>run_on_kaggle.ipynb</strong> đi kèm trong thư mục. Hoặc sao chép nhanh ô code sửa lỗi biên dịch dưới đây để chạy thủ công:
-            </p>
-            
-            <h4 style="color: var(--accent-primary); margin: 16px 0 8px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">Ô cài đặt môi trường & Biên dịch C++ Extension (Sửa lỗi nvdiffrast)</h4>
-            <div style="position: relative; margin-bottom: 20px;">
-                <pre><code id="code-compile" style="font-family: 'Fira Code', monospace; font-size: 11px; color: #a7f3d0; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; display: block; overflow-x: auto; white-space: pre; max-height: 280px; text-align: left;">import subprocess, os, shutil
+        NodeSceneCombiner.prototype.onRemoved = function () {
+            const viewerId = `viewer-${this.id}`;
+            const viewer = document.getElementById(viewerId);
+            if (viewer) viewer.remove();
+        };
+
+        LiteGraph.registerNodeType("datn/scene_combiner", NodeSceneCombiner);
+
+        // =========================================================================
+        // 3. GRAPH SETUP & DEFAULT TEMPLATE
+        // =========================================================================
+        function setupDefaultGraph() {
+            graph.clear();
+
+            // Clean waterfall layout — minimizes line crossings
+            //
+            //  [Prompt] ──┬──▶ [SceneGraph] ──▶ [Layout] ──┬──▶ [SDXL]
+            //             │                                 │      │
+            //             └─────────────────────────────────▶│──▶ [SAM2] ──▶ [Trellis] ──▶ [Combiner]
+            //                                               └────────────────────────────────┘
+
+            const nodePrompt = LiteGraph.createNode("datn/input_prompt");
+            nodePrompt.pos = [60, 200];
+            graph.add(nodePrompt);
+
+            const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
+            nodeSceneGraph.pos = [500, 80];
+            graph.add(nodeSceneGraph);
+
+            const nodeLayout = LiteGraph.createNode("datn/layout_2d");
+            nodeLayout.pos = [940, 80];
+            graph.add(nodeLayout);
+
+            const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
+            nodeSDXL.pos = [1420, 80];
+            graph.add(nodeSDXL);
+
+            // SAM2 directly below SDXL for clean vertical drop
+            const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
+            nodeSAM2.pos = [1420, 500];
+            graph.add(nodeSAM2);
+            const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
+            nodeTrellis.pos = [1920, 520];
+            graph.add(nodeTrellis);
+
+            const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
+            nodeCombiner.pos = [2400, 280];
+            graph.add(nodeCombiner);
+
+            // Connect Node slots
+            nodePrompt.connect(0, nodeSceneGraph, 0);
+            nodePrompt.connect(0, nodeSDXL, 1);
+
+            nodeSceneGraph.connect(0, nodeLayout, 0);
+
+            nodeLayout.connect(0, nodeSDXL, 0);
+            nodeLayout.connect(0, nodeSAM2, 1);
+            nodeLayout.connect(0, nodeCombiner, 1);
+
+            nodeSDXL.connect(0, nodeSAM2, 0);
+
+            nodeSAM2.connect(0, nodeTrellis, 0);
+
+            nodeTrellis.connect(0, nodeCombiner, 0);
+
+            // Fit everything on screen
+            canvas.ds.offset = [30, 20];
+            canvas.ds.scale = 0.48;
+
+            writeLog("Sơ đồ luồng pipeline mặc định đã được nạp thành công.", "info");
+        }
+
+        // Execute graph pipeline
+        document.getElementById("btn-run").onclick = () => {
+            if (!isConnected) {
+                writeLog("Vui lòng kết nối tới server GPU Kaggle bằng Ngrok trước!", "warning");
+                return;
+            }
+            writeLog("🏁 Bắt đầu thực thi pipeline (Queue Prompt)...", "system");
+            graph.runStep();
+        };
+
+        setupDefaultGraph();
+
+
+        // Kaggle Modal Events
+        document.addEventListener("DOMContentLoaded", () => {
+            const modal = document.getElementById("kaggle-modal");
+            const btnHelp = document.getElementById("btn-kaggle-help");
+            const btnClose = document.getElementById("close-modal");
+            const btnCopy = document.getElementById("btn-copy-compile");
+
+            if (btnHelp) btnHelp.onclick = () => { modal.style.display = "flex"; };
+            if (btnClose) btnClose.onclick = () => { modal.style.display = "none"; };
+            window.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
+            if (btnCopy) btnCopy.onclick = () => {
+                const codeText = document.getElementById("code-compile").innerText;
+                navigator.clipboard.writeText(codeText).then(() => {
+                    btnCopy.innerText = "Copied!";
+                    setTimeout(() => { btnCopy.innerText = "Copy Code"; }, 2000);
+                }).catch(err => console.error("Copy error:", err));
+            };
+        });
+    </script>
+
+    <!-- Kaggle Help Modal Overlay -->
+    <div id="kaggle-modal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); z-index: 99999; align-items: center; justify-content: center;">
+        <div
+            style="background: rgba(30, 30, 35, 0.75); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; width: 720px; max-height: 85vh; padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.6); position: relative; font-family: 'Outfit', sans-serif; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
+            <span id="close-modal"
+                style="position: absolute; top: 16px; right: 20px; font-size: 24px; color: var(--text-muted); cursor: pointer; transition: color 0.2s;">&times;</span>
+            <h2
+                style="margin-top: 0; font-size: 18px; color: white; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px; font-weight: 600;">
+                📖 Hướng dẫn & Code chạy trên Kaggle</h2>
+
+            <div style="overflow-y: auto; flex: 1; padding-right: 8px;">
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6;">
+                    Bạn có thể chạy dự án trực tiếp trên Kaggle GPU bằng cách sử dụng file Notebook
+                    <strong>run_on_kaggle.ipynb</strong> đi kèm trong thư mục. Hoặc sao chép nhanh ô code sửa lỗi biên
+                    dịch dưới đây để chạy thủ công:
+                </p>
+
+                <h4
+                    style="color: var(--accent-primary); margin: 16px 0 8px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">
+                    Ô cài đặt môi trường & Biên dịch C++ Extension (Sửa lỗi nvdiffrast)</h4>
+                <div style="position: relative; margin-bottom: 20px;">
+                    <pre><code id="code-compile" style="font-family: 'Fira Code', monospace; font-size: 11px; color: #a7f3d0; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; display: block; overflow-x: auto; white-space: pre; max-height: 280px; text-align: left;">import subprocess, os, shutil
 
 VENV = "/opt/venv310"
 PIP  = f"{VENV}/bin/pip"
@@ -1386,10 +1400,13 @@ if res.returncode == 0:
     print("✅ Cài đặt nvdiffrast THÀNH CÔNG!")
 else:
     print("❌ Biên dịch lỗi. STDERR:", res.stderr[-500:])</code></pre>
-                <button class="viewer-btn" id="btn-copy-compile" style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; color: white;">Copy Code</button>
+                    <button class="viewer-btn" id="btn-copy-compile"
+                        style="position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; color: white;">Copy
+                        Code</button>
+                </div>
             </div>
         </div>
     </div>
-</div>
 </body>
+
 </html>
