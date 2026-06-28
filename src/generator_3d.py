@@ -14,7 +14,10 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
         json.dump(objects_dict, f)
 
     script = f"""
-import sys, os, json, torch
+import sys
+sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
+
+import os, json, torch
 sys.modules['triton'] = None
 
 os.environ["SPCONV_ALGO"] = "native"

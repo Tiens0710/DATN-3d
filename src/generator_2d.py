@@ -9,7 +9,10 @@ def generate_2d_image(prompt: str, lora_scale: float, output_path: str) -> bool:
     """
     safe_prompt = prompt.replace('\\', '\\\\').replace('"', '\\"')
     script = f"""
-import sys, os, torch
+import sys
+sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
+
+import os, torch
 sys.modules['triton'] = None  # Chặn lỗi bitsandbytes
 
 from diffusers import AutoPipelineForText2Image

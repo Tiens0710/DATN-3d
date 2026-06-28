@@ -16,10 +16,11 @@ def run_grounded_sam2(input_image_path: str, layout: dict, crops_dir: str) -> li
         labels_list = ["chair", "table"]
 
     script = f"""
-import sys, json, os, torch, numpy as np
-sys.modules['triton'] = None
-
+import sys
 sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
+
+import json, os, torch, numpy as np
+sys.modules['triton'] = None
 from groundingdino.util.inference import load_model, load_image, predict
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor

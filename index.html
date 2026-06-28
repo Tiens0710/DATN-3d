@@ -1421,12 +1421,21 @@
             writeLog("Sơ đồ luồng pipeline mặc định đã được nạp thành công.", "info");
         }
 
-        // Execute graph pipeline sequentially (with active node highlighting)
+        let isExecuting = false;
         document.getElementById("btn-run").onclick = async () => {
+            if (isExecuting) return;
             if (!isConnected) {
                 writeLog("Vui lòng kết nối tới server GPU Kaggle bằng Ngrok trước!", "warning");
                 return;
             }
+            
+            isExecuting = true;
+            const btnRun = document.getElementById("btn-run");
+            const originalHTML = btnRun.innerHTML;
+            btnRun.disabled = true;
+            btnRun.style.opacity = "0.6";
+            btnRun.style.cursor = "not-allowed";
+            btnRun.innerHTML = `<span>⏳ Đang xử lý...</span>`;
             
             writeLog("🏁 Bắt đầu thực thi toàn bộ quy trình (Queue Prompt)...", "system");
             
@@ -1435,7 +1444,7 @@
             const sam2Node = graph.findNodesByType("datn/grounded_sam2")[0];
             const trellisNode = graph.findNodesByType("datn/trellis_3d")[0];
             const combinerNode = graph.findNodesByType("datn/scene_combiner")[0];
-
+ 
             const runNode = async (node, nodeName) => {
                 if (!node) return;
                 node.boxcolor = "#00ff00"; // Highlight executing node with green border
@@ -1451,7 +1460,7 @@
                     throw err;
                 }
             };
-
+ 
             try {
                 if (promptNode) {
                     await runNode(promptNode, "Input Text Prompt");
@@ -1471,6 +1480,12 @@
                 writeLog("🎉 Thực thi toàn bộ quy trình pipeline THÀNH CÔNG!", "success");
             } catch (err) {
                 writeLog("❌ Quy trình dừng lại do lỗi: " + err.message, "error");
+            } finally {
+                isExecuting = false;
+                btnRun.disabled = false;
+                btnRun.style.opacity = "1";
+                btnRun.style.cursor = "pointer";
+                btnRun.innerHTML = originalHTML;
             }
         };
 
