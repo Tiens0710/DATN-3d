@@ -913,10 +913,18 @@
                 return;
             }
 
-            if (!this._imageObj || this._imageObj.src !== this.properties.imageUrl) {
+            if (!this._imageObj || this._imageObj._rawUrl !== this.properties.imageUrl) {
                 this._imageObj = new Image();
-                this._imageObj.src = this.properties.imageUrl;
-                this._imageObj.onload = () => this.setDirtyCanvas(true, true);
+                this._imageObj._rawUrl = this.properties.imageUrl;
+                fetch(this.properties.imageUrl, {
+                    headers: { "ngrok-skip-browser-warning": "69420" }
+                })
+                .then(res => res.blob())
+                .then(blob => {
+                    this._imageObj.src = URL.createObjectURL(blob);
+                    this._imageObj.onload = () => this.setDirtyCanvas(true, true);
+                })
+                .catch(e => console.error("Error loading SDXL preview:", e));
             }
 
             try {
@@ -1013,10 +1021,23 @@
             }
 
             // 1. Draw input image (cached)
-            if (!this._inputImageObj || this._inputImageObj.src !== imageUrl) {
+            let previewUrl = imageUrl;
+            if (this.properties.crops && this.properties.crops.length > 0) {
+                previewUrl = `${backendUrl}/crops/sam2_visual.png`;
+            }
+
+            if (!this._inputImageObj || this._inputImageObj._rawUrl !== previewUrl) {
                 this._inputImageObj = new Image();
-                this._inputImageObj.src = imageUrl;
-                this._inputImageObj.onload = () => this.setDirtyCanvas(true, true);
+                this._inputImageObj._rawUrl = previewUrl;
+                fetch(previewUrl, {
+                    headers: { "ngrok-skip-browser-warning": "69420" }
+                })
+                .then(res => res.blob())
+                .then(blob => {
+                    this._inputImageObj.src = URL.createObjectURL(blob);
+                    this._inputImageObj.onload = () => this.setDirtyCanvas(true, true);
+                })
+                .catch(e => console.error("Error loading SAM2 input preview:", e));
             }
 
             try {
@@ -1026,38 +1047,6 @@
                 ctx.lineWidth = 1;
                 ctx.strokeRect(15, 75, 200, 200);
             } catch (e) {}
-
-            // 2. Draw GroundingDINO bounding boxes overlay on top of 2D image
-            if (this.properties.crops && this.properties.crops.length > 0 && this._inputImageObj.naturalWidth) {
-                const w = this._inputImageObj.naturalWidth;
-                const h = this._inputImageObj.naturalHeight;
-                const scaleX = 200 / w;
-                const scaleY = 200 / h;
-                const colors = ["#fb7185", "#34d399", "#38bdf8", "#facc15", "#f472b6"];
-
-                ctx.save();
-                this.properties.crops.forEach((crop, i) => {
-                    const box = crop.box;
-                    if (!box) return;
-                    const bx = 15 + (box[0] * scaleX);
-                    const by = 75 + (box[1] * scaleY);
-                    const bw = (box[2] - box[0]) * scaleX;
-                    const bh = (box[3] - box[1]) * scaleY;
-
-                    const color = colors[i % colors.length];
-                    ctx.strokeStyle = color;
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(bx, by, bw, bh);
-
-                    ctx.fillStyle = color + "1a"; // 10% opacity fill
-                    ctx.fillRect(bx, by, bw, bh);
-
-                    ctx.fillStyle = color;
-                    ctx.font = "bold 9px 'Outfit'";
-                    ctx.fillText(crop.label, bx + 2, by + 10);
-                });
-                ctx.restore();
-            }
 
             // 3. List detected objects on the right panel
             ctx.fillStyle = "#ffffff";
@@ -1096,9 +1085,17 @@
                     this._cropImages = [];
                     this.properties.crops.forEach((crop) => {
                         const img = new Image();
-                        img.src = `${backendUrl}${crop.crop_url}`;
-                        img.onload = () => this.setDirtyCanvas(true, true);
+                        img._rawUrl = `${backendUrl}${crop.crop_url}`;
                         this._cropImages.push(img);
+                        fetch(img._rawUrl, {
+                            headers: { "ngrok-skip-browser-warning": "69420" }
+                        })
+                        .then(res => res.blob())
+                        .then(blob => {
+                            img.src = URL.createObjectURL(blob);
+                            img.onload = () => this.setDirtyCanvas(true, true);
+                        })
+                        .catch(e => console.error("Error loading crop image:", e));
                     });
                 }
 
@@ -1289,38 +1286,59 @@
                 document.getElementById("canvas-container").appendChild(viewer);
             }
 
-            // Google model-viewer template with camera controls & rotation
-            viewer.innerHTML = `
-            <model-viewer 
-                src="${this.properties.sceneUrl}" 
-                camera-controls 
-                auto-rotate 
-                alt="DATN Interactive 3D Scene Combined Output"
-                shadow-intensity="1.5"
-                exposure="1.0"
-                style="background-color: #0b0b0e;">
-                <div class="viewer-controls">
-                    <button class="viewer-btn" id="btn-spin-${this.id}">Stop Spin</button>
-                    <button class="viewer-btn" id="btn-reset-${this.id}">Reset View</button>
-                </div>
-            </model-viewer>
-        `;
+            if (this._lastGLBUrl !== this.properties.sceneUrl) {
+                this._lastGLBUrl = this.properties.sceneUrl;
+                
+                viewer.innerHTML = `<div style="color: #a1a1aa; font-family: 'Outfit'; display: flex; align-items: center; justify-content: center; height: 100%; background: #0b0b0e;">⏳ Đang nạp mô hình 3D...</div>`;
+                
+                fetch(this.properties.sceneUrl, {
+                    headers: { "ngrok-skip-browser-warning": "69420" }
+                })
+                .then(res => {
+                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                    return res.blob();
+                })
+                .then(blob => {
+                    if (this._objectUrl) {
+                        URL.revokeObjectURL(this._objectUrl);
+                    }
+                    this._objectUrl = URL.createObjectURL(blob);
+                    
+                    viewer.innerHTML = `
+                    <model-viewer 
+                        src="${this._objectUrl}" 
+                        camera-controls 
+                        auto-rotate 
+                        alt="DATN Interactive 3D Scene Combined Output"
+                        shadow-intensity="1.5"
+                        exposure="1.0"
+                        style="background-color: #0b0b0e; width: 100%; height: 100%;">
+                        <div class="viewer-controls">
+                            <button class="viewer-btn" id="btn-spin-${this.id}">Stop Spin</button>
+                            <button class="viewer-btn" id="btn-reset-${this.id}">Reset View</button>
+                        </div>
+                    </model-viewer>
+                    `;
 
-            const modelViewer = viewer.querySelector("model-viewer");
+                    const modelViewer = viewer.querySelector("model-viewer");
 
-            // Add interactive controls event handlers
-            viewer.querySelector(`#btn-spin-${this.id}`).onclick = (e) => {
-                e.stopPropagation();
-                modelViewer.autoRotate = !modelViewer.autoRotate;
-                e.target.innerText = modelViewer.autoRotate ? "Stop Spin" : "Auto Spin";
-            };
+                    viewer.querySelector(`#btn-spin-${this.id}`).onclick = (e) => {
+                        e.stopPropagation();
+                        modelViewer.autoRotate = !modelViewer.autoRotate;
+                        e.target.innerText = modelViewer.autoRotate ? "Stop Spin" : "Auto Spin";
+                    };
 
-            viewer.querySelector(`#btn-reset-${this.id}`).onclick = (e) => {
-                e.stopPropagation();
-                modelViewer.cameraOrbit = "0deg 75deg auto";
-                modelViewer.fieldOfView = "auto";
-            };
-
+                    viewer.querySelector(`#btn-reset-${this.id}`).onclick = (e) => {
+                        e.stopPropagation();
+                        modelViewer.cameraOrbit = "0deg 75deg auto";
+                        modelViewer.fieldOfView = "auto";
+                    };
+                })
+                .catch(err => {
+                    writeLog(`❌ Lỗi nạp mô hình 3D: ${err.message}`, "error");
+                    viewer.innerHTML = `<div style="color: #f44336; font-family: 'Outfit'; display: flex; align-items: center; justify-content: center; height: 100%; background: #0b0b0e; padding: 10px; text-align: center;">❌ Lỗi nạp mô hình 3D: ${err.message}</div>`;
+                });
+            }
             this.position3DViewer();
         };
 

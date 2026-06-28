@@ -50,6 +50,16 @@ img_rgb = np.array(Image.open("{input_image_path}").convert("RGB"))
 predictor.set_image(img_rgb)
 H, W, _ = img_rgb.shape
 
+# Tạo ảnh lưu trữ mặt nạ trực quan hóa (visual mask overlay)
+visual_img = img_rgb.copy()
+colors = [
+    [251, 113, 133],  # #fb7185 (Rose)
+    [52, 211, 153],   # #34d399 (Emerald)
+    [56, 189, 248],   # #38bdf8 (Sky)
+    [250, 204, 21],   # #facc15 (Amber)
+    [244, 114, 182]   # #f472b6 (Pink)
+]
+
 results = []
 for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     cx, cy, bw, bh = box.tolist()
@@ -64,6 +74,12 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     )
     
     mask = masks[0]
+    
+    # Vẽ đè mặt nạ lên visual_img (độ mờ 40%)
+    color = colors[i % len(colors)]
+    mask_pixels = (mask > 0)
+    visual_img[mask_pixels] = (visual_img[mask_pixels] * 0.6 + np.array(color) * 0.4).astype(np.uint8)
+    
     img_rgba = Image.fromarray(img_rgb).convert("RGBA")
     alpha = Image.fromarray((mask * 255).astype(np.uint8))
     img_rgba.putalpha(alpha)
@@ -75,20 +91,23 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     cy2 = min(H, y2 + PAD)
     crop = img_rgba.crop((cx1, cy1, cx2, cy2))
     
-    name = f"object_{{i+1}}"
-    crop_path = f"{crops_dir}/{{name}}.png"
+    name = f"object_{i+1}"
+    crop_path = f"{crops_dir}/{name}.png"
     crop.save(crop_path)
     
-    results.append({{
+    results.append({
         "name": name,
         "label": phrase,
         "box": [x1, y1, x2, y2],
         "final_box": [cx1, cy1, cx2, cy2],
         "confidence": float(logit),
         "mask_score": float(scores[0]),
-        "crop_url": f"/crops/{{name}}.png",
+        "crop_url": f"/crops/{name}.png",
         "crop_path": crop_path
-    }})
+    })
+
+# Lưu ảnh trực quan hóa mặt nạ SAM2
+Image.fromarray(visual_img).save(f"{crops_dir}/sam2_visual.png")
 
 with open("{crops_dir}/sam2_results.json", "w") as f:
     json.dump(results, f, indent=2)
