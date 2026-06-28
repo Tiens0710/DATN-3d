@@ -17,8 +17,14 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
 import sys, os, json, torch
 sys.modules['triton'] = None
 
-if not os.path.exists("/kaggle/working/TRELLIS"):
+if not os.path.exists("/kaggle/working/TRELLIS/trellis"):
     print("Auto-cloning TRELLIS repository...")
+    import shutil
+    if os.path.exists("/kaggle/working/TRELLIS"):
+        try:
+            shutil.rmtree("/kaggle/working/TRELLIS")
+        except Exception as e:
+            print("Warning: could not clean TRELLIS folder:", e)
     os.system("GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/trellis-community/TRELLIS /kaggle/working/TRELLIS")
 
 sys.path.insert(0, "/kaggle/working/TRELLIS")
