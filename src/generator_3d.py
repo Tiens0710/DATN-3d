@@ -19,13 +19,21 @@ sys.modules['triton'] = None
 
 if not os.path.exists("/kaggle/working/TRELLIS/trellis"):
     print("Auto-cloning TRELLIS repository...")
-    import shutil
+    import shutil, subprocess
     if os.path.exists("/kaggle/working/TRELLIS"):
         try:
             shutil.rmtree("/kaggle/working/TRELLIS")
         except Exception as e:
             print("Warning: could not clean TRELLIS folder:", e)
-    os.system("GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/trellis-community/TRELLIS /kaggle/working/TRELLIS")
+    res_clone = subprocess.run(
+        "GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/trellis-community/TRELLIS /kaggle/working/TRELLIS",
+        shell=True, capture_output=True, text=True
+    )
+    if res_clone.returncode != 0:
+        print("Git clone failed!")
+        print("STDOUT:", res_clone.stdout)
+        print("STDERR:", res_clone.stderr)
+        raise RuntimeError(f"Git clone failed: {{res_clone.stderr}}")
 
 sys.path.insert(0, "/kaggle/working/TRELLIS")
 from trellis.pipelines import TrellisImageTo3DPipeline
@@ -63,7 +71,7 @@ for name, info in objects.items():
 """
     r = subprocess.run([PY_PATH, "-c", script], capture_output=True, text=True, timeout=1200)
     if r.returncode != 0:
-        raise RuntimeError(f"Lỗi chạy TRELLIS: {r.stderr}")
+        raise RuntimeError(f"Lỗi chạy TRELLIS: {r.stderr}\nLogs:\n{r.stdout}")
         
     models = []
     for crop in crops:
