@@ -20,6 +20,7 @@ plyfile==0.9
 utils3d
 pymeshfix
 pyvista
+igraph==0.11.8
 xatlas
 scipy
 
