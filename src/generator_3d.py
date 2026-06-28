@@ -17,6 +17,10 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
 import sys, os, json, torch
 sys.modules['triton'] = None
 
+if not os.path.exists("/kaggle/working/TRELLIS"):
+    print("Auto-cloning TRELLIS repository...")
+    os.system("GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/trellis-community/TRELLIS /kaggle/working/TRELLIS")
+
 sys.path.insert(0, "/kaggle/working/TRELLIS")
 from trellis.pipelines import TrellisImageTo3DPipeline
 from trellis.utils import postprocessing_utils
