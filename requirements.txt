@@ -1,6 +1,7 @@
 # Core AI & Deep Learning
 torch==2.1.0
 torchvision==0.16.0
+numpy==1.26.4
 xformers==0.0.22.post7
 spconv-cu121==2.3.8
 
@@ -17,7 +18,7 @@ spacy>=3.5.0
 # 3D Processing & Geometry
 trimesh==4.5.3
 plyfile==0.9
-utils3d
+git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
 pymeshfix
 pyvista
 igraph==0.11.8

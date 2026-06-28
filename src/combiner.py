@@ -11,6 +11,9 @@ def combine_scene_meshes(models: list, output_scene_path: str, scale_factor: flo
         json.dump(models, f)
 
     script = f"""
+import sys
+sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
+
 import json, trimesh, os
 import numpy as np
 
@@ -50,7 +53,8 @@ for m in models:
 scene.export("{output_scene_path}")
 print("✅ Ghép cảnh xong.")
 """
-    r = subprocess.run(["python", "-c", script], capture_output=True, text=True)
+    PY_PATH = "/opt/venv310/bin/python"
+    r = subprocess.run([PY_PATH, "-c", script], capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"Lỗi ghép cảnh trimesh: {r.stderr}")
     return os.path.exists(output_scene_path)
