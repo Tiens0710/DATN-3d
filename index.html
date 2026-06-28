@@ -13,18 +13,18 @@
     
     <style>
         :root {
-            --bg-dark: #1a1a2e;
-            --bg-panel: rgba(15, 15, 25, 0.85);
-            --bg-node: rgba(30, 30, 45, 0.92);
-            --border-glow: rgba(99, 102, 241, 0.15);
-            --border-hover: rgba(168, 85, 247, 0.4);
-            --accent-primary: #6366f1;
-            --accent-secondary: #a855f7;
-            --accent-cyan: #06b6d4;
-            --accent-green: #10b981;
-            --text-main: #f4f4f5;
-            --text-muted: #a1a1aa;
-            --glass-blur: blur(16px);
+            --bg-dark: #202020;
+            --bg-panel: rgba(30, 30, 30, 0.92);
+            --bg-node: #353535;
+            --border-glow: rgba(255, 255, 255, 0.06);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            --accent-primary: #4e9ae6;
+            --accent-secondary: #7c4dff;
+            --accent-cyan: #00bcd4;
+            --accent-green: #4caf50;
+            --text-main: #e0e0e0;
+            --text-muted: #999;
+            --glass-blur: blur(12px);
         }
 
         body, html {
@@ -47,18 +47,18 @@
             position: relative;
         }
 
-        /* Premium Header Styling */
+        /* ComfyUI-style Header */
         header {
-            height: 56px;
-            background: linear-gradient(180deg, #1e1e32 0%, #16162a 100%);
-            border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+            height: 48px;
+            background: #2b2b2b;
+            border-bottom: 1px solid #3a3a3a;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 24px;
+            padding: 0 20px;
             box-sizing: border-box;
             z-index: 100;
-            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
         }
 
         .logo-section {
@@ -68,14 +68,11 @@
 
         .logo-section h1 {
             margin: 0;
-            font-size: 18px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            background: linear-gradient(90deg, #818cf8, #a78bfa, #f472b6);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            color: #e0e0e0;
             text-transform: uppercase;
-            text-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
         }
 
         .logo-section span {
@@ -147,46 +144,41 @@
         }
 
         #btn-connect {
-            background: rgba(39, 39, 42, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: #444;
+            border: 1px solid #555;
         }
 
         #btn-connect:hover {
-            background: rgba(63, 63, 70, 0.9);
-            border-color: rgba(255, 255, 255, 0.2);
-            transform: translateY(-1px);
+            background: #555;
+            border-color: #777;
         }
 
         #btn-run {
-            background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: #4e9ae6;
+            border: 1px solid #5aa5f0;
         }
 
         #btn-run:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 24px rgba(99, 102, 241, 0.6);
+            background: #5aa5f0;
             filter: brightness(1.1);
         }
 
         #btn-run:active {
-            transform: translateY(0);
+            filter: brightness(0.95);
         }
 
-        /* Status Indicator Glow */
+        /* Status Indicator */
         .status-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background-color: #ef4444;
+            background-color: #e53935;
             display: inline-block;
-            transition: all 0.5s ease;
-            box-shadow: 0 0 8px #ef4444;
+            transition: all 0.3s ease;
         }
 
         .status-dot.connected {
-            background-color: var(--accent-green);
-            box-shadow: 0 0 12px var(--accent-green);
+            background-color: #4caf50;
         }
 
         /* Canvas Layout Editor */
@@ -194,35 +186,32 @@
             flex: 1;
             position: relative;
             width: 100%;
-            height: calc(100% - 56px);
+            height: calc(100% - 48px);
         }
 
         #graphcanvas {
             width: 100%;
             height: 100%;
-            background-color: #161625;
+            background-color: #202020;
             display: block;
         }
 
-        /* Floating Console/Terminal Logs Panel */
+        /* ComfyUI-style Console Panel */
         #log-panel {
             position: absolute;
-            bottom: 25px;
-            right: 25px;
-            width: 420px;
-            height: 240px;
-            background: var(--bg-panel);
-            backdrop-filter: var(--glass-blur);
-            -webkit-backdrop-filter: var(--glass-blur);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 12px;
-            padding: 16px;
+            bottom: 16px;
+            right: 16px;
+            width: 400px;
+            height: 220px;
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 12px;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
             pointer-events: auto;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.6), 0 0 20px var(--border-glow);
-            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
             z-index: 10;
         }
 
@@ -247,13 +236,12 @@
             overflow-y: auto;
             font-family: 'Fira Code', monospace;
             font-size: 11px;
-            color: #d1d5db;
+            color: #ccc;
             line-height: 1.6;
-            background-color: rgba(0, 0, 0, 0.45);
-            border: 1px solid rgba(255, 255, 255, 0.04);
-            border-radius: 6px;
-            padding: 10px;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 8px;
         }
 
         #btn-clear-logs {
@@ -287,11 +275,11 @@
             --poster-color: transparent;
         }
 
-        /* ComfyUI-style visible dot grid */
+        /* ComfyUI-style subtle dot grid */
         .litegraph .lgraphcanvas {
             background-image: 
-                radial-gradient(circle, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
-            background-size: 20px 20px;
+                radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 16px 16px;
         }
 
         /* Custom model-viewer controls overlay */
@@ -324,24 +312,22 @@
 
         .node-textarea {
             position: absolute;
-            background: rgba(10, 10, 15, 0.9);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #f4f4f5;
-            border-radius: 8px;
-            padding: 10px;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            border-radius: 4px;
+            padding: 8px;
             font-family: 'Outfit', sans-serif;
             font-size: 12px;
             resize: none;
             outline: none;
             box-sizing: border-box;
-            transition: border-color 0.2s, box-shadow 0.2s;
+            transition: border-color 0.2s;
             z-index: 5;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.6);
         }
         
         .node-textarea:focus {
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 10px rgba(99, 102, 241, 0.35), inset 0 2px 4px rgba(0,0,0,0.6);
+            border-color: #4e9ae6;
         }
     </style>
 </head>
@@ -441,39 +427,39 @@
     canvas.background_image = null; // Background handled by CSS grid pattern
 
     // =========================================================================
-    // COMFYUI-STYLE THEME CONFIGURATION
+    // COMFYUI-AUTHENTIC THEME
     // =========================================================================
-    LiteGraph.NODE_DEFAULT_BGCOLOR = "#1e1e2eee";
-    LiteGraph.NODE_DEFAULT_BOXCOLOR = "#444";
-    LiteGraph.NODE_TEXT_COLOR = "#e8e8f0";
-    LiteGraph.NODE_TITLE_COLOR = "#ffffff";
-    LiteGraph.NODE_SELECTED_TITLE_COLOR = "#ffffff";
+    LiteGraph.NODE_DEFAULT_BGCOLOR = "#353535";
+    LiteGraph.NODE_DEFAULT_BOXCOLOR = "#666";
+    LiteGraph.NODE_TEXT_COLOR = "#ddd";
+    LiteGraph.NODE_TITLE_COLOR = "#fff";
+    LiteGraph.NODE_SELECTED_TITLE_COLOR = "#fff";
     LiteGraph.NODE_DEFAULT_SHAPE = "box";
-    LiteGraph.LINK_COLOR = "#6366f1";
-    LiteGraph.CONNECTING_LINK_COLOR = "#10b981";
-    LiteGraph.DEFAULT_LINK_TYPE_WIDTH = 4;
-    LiteGraph.CANVAS_GRID_SIZE = 20;
-    LiteGraph.NODE_TITLE_HEIGHT = 26;
-    LiteGraph.NODE_SLOT_HEIGHT = 22;
+    LiteGraph.LINK_COLOR = "#9A9";
+    LiteGraph.CONNECTING_LINK_COLOR = "#AFA";
+    LiteGraph.DEFAULT_LINK_TYPE_WIDTH = 3;
+    LiteGraph.CANVAS_GRID_SIZE = 16;
+    LiteGraph.NODE_TITLE_HEIGHT = 30;
+    LiteGraph.NODE_SLOT_HEIGHT = 20;
     
-    // ComfyUI-style font sizing
-    LiteGraph.NODE_TITLE_TEXT_Y = 18;
-    LiteGraph.NODE_TEXT_SIZE = 13;
-    LiteGraph.NODE_SUBTEXT_SIZE = 11;
+    // ComfyUI fonts
+    LiteGraph.NODE_TITLE_TEXT_Y = 20;
+    LiteGraph.NODE_TEXT_SIZE = 14;
+    LiteGraph.NODE_SUBTEXT_SIZE = 12;
     LiteGraph.NODE_TITLE_FONT = "bold 14px 'Outfit'";
     LiteGraph.NODE_LABEL_FONT = "normal 12px 'Outfit'";
 
-    // Colored wires by data type — soft pastel tones to reduce visual noise
+    // ComfyUI wire colors by slot type
     LGraphCanvas.link_type_colors = {
-        "string": "#88c999",
-        "object": "#7eaadb",
-        "number": "#d4a657",
-        "boolean": "#d47ea0"
+        "string": "#6A6",
+        "object": "#5AF",
+        "number": "#DA5",
+        "boolean": "#F5A"
     };
     
-    // Smooth thin links like modern ComfyUI
+    // ComfyUI-style smooth curved links
     canvas.render_connections_border = false;
-    canvas.connections_width = 2.5;
+    canvas.connections_width = 3;
     canvas.render_curved_connections = true;
     canvas.render_connection_arrows = false;
     canvas.highquality_render = true;
@@ -502,11 +488,11 @@
             prompt: "a wooden dining chair next to a small wooden side table, product photography, plain dark background, studio lighting"
         };
         this.size = [340, 150];
-        this.color = "#232338";
-        this.bgcolor = "#1a1a2e";
+        this.color = "#5b7a3a";
+        this.bgcolor = "#353535";
     }
     NodePrompt.title = "✏️ Input Text Prompt";
-    NodePrompt.title_color = "#5b67ca";
+    NodePrompt.title_color = "#3b7a47";
     
     NodePrompt.prototype.onExecute = function() {
         const textarea = document.getElementById(`prompt-input-${this.id}`);
@@ -570,11 +556,11 @@
         this.addOutput("scene_graph", "object");
         this.properties = { graphData: null };
         this.size = [340, 200];
-        this.color = "#233828";
-        this.bgcolor = "#1a2e1e";
+        this.color = "#2e7d32";
+        this.bgcolor = "#353535";
     }
     NodeSceneGraph.title = "🧠 Scene Graph Parser";
-    NodeSceneGraph.title_color = "#3d7a47";
+    NodeSceneGraph.title_color = "#2e7d32";
     NodeSceneGraph.prototype.onExecute = async function() {
         const inputPrompt = this.getInputData(0);
         if (!inputPrompt || !isConnected) return;
@@ -647,11 +633,11 @@
         this.addOutput("layout", "object");
         this.properties = { layoutData: null };
         this.size = [380, 260];
-        this.color = "#2a2838";
-        this.bgcolor = "#1e1a2e";
+        this.color = "#6a4dc7";
+        this.bgcolor = "#353535";
     }
     NodeLayout2D.title = "📐 2D Layout Generator";
-    NodeLayout2D.title_color = "#6e5bca";
+    NodeLayout2D.title_color = "#6a4dc7";
     NodeLayout2D.prototype.onExecute = async function() {
         const graphData = this.getInputData(0);
         if (!graphData || !isConnected) return;
@@ -772,11 +758,11 @@
         }, { min: 0.1, max: 1.0, step: 0.1 });
         
         this.size = [400, 360];
-        this.color = "#382328";
-        this.bgcolor = "#2e1a1e";
+        this.color = "#c62828";
+        this.bgcolor = "#353535";
     }
     NodeSDXLGen.title = "🎨 SDXL + LoRA Generator";
-    NodeSDXLGen.title_color = "#ca5b5b";
+    NodeSDXLGen.title_color = "#c62828";
     NodeSDXLGen.prototype.onExecute = async function() {
         const layoutData = this.getInputData(0);
         const prompt = this.getInputData(1);
@@ -848,11 +834,11 @@
         
         this.properties = { crops: [] };
         this.size = [400, 250];
-        this.color = "#38332a";
-        this.bgcolor = "#2e2a1a";
+        this.color = "#e65100";
+        this.bgcolor = "#353535";
     }
     NodeGroundedSAM2.title = "✂️ Grounded-SAM2 Segment";
-    NodeGroundedSAM2.title_color = "#ca9a5b";
+    NodeGroundedSAM2.title_color = "#e65100";
     NodeGroundedSAM2.prototype.onExecute = async function() {
         const imageUrl = this.getInputData(0);
         const layoutData = this.getInputData(1);
@@ -957,11 +943,11 @@
         this.addOutput("models_data", "object");
         this.properties = { models: [] };
         this.size = [380, 220];
-        this.color = "#232838";
-        this.bgcolor = "#1a1e2e";
+        this.color = "#1565c0";
+        this.bgcolor = "#353535";
     }
     NodeTrellis3D.title = "🧊 TRELLIS 3D Generator";
-    NodeTrellis3D.title_color = "#5b7dca";
+    NodeTrellis3D.title_color = "#1565c0";
     NodeTrellis3D.prototype.onExecute = async function() {
         const cropsData = this.getInputData(0);
         if (!cropsData || !isConnected) return;
@@ -1035,11 +1021,11 @@
         }, { min: 0.002, max: 0.05, step: 0.002 });
         
         this.size = [420, 400];
-        this.color = "#282338";
-        this.bgcolor = "#1e1a2e";
+        this.color = "#6a1b9a";
+        this.bgcolor = "#353535";
     }
     NodeSceneCombiner.title = "🌐 3D Scene Combiner";
-    NodeSceneCombiner.title_color = "#8b5bcf";
+    NodeSceneCombiner.title_color = "#6a1b9a";
     NodeSceneCombiner.prototype.onExecute = async function() {
         const modelsData = this.getInputData(0);
         const layoutData = this.getInputData(1);
@@ -1222,7 +1208,6 @@
         const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
         nodeSAM2.pos = [1420, 500];
         graph.add(nodeSAM2);
-        
         const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
         nodeTrellis.pos = [1920, 520];
         graph.add(nodeTrellis);
@@ -1266,35 +1251,25 @@
 
     setupDefaultGraph();
 
+
     // Kaggle Modal Events
-    const modal = document.getElementById("kaggle-modal");
-    const btnHelp = document.getElementById("btn-kaggle-help");
-    const btnClose = document.getElementById("close-modal");
-    const btnCopy = document.getElementById("btn-copy-compile");
+    document.addEventListener("DOMContentLoaded", () => {
+        const modal = document.getElementById("kaggle-modal");
+        const btnHelp = document.getElementById("btn-kaggle-help");
+        const btnClose = document.getElementById("close-modal");
+        const btnCopy = document.getElementById("btn-copy-compile");
 
-    btnHelp.onclick = () => {
-        modal.style.display = "flex";
-    };
-    btnClose.onclick = () => {
-        modal.style.display = "none";
-    };
-    window.onclick = (e) => {
-        if (e.target === modal) {
-            modal.style.display = "none";
-        }
-    };
-
-    btnCopy.onclick = () => {
-        const codeText = document.getElementById("code-compile").innerText;
-        navigator.clipboard.writeText(codeText).then(() => {
-            btnCopy.innerText = "Copied!";
-            setTimeout(() => {
-                btnCopy.innerText = "Copy Code";
-            }, 2000);
-        }).catch(err => {
-            console.error("Lỗi khi sao chép: ", err);
-        });
-    };
+        if (btnHelp) btnHelp.onclick = () => { modal.style.display = "flex"; };
+        if (btnClose) btnClose.onclick = () => { modal.style.display = "none"; };
+        window.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
+        if (btnCopy) btnCopy.onclick = () => {
+            const codeText = document.getElementById("code-compile").innerText;
+            navigator.clipboard.writeText(codeText).then(() => {
+                btnCopy.innerText = "Copied!";
+                setTimeout(() => { btnCopy.innerText = "Copy Code"; }, 2000);
+            }).catch(err => console.error("Copy error:", err));
+        };
+    });
 </script>
 
 <!-- Kaggle Help Modal Overlay -->
