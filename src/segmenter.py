@@ -10,7 +10,8 @@ def run_grounded_sam2(input_image_path: str, layout: dict, crops_dir: str) -> li
     """
     labels_list = []
     for nid in layout.get("layout", {}).keys():
-        labels_list.append("chair" if "chair" in nid else "table")
+        label = nid.split("_")[0] if "_" in nid else nid
+        labels_list.append(label)
     if not labels_list:
         labels_list = ["chair", "table"]
 
@@ -82,6 +83,8 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
         "label": phrase,
         "box": [x1, y1, x2, y2],
         "final_box": [cx1, cy1, cx2, cy2],
+        "confidence": float(logit),
+        "mask_score": float(scores[0]),
         "crop_url": f"/crops/{{name}}.png",
         "crop_path": crop_path
     }})

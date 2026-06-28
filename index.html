@@ -156,13 +156,13 @@
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
         }
 
-        #btn-connect {
+        .secondary {
             background: rgba(255, 255, 255, 0.08);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
         }
 
-        #btn-connect:hover {
+        .secondary:hover {
             background: rgba(255, 255, 255, 0.15);
             border-color: rgba(255, 255, 255, 0.3);
             box-shadow: 0 0 15px rgba(255, 255, 255, 0.15);
@@ -269,16 +269,24 @@
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
         }
 
-        #btn-clear-logs {
+        .log-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        #btn-copy-logs, #btn-clear-logs {
             cursor: pointer;
             text-decoration: none;
             color: var(--text-muted);
-            transition: color 0.2s;
+            transition: color 0.2s, text-shadow 0.2s;
             font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
         }
 
-        #btn-clear-logs:hover {
+        #btn-copy-logs:hover, #btn-clear-logs:hover {
             color: white;
+            text-shadow: 0 0 4px rgba(255, 255, 255, 0.4);
         }
 
         /* 3D Viewer embedded in node */
@@ -399,7 +407,12 @@
 
             <!-- Console Terminal Logs -->
             <div id="log-panel">
-                <h3>Terminal Logs <span id="btn-clear-logs">Clear Logs</span></h3>
+                <h3>Terminal Logs 
+                    <div class="log-actions">
+                        <span id="btn-copy-logs">Copy Logs</span>
+                        <span id="btn-clear-logs">Clear Logs</span>
+                    </div>
+                </h3>
                 <div id="log-content">Chưa kết nối máy chủ Kaggle. Vui lòng nhập link Ngrok và nhấn 'Kết nối GPU' để bắt
                     đầu...</div>
             </div>
@@ -428,6 +441,24 @@
             logContent.innerHTML += `<div style="color: ${color}; margin-bottom: 4px;">[${time}] ${message}</div>`;
             logContent.scrollTop = logContent.scrollHeight;
         }
+
+        document.getElementById("btn-copy-logs").onclick = () => {
+            const logContent = document.getElementById("log-content");
+            const logsText = logContent.innerText || logContent.textContent;
+            
+            navigator.clipboard.writeText(logsText).then(() => {
+                const copyBtn = document.getElementById("btn-copy-logs");
+                const originalText = copyBtn.innerText;
+                copyBtn.innerText = "COPIED!";
+                copyBtn.style.color = "#34d399"; // Green success color
+                setTimeout(() => {
+                    copyBtn.innerText = originalText;
+                    copyBtn.style.color = ""; // Reset
+                }, 1500);
+            }).catch(err => {
+                writeLog(`❌ Không thể sao chép log: ${err.message}`, "error");
+            });
+        };
 
         document.getElementById("btn-clear-logs").onclick = () => {
             document.getElementById("log-content").innerHTML = "";
@@ -565,10 +596,9 @@
             }
 
             const scale = canvas.ds.scale;
-            const offset = canvas.ds.offset;
-
-            const x = (this.pos[0] + 15) * scale + offset[0];
-            const y = (this.pos[1] + 45) * scale + offset[1];
+            const screenPos = canvas.convertOffsetToCanvas([this.pos[0] + 15, this.pos[1] + 45]);
+            const x = screenPos[0];
+            const y = screenPos[1];
             const w = (this.size[0] - 30) * scale;
             const h = (this.size[1] - 60) * scale;
 
@@ -607,7 +637,14 @@
         NodeSceneGraph.title_color = "rgba(46, 125, 50, 0.85)";
         NodeSceneGraph.prototype.onExecute = async function () {
             const inputPrompt = this.getInputData(0);
-            if (!inputPrompt || !isConnected) return;
+            if (!inputPrompt) {
+                writeLog("❌ Scene Graph Parser: Thiếu dữ liệu đầu vào prompt!", "error");
+                throw new Error("Thiếu dữ liệu đầu vào prompt");
+            }
+            if (!isConnected) {
+                writeLog("❌ Scene Graph Parser: Chưa kết nối GPU Kaggle!", "error");
+                throw new Error("Chưa kết nối GPU Kaggle");
+            }
 
             if (this._lastPrompt === inputPrompt && this.properties.graphData) {
                 this.setOutputData(0, this.properties.graphData);
@@ -631,9 +668,13 @@
                     this.properties.graphData = data;
                     this.setOutputData(0, data);
                     writeLog("✅ Trích xuất Scene Graph thành công!", "success");
+                } else {
+                    const errText = await res.text();
+                    throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
                 writeLog(`❌ Lỗi Scene Graph: ${e.message}`, "error");
+                throw e;
             }
         };
         NodeSceneGraph.prototype.onDrawForeground = function (ctx) {
@@ -684,7 +725,14 @@
         NodeLayout2D.title_color = "rgba(106, 77, 199, 0.85)";
         NodeLayout2D.prototype.onExecute = async function () {
             const graphData = this.getInputData(0);
-            if (!graphData || !isConnected) return;
+            if (!graphData) {
+                writeLog("❌ 2D Layout Generator: Thiếu dữ liệu đầu vào scene_graph!", "error");
+                throw new Error("Thiếu dữ liệu đầu vào scene_graph");
+            }
+            if (!isConnected) {
+                writeLog("❌ 2D Layout Generator: Chưa kết nối GPU Kaggle!", "error");
+                throw new Error("Chưa kết nối GPU Kaggle");
+            }
 
             if (this._lastGraph === graphData && this.properties.layoutData) {
                 this.setOutputData(0, this.properties.layoutData);
@@ -708,9 +756,13 @@
                     this.properties.layoutData = data;
                     this.setOutputData(0, data);
                     writeLog("✅ Đã sinh tọa độ bố cục 2D.", "success");
+                } else {
+                    const errText = await res.text();
+                    throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
                 writeLog(`❌ Lỗi tính toán Layout: ${e.message}`, "error");
+                throw e;
             }
         };
         NodeLayout2D.prototype.onDrawForeground = function (ctx) {
@@ -788,7 +840,6 @@
 
         // Node 4: SDXL + LoRA Image Generator
         function NodeSDXLGen() {
-            this.addInput("layout", "object");
             this.addInput("prompt", "string");
             this.addOutput("image_url", "string");
 
@@ -796,28 +847,32 @@
                 imageUrl: "",
                 loraScale: 0.6
             };
-
             this.addWidget("number", "LoRA Weight Scale", this.properties.loraScale, (v) => {
                 this.properties.loraScale = v;
             }, { min: 0.1, max: 1.0, step: 0.1 });
 
-            this.size = [400, 360];
-            this.color = "#c62828";
+            this.size = [450, 420];
+            this.color = "rgba(198, 40, 40, 0.85)";
             this.bgcolor = "rgba(28, 28, 32, 0.75)";
         }
         NodeSDXLGen.title = "🎨 SDXL + LoRA Generator";
         NodeSDXLGen.title_color = "rgba(198, 40, 40, 0.85)";
         NodeSDXLGen.prototype.onExecute = async function () {
-            const layoutData = this.getInputData(0);
-            const prompt = this.getInputData(1);
-            if (!layoutData || !prompt || !isConnected) return;
+            const prompt = this.getInputData(0);
+            if (!prompt) {
+                writeLog("❌ SDXL LoRA Generator: Thiếu dữ liệu prompt!", "error");
+                throw new Error("Thiếu dữ liệu prompt");
+            }
+            if (!isConnected) {
+                writeLog("❌ SDXL LoRA Generator: Chưa kết nối GPU Kaggle!", "error");
+                throw new Error("Chưa kết nối GPU Kaggle");
+            }
 
-            if (this._lastLayout === layoutData && this._lastPrompt === prompt && this.properties.imageUrl) {
+            if (this._lastPrompt === prompt && this.properties.imageUrl) {
                 this.setOutputData(0, this.properties.imageUrl);
                 return;
             }
 
-            this._lastLayout = layoutData;
             this._lastPrompt = prompt;
             writeLog("Chạy mô hình khuếch tán SDXL base + LoRA (Khoảng 20 giây)...", "system");
 
@@ -830,19 +885,24 @@
                     },
                     body: JSON.stringify({
                         prompt: prompt,
-                        layout: layoutData,
+                        layout: {}, // Send empty layout to satisfy backend schema
                         lora_scale: this.properties.loraScale
                     })
                 });
                 if (res.ok) {
                     const data = await res.json();
                     this.properties.imageUrl = `${backendUrl}${data.image_url}`;
+                    this._imageObj = null; // Clear cached image to force reload
                     this.setOutputData(0, this.properties.imageUrl);
                     writeLog("✅ Đã sinh ảnh 2D kết quả thành công!", "success");
                     this.setDirtyCanvas(true, true);
+                } else {
+                    const errText = await res.text();
+                    throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
                 writeLog(`❌ Lỗi sinh ảnh SDXL: ${e.message}`, "error");
+                throw e;
             }
         };
         NodeSDXLGen.prototype.onDrawBackground = function (ctx) {
@@ -853,7 +913,7 @@
                 return;
             }
 
-            if (!this._imageObj) {
+            if (!this._imageObj || this._imageObj.src !== this.properties.imageUrl) {
                 this._imageObj = new Image();
                 this._imageObj.src = this.properties.imageUrl;
                 this._imageObj.onload = () => this.setDirtyCanvas(true, true);
@@ -873,20 +933,31 @@
         // Node 5: Grounded-SAM2 segment extractor
         function NodeGroundedSAM2() {
             this.addInput("image_url", "string");
-            this.addInput("layout", "object");
             this.addOutput("crops_data", "object");
 
-            this.properties = { crops: [] };
-            this.size = [400, 250];
-            this.color = "#e65100";
+            this.properties = { 
+                crops: [],
+                labels: "chair, table"
+            };
+            this.addWidget("text", "Labels to Segment", this.properties.labels, (v) => {
+                this.properties.labels = v;
+            });
+            this.size = [450, 420];
+            this.color = "rgba(230, 81, 0, 0.85)";
             this.bgcolor = "rgba(28, 28, 32, 0.75)";
         }
         NodeGroundedSAM2.title = "✂️ Grounded-SAM2 Segment";
         NodeGroundedSAM2.title_color = "rgba(230, 81, 0, 0.85)";
         NodeGroundedSAM2.prototype.onExecute = async function () {
             const imageUrl = this.getInputData(0);
-            const layoutData = this.getInputData(1);
-            if (!imageUrl || !layoutData || !isConnected) return;
+            if (!imageUrl) {
+                writeLog("❌ Grounded-SAM2 Segment: Thiếu dữ liệu hình ảnh image_url!", "error");
+                throw new Error("Thiếu dữ liệu hình ảnh image_url");
+            }
+            if (!isConnected) {
+                writeLog("❌ Grounded-SAM2 Segment: Chưa kết nối GPU Kaggle!", "error");
+                throw new Error("Chưa kết nối GPU Kaggle");
+            }
 
             if (this._lastImageUrl === imageUrl && this.properties.crops.length > 0) {
                 this.setOutputData(0, this.properties.crops);
@@ -895,6 +966,13 @@
 
             this._lastImageUrl = imageUrl;
             writeLog("Chạy GroundingDINO nhận diện & SAM2 cắt tách nền vật thể...", "system");
+
+            // Build dynamic fake layout object based on labels input widget
+            const labelsArray = this.properties.labels.split(",").map(s => s.trim()).filter(Boolean);
+            const fakeLayout = { layout: {} };
+            labelsArray.forEach((lbl, idx) => {
+                fakeLayout.layout[`${lbl}_${idx}`] = { x: 0, y: 0, w: 0, h: 0 };
+            });
 
             try {
                 const res = await fetch(`${backendUrl}/api/run_sam2`, {
@@ -905,7 +983,7 @@
                     },
                     body: JSON.stringify({
                         image_url: imageUrl,
-                        layout: layoutData
+                        layout: fakeLayout
                     })
                 });
                 if (res.ok) {
@@ -916,67 +994,131 @@
 
                     this._cropImages = [];
                     this.setDirtyCanvas(true, true);
+                } else {
+                    const errText = await res.text();
+                    throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
                 writeLog(`❌ Lỗi Grounded-SAM2: ${e.message}`, "error");
+                throw e;
             }
         };
         NodeGroundedSAM2.prototype.onDrawBackground = function (ctx) {
-            if (!this.properties.crops || this.properties.crops.length === 0) {
+            const imageUrl = this.getInputData(0);
+            if (!imageUrl) {
                 ctx.fillStyle = "#52525b";
                 ctx.font = "italic 13px 'Outfit'";
                 ctx.fillText("Chờ nhận diện ảnh...", 20, 80);
                 return;
             }
 
-            if (!this._cropImages || this._cropImages.length === 0) {
-                this._cropImages = [];
-                this.properties.crops.forEach((crop) => {
-                    const img = new Image();
-                    img.src = `${backendUrl}${crop.crop_url}`;
-                    img.onload = () => this.setDirtyCanvas(true, true);
-                    this._cropImages.push(img);
-                });
+            // 1. Draw input image (cached)
+            if (!this._inputImageObj || this._inputImageObj.src !== imageUrl) {
+                this._inputImageObj = new Image();
+                this._inputImageObj.src = imageUrl;
+                this._inputImageObj.onload = () => this.setDirtyCanvas(true, true);
             }
 
-            const cardWidth = 120;
-            const cardHeight = 120;
-            const startX = 15;
-            const startY = 80;
+            try {
+                // Draw 2D image preview (200x200)
+                ctx.drawImage(this._inputImageObj, 15, 75, 200, 200);
+                ctx.strokeStyle = "rgba(255,255,255,0.1)";
+                ctx.lineWidth = 1;
+                ctx.strokeRect(15, 75, 200, 200);
+            } catch (e) {}
 
-            this._cropImages.forEach((img, idx) => {
-                const x = startX + (idx * (cardWidth + 20));
-                const y = startY;
+            // 2. Draw GroundingDINO bounding boxes overlay on top of 2D image
+            if (this.properties.crops && this.properties.crops.length > 0 && this._inputImageObj.naturalWidth) {
+                const w = this._inputImageObj.naturalWidth;
+                const h = this._inputImageObj.naturalHeight;
+                const scaleX = 200 / w;
+                const scaleY = 200 / h;
+                const colors = ["#fb7185", "#34d399", "#38bdf8", "#facc15", "#f472b6"];
 
-                // Draw transparent grid background pattern
-                ctx.fillStyle = "#1e1e24";
-                ctx.fillRect(x, y, cardWidth, cardHeight);
+                ctx.save();
+                this.properties.crops.forEach((crop, i) => {
+                    const box = crop.box;
+                    if (!box) return;
+                    const bx = 15 + (box[0] * scaleX);
+                    const by = 75 + (box[1] * scaleY);
+                    const bw = (box[2] - box[0]) * scaleX;
+                    const bh = (box[3] - box[1]) * scaleY;
 
-                // Draw checkerboard transparency pattern
-                ctx.fillStyle = "#27272a";
-                const checkSize = 10;
-                for (let cx = 0; cx < cardWidth; cx += checkSize * 2) {
-                    for (let cy = 0; cy < cardHeight; cy += checkSize * 2) {
-                        ctx.fillRect(x + cx, y + cy, checkSize, checkSize);
-                        ctx.fillRect(x + cx + checkSize, y + cy + checkSize, checkSize, checkSize);
-                    }
+                    const color = colors[i % colors.length];
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(bx, by, bw, bh);
+
+                    ctx.fillStyle = color + "1a"; // 10% opacity fill
+                    ctx.fillRect(bx, by, bw, bh);
+
+                    ctx.fillStyle = color;
+                    ctx.font = "bold 9px 'Outfit'";
+                    ctx.fillText(crop.label, bx + 2, by + 10);
+                });
+                ctx.restore();
+            }
+
+            // 3. List detected objects on the right panel
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 13px 'Outfit'";
+            ctx.fillText("Đối tượng phát hiện:", 230, 90);
+
+            if (this.properties.crops && this.properties.crops.length > 0) {
+                this.properties.crops.forEach((crop, idx) => {
+                    const y = 115 + (idx * 45);
+                    const colors = ["#fb7185", "#34d399", "#38bdf8", "#facc15"];
+                    const color = colors[idx % colors.length];
+
+                    ctx.fillStyle = color;
+                    ctx.font = "bold 12px 'Outfit'";
+                    ctx.fillText(`✓ [${crop.name}] ${crop.label}`, 230, y);
+
+                    ctx.fillStyle = "#a1a1aa";
+                    ctx.font = "10px 'Fira Code'";
+                    const conf = crop.confidence ? Math.round(crop.confidence * 100) : 100;
+                    const score = crop.mask_score ? Math.round(crop.mask_score * 100) : 100;
+                    ctx.fillText(`Conf: ${conf}% | Mask: ${score}%`, 242, y + 16);
+                });
+            } else {
+                ctx.fillStyle = "#52525b";
+                ctx.font = "italic 11px 'Outfit'";
+                ctx.fillText("(Chờ kết quả GroundingDINO)", 230, 115);
+            }
+
+            // 4. Render thumbnails of the crops at the bottom
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 13px 'Outfit'";
+            ctx.fillText("Crops tách nền (RGBA):", 15, 305);
+
+            if (this.properties.crops && this.properties.crops.length > 0) {
+                if (!this._cropImages || this._cropImages.length === 0) {
+                    this._cropImages = [];
+                    this.properties.crops.forEach((crop) => {
+                        const img = new Image();
+                        img.src = `${backendUrl}${crop.crop_url}`;
+                        img.onload = () => this.setDirtyCanvas(true, true);
+                        this._cropImages.push(img);
+                    });
                 }
 
-                // Draw crop image
-                try {
-                    ctx.drawImage(img, x, y, cardWidth, cardHeight);
-                } catch (e) { }
+                this._cropImages.forEach((img, idx) => {
+                    try {
+                        const tx = 15 + (idx * 90);
+                        // Draw a grid pattern back for alpha visibility
+                        ctx.fillStyle = "rgba(255,255,255,0.03)";
+                        ctx.fillRect(tx, 320, 80, 80);
+                        ctx.strokeStyle = "rgba(255,255,255,0.06)";
+                        ctx.strokeRect(tx, 320, 80, 80);
 
-                ctx.strokeStyle = "rgba(255,255,255,0.08)";
-                ctx.lineWidth = 1;
-                ctx.strokeRect(x, y, cardWidth, cardHeight);
-
-                // Text Label
-                ctx.fillStyle = "#e4e4e7";
-                ctx.font = "bold 12px 'Outfit'";
-                const info = this.properties.crops[idx] || {};
-                ctx.fillText(info.label || "unknown", x + 4, y + cardHeight + 18);
-            });
+                        ctx.drawImage(img, tx, 320, 80, 80);
+                    } catch (e) {}
+                });
+            } else {
+                ctx.fillStyle = "#52525b";
+                ctx.font = "italic 11px 'Outfit'";
+                ctx.fillText("Chờ xử lý SAM2 segment...", 15, 335);
+            }
         };
         LiteGraph.registerNodeType("datn/grounded_sam2", NodeGroundedSAM2);
 
@@ -994,7 +1136,14 @@
         NodeTrellis3D.title_color = "rgba(21, 101, 192, 0.85)";
         NodeTrellis3D.prototype.onExecute = async function () {
             const cropsData = this.getInputData(0);
-            if (!cropsData || !isConnected) return;
+            if (!cropsData) {
+                writeLog("❌ TRELLIS 3D Generator: Thiếu dữ liệu vật thể crops_data!", "error");
+                throw new Error("Thiếu dữ liệu vật thể crops_data");
+            }
+            if (!isConnected) {
+                writeLog("❌ TRELLIS 3D Generator: Chưa kết nối GPU Kaggle!", "error");
+                throw new Error("Chưa kết nối GPU Kaggle");
+            }
 
             if (this._lastCrops === cropsData && this.properties.models.length > 0) {
                 this.setOutputData(0, this.properties.models);
@@ -1019,9 +1168,13 @@
                     this.setOutputData(0, this.properties.models);
                     writeLog("✅ TRELLIS dựng hình 3D Mesh hoàn thành!", "success");
                     this.setDirtyCanvas(true, true);
+                } else {
+                    const errText = await res.text();
+                    throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
                 writeLog(`❌ Lỗi chạy TRELLIS: ${e.message}`, "error");
+                throw e;
             }
         };
         NodeTrellis3D.prototype.onDrawForeground = function (ctx) {
@@ -1052,7 +1205,6 @@
         // Node 7: 3D Scene Combiner (Integrates the Interactive 3D Model-Viewer Web Component)
         function NodeSceneCombiner() {
             this.addInput("models_data", "object");
-            this.addInput("layout", "object");
             this.addOutput("scene_url", "string");
 
             this.properties = {
@@ -1072,16 +1224,21 @@
         NodeSceneCombiner.title_color = "rgba(106, 27, 154, 0.85)";
         NodeSceneCombiner.prototype.onExecute = async function () {
             const modelsData = this.getInputData(0);
-            const layoutData = this.getInputData(1);
-            if (!modelsData || !layoutData || !isConnected) return;
+            if (!modelsData) {
+                writeLog("❌ 3D Scene Combiner: Thiếu dữ liệu mô hình models_data!", "error");
+                throw new Error("Thiếu dữ liệu mô hình models_data");
+            }
+            if (!isConnected) {
+                writeLog("❌ 3D Scene Combiner: Chưa kết nối GPU Kaggle!", "error");
+                throw new Error("Chưa kết nối GPU Kaggle");
+            }
 
-            if (this._lastModels === modelsData && this._lastLayout === layoutData && this.properties.sceneUrl) {
+            if (this._lastModels === modelsData && this.properties.sceneUrl) {
                 this.setOutputData(0, this.properties.sceneUrl);
                 return;
             }
 
             this._lastModels = modelsData;
-            this._lastLayout = layoutData;
             writeLog("Trimesh đang căn chỉnh tọa độ và đóng gói file Scene 3D...", "system");
 
             try {
@@ -1093,7 +1250,7 @@
                     },
                     body: JSON.stringify({
                         models: modelsData,
-                        layout: layoutData,
+                        layout: {}, // Send empty layout to satisfy backend schema
                         scale_factor: this.properties.scaleFactor
                     })
                 });
@@ -1104,9 +1261,13 @@
                     writeLog("🎉 HỆ THỐNG ĐÃ HOÀN TẤT DỰNG CẢNH 3D!", "success");
 
                     this.update3DViewer();
+                } else {
+                    const errText = await res.text();
+                    throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
                 writeLog(`❌ Lỗi ghép cảnh: ${e.message}`, "error");
+                throw e;
             }
         };
 
@@ -1169,14 +1330,13 @@
             if (!viewer) return;
 
             const scale = canvas.ds.scale;
-            const offset = canvas.ds.offset;
-
             const nodeWidth = this.size[0];
             const nodeHeight = this.size[1];
 
             // Calculate screen bounding boxes mapping LiteGraph coords to DOM layout
-            const x = (this.pos[0] + 15) * scale + offset[0];
-            const y = (this.pos[1] + 95) * scale + offset[1];
+            const screenPos = canvas.convertOffsetToCanvas([this.pos[0] + 15, this.pos[1] + 95]);
+            const x = screenPos[0];
+            const y = screenPos[1];
             const w = (nodeWidth - 30) * scale;
             const h = (nodeHeight - 115) * scale;
 
@@ -1225,72 +1385,93 @@
         function setupDefaultGraph() {
             graph.clear();
 
-            // Clean waterfall layout — minimizes line crossings
-            //
-            //  [Prompt] ──┬──▶ [SceneGraph] ──▶ [Layout] ──┬──▶ [SDXL]
-            //             │                                 │      │
-            //             └─────────────────────────────────▶│──▶ [SAM2] ──▶ [Trellis] ──▶ [Combiner]
-            //                                               └────────────────────────────────┘
+            // Clean linear pipeline layout:
+            // [Prompt] ──▶ [SDXL + LoRA] ──▶ [Grounded-SAM2] ──▶ [Trellis 3D] ──▶ [3D Scene Combiner]
 
             const nodePrompt = LiteGraph.createNode("datn/input_prompt");
-            nodePrompt.pos = [60, 200];
+            nodePrompt.pos = [100, 200];
             graph.add(nodePrompt);
 
-            const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
-            nodeSceneGraph.pos = [500, 80];
-            graph.add(nodeSceneGraph);
-
-            const nodeLayout = LiteGraph.createNode("datn/layout_2d");
-            nodeLayout.pos = [940, 80];
-            graph.add(nodeLayout);
-
             const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
-            nodeSDXL.pos = [1420, 80];
+            nodeSDXL.pos = [520, 200];
             graph.add(nodeSDXL);
 
-            // SAM2 directly below SDXL for clean vertical drop
             const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
-            nodeSAM2.pos = [1420, 500];
+            nodeSAM2.pos = [1040, 200];
             graph.add(nodeSAM2);
+
             const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
-            nodeTrellis.pos = [1920, 520];
+            nodeTrellis.pos = [1560, 200];
             graph.add(nodeTrellis);
 
             const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
-            nodeCombiner.pos = [2400, 280];
+            nodeCombiner.pos = [2080, 200];
             graph.add(nodeCombiner);
 
-            // Connect Node slots
-            nodePrompt.connect(0, nodeSceneGraph, 0);
-            nodePrompt.connect(0, nodeSDXL, 1);
-
-            nodeSceneGraph.connect(0, nodeLayout, 0);
-
-            nodeLayout.connect(0, nodeSDXL, 0);
-            nodeLayout.connect(0, nodeSAM2, 1);
-            nodeLayout.connect(0, nodeCombiner, 1);
-
+            // Connect Node slots directly
+            nodePrompt.connect(0, nodeSDXL, 0);
             nodeSDXL.connect(0, nodeSAM2, 0);
-
             nodeSAM2.connect(0, nodeTrellis, 0);
-
             nodeTrellis.connect(0, nodeCombiner, 0);
 
             // Fit everything on screen
-            canvas.ds.offset = [30, 20];
-            canvas.ds.scale = 0.48;
+            canvas.ds.offset = [80, 50];
+            canvas.ds.scale = 0.52;
 
             writeLog("Sơ đồ luồng pipeline mặc định đã được nạp thành công.", "info");
         }
 
-        // Execute graph pipeline
-        document.getElementById("btn-run").onclick = () => {
+        // Execute graph pipeline sequentially (with active node highlighting)
+        document.getElementById("btn-run").onclick = async () => {
             if (!isConnected) {
                 writeLog("Vui lòng kết nối tới server GPU Kaggle bằng Ngrok trước!", "warning");
                 return;
             }
-            writeLog("🏁 Bắt đầu thực thi pipeline (Queue Prompt)...", "system");
-            graph.runStep();
+            
+            writeLog("🏁 Bắt đầu thực thi toàn bộ quy trình (Queue Prompt)...", "system");
+            
+            const promptNode = graph.findNodesByType("datn/input_prompt")[0];
+            const sdxlNode = graph.findNodesByType("datn/sdxl_gen")[0];
+            const sam2Node = graph.findNodesByType("datn/grounded_sam2")[0];
+            const trellisNode = graph.findNodesByType("datn/trellis_3d")[0];
+            const combinerNode = graph.findNodesByType("datn/scene_combiner")[0];
+
+            const runNode = async (node, nodeName) => {
+                if (!node) return;
+                node.boxcolor = "#00ff00"; // Highlight executing node with green border
+                canvas.draw(true, true);
+                writeLog(`⏳ Đang thực thi: ${nodeName}...`, "system");
+                try {
+                    await node.onExecute();
+                    node.boxcolor = "rgba(255, 255, 255, 0.1)"; // Restore border
+                    canvas.draw(true, true);
+                } catch (err) {
+                    node.boxcolor = "#f44336"; // Highlight error node with red border
+                    canvas.draw(true, true);
+                    throw err;
+                }
+            };
+
+            try {
+                if (promptNode) {
+                    await runNode(promptNode, "Input Text Prompt");
+                }
+                if (sdxlNode) {
+                    await runNode(sdxlNode, "SDXL LoRA Generator");
+                }
+                if (sam2Node) {
+                    await runNode(sam2Node, "Grounded-SAM2 Segment");
+                }
+                if (trellisNode) {
+                    await runNode(trellisNode, "TRELLIS 3D Generator");
+                }
+                if (combinerNode) {
+                    await runNode(combinerNode, "3D Scene Combiner");
+                }
+                writeLog("🎉 Thực thi toàn bộ quy trình pipeline THÀNH CÔNG!", "success");
+            } catch (err) {
+                writeLog("❌ Quy trình dừng lại do lỗi: " + err.message, "error");
+            }
         };
 
         setupDefaultGraph();
