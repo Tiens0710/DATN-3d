@@ -21,8 +21,8 @@ import os, json, torch
 sys.modules['triton'] = None
 
 os.environ["SPCONV_ALGO"] = "native"
-os.environ["ATTN_BACKEND"] = "xformers"
-os.environ["SPARSE_ATTN"] = "xformers"
+os.environ["ATTN_BACKEND"] = "sdpa"
+os.environ["SPARSE_ATTN"] = "sdpa"
 os.environ["MPLBACKEND"] = "agg"
 
 if not os.path.exists("/kaggle/working/TRELLIS/trellis"):
