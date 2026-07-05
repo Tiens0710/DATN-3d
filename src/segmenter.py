@@ -69,19 +69,38 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     y2 = int((cy + bh/2) * H)
     
     input_box = np.array([[x1, y1, x2, y2]])
+    
+    # Gợi ý thêm điểm dương ở tâm để giữ phần ruột kính phản chiếu của gương
+    cx_px = (x1 + x2) // 2
+    cy_px = (y1 + y2) // 2
+    point_coords = np.array([[cx_px, cy_px]])
+    point_labels = np.array([1]) # 1 là foreground point
+    
     masks, scores, _ = predictor.predict(
-        point_coords=None, point_labels=None, box=input_box, multimask_output=False
+        point_coords=point_coords,
+        point_labels=point_labels,
+        box=input_box,
+        multimask_output=False
     )
     
-    mask = masks[0]
+    import scipy.ndimage as ndimage
+    # 1. Phép đóng (Closing) để kết nối các phần bị đứt nét và lấp khe hở nhỏ ở viền
+    closed_mask = ndimage.binary_closing(masks[0], structure=np.ones((7, 7)))
+    # 2. Điền đầy lỗ hổng (Fill holes) để lấp kín phần kính phản chiếu
+    filled_mask = ndimage.binary_fill_holes(closed_mask)
     
     # Vẽ đè mặt nạ lên visual_img (độ mờ 40%)
     color = colors[i % len(colors)]
-    mask_pixels = (mask > 0)
+    mask_pixels = (filled_mask > 0)
     visual_img[mask_pixels] = (visual_img[mask_pixels] * 0.6 + np.array(color) * 0.4).astype(np.uint8)
     
+    # 3. Làm mịn cạnh (Anti-aliasing) bằng Gaussian Filter để tránh răng cưa
+    alpha_array = (filled_mask * 255).astype(np.uint8)
+    alpha_smooth = ndimage.gaussian_filter(alpha_array.astype(float), sigma=1.2)
+    alpha_smooth = np.clip(alpha_smooth, 0, 255).astype(np.uint8)
+    
     img_rgba = Image.fromarray(img_rgb).convert("RGBA")
-    alpha = Image.fromarray((mask * 255).astype(np.uint8))
+    alpha = Image.fromarray(alpha_smooth)
     img_rgba.putalpha(alpha)
     
     PAD = 15
@@ -91,8 +110,8 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     cy2 = min(H, y2 + PAD)
     crop = img_rgba.crop((cx1, cy1, cx2, cy2))
     
-    name = f"object_{i+1}"
-    crop_path = f"{crops_dir}/{name}.png"
+    name = "object_" + str(i+1)
+    crop_path = f"{crops_dir}/" + name + ".png"
     crop.save(crop_path)
     
     results.append({
@@ -102,7 +121,7 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
         "final_box": [cx1, cy1, cx2, cy2],
         "confidence": float(logit),
         "mask_score": float(scores[0]),
-        "crop_url": f"/crops/{name}.png",
+        "crop_url": "/crops/" + name + ".png",
         "crop_path": crop_path
     })
 

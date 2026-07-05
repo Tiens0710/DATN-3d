@@ -27,8 +27,12 @@ def parse(text):
     edges = []
     for i, chunk in enumerate(doc.noun_chunks):
         root = chunk.root.text
+        import re
+        clean_root = re.sub(r'[^a-zA-Z0-9]', '', root.lower())
+        if not clean_root:
+            clean_root = "object"
         attrs = [t.text for t in chunk if t.pos_ == "ADJ"]
-        nodes.append({{"id": f"obj_{{i}}", "label": root, "attributes": attrs, "full": chunk.text}})
+        nodes.append({{"id": f"{{clean_root}}_{{i}}", "label": root, "attributes": attrs, "full": chunk.text}})
     
     text_lower = text.lower()
     for phrase, rel_type in RELATION_KEYWORDS.items():
