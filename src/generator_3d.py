@@ -26,6 +26,16 @@ subprocess.run(
     [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "torch==2.1.0", "torchvision==0.16.0", "xformers==0.0.22.post7", "--index-url", "https://download.pytorch.org/whl/cu121"],
     capture_output=True, timeout=300
 )
+
+print("Dang compile lai nvdiffrast + utils3d de tuong thich...")
+subprocess.run(
+    [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "git+https://github.com/NVlabs/nvdiffrast.git"],
+    capture_output=True, timeout=180
+)
+subprocess.run(
+    [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "--no-build-isolation", "git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8"],
+    capture_output=True, timeout=180
+)
 print("Dong bo hoan tat!")
 
 # ── CẤU HÌNH BACKEND (giống code cũ chạy thành công) ─────────────
