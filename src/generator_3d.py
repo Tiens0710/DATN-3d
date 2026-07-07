@@ -21,6 +21,7 @@ sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 sys.modules['triton'] = None
 
 # ── Đồng bộ bộ ba Torch 2.1.0 + Torchvision 0.16.0 + xFormers 0.0.22.post7 ──
+# ── Đồng bộ bộ ba Torch 2.1.0 + Torchvision 0.16.0 + xFormers 0.0.22.post7 ──
 needs_sync = False
 try:
     import torch
@@ -38,6 +39,13 @@ except Exception:
 
 if needs_sync:
     print("Dong bo lai phien ban thu vien (Torch 2.1.0 + xFormers)...")
+    # Clean up numpy directories first to avoid "Frankenstein" mix of numpy 1.x and 2.x
+    import shutil, glob
+    for p in glob.glob("/opt/venv310/lib/python3.10/site-packages/numpy*"):
+        try:
+            if os.path.isdir(p): shutil.rmtree(p)
+            else: os.remove(p)
+        except Exception: pass
     r1 = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "--no-cache-dir", "torch==2.1.0", "torchvision==0.16.0", "xformers==0.0.22.post7", "numpy==1.26.4", "--index-url", "https://download.pytorch.org/whl/cu121"],
         capture_output=True, text=True, timeout=300
@@ -90,6 +98,34 @@ if needs_compile_utils3d:
         print("Loi compile utils3d:", r3.stderr)
     else:
         print("Utils3d OK!")
+
+needs_compile_diff_gaussian = needs_sync
+if not needs_compile_diff_gaussian:
+    try:
+        from diff_gaussian_rasterization import _C
+        print("diff_gaussian_rasterization da duoc compile, bo qua.")
+    except Exception:
+        needs_compile_diff_gaussian = True
+
+if needs_compile_diff_gaussian:
+    print("Dang compile lai diff_gaussian_rasterization...")
+    import shutil
+    if os.path.exists("/tmp/mip-splatting"):
+        try: shutil.rmtree("/tmp/mip-splatting")
+        except Exception: pass
+    r_clone = subprocess.run(
+        ["git", "clone", "--recursive", "https://github.com/autonomousvision/mip-splatting.git", "/tmp/mip-splatting"],
+        capture_output=True, text=True
+    )
+    r4 = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps", "--no-cache-dir", "--no-build-isolation", "/tmp/mip-splatting/submodules/diff-gaussian-rasterization"],
+        capture_output=True, text=True, timeout=300, env=compile_env
+    )
+    if r4.returncode != 0:
+        print("Loi compile diff_gaussian_rasterization:", r4.stderr)
+    else:
+        print("diff_gaussian_rasterization OK!")
+
 print("Dong bo hoan tat!")
 
 # ── CẤU HÌNH BACKEND (giống code cũ chạy thành công) ─────────────
