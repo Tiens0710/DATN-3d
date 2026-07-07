@@ -17,8 +17,10 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
 import sys
 sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 
-# ── MOCK 1: Chặn triton (bitsandbytes cần nhưng không có trên Kaggle) ──
+# ── MOCK 1: Chặn triton và xformers (cả hai đều không tương thích) ──
 sys.modules['triton'] = None
+sys.modules['xformers'] = None
+sys.modules['xformers.ops'] = None
 
 # ── MOCK 2: Giả lập flash_attn + tất cả sub-modules ──────────────────
 import types
