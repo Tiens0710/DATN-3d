@@ -17,23 +17,33 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
 import sys
 sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 
-import os, json, torch
+# ── MOCK 1: Chặn triton (bitsandbytes cần nhưng không có trên Kaggle) ──
 sys.modules['triton'] = None
 
-# Giả lập flash_attn để tránh lỗi import khi chạy sdpa
-import sys, types
-class MockFlashAttn(types.ModuleType):
+# ── MOCK 2: Giả lập flash_attn + tất cả sub-modules ──────────────────
+import types
+class _MockModule(types.ModuleType):
     def __getattr__(self, name):
         if name.startswith("__") and name.endswith("__"):
-            raise AttributeError(f"Mock module has no attribute '{name}'")
-        return lambda *args, **kwargs: None
-sys.modules['flash_attn'] = MockFlashAttn("flash_attn")
+            raise AttributeError(name)
+        child = _MockModule(self.__name__ + "." + name)
+        sys.modules[child.__name__] = child
+        return child
+    def __call__(self, *a, **kw):
+        return None
 
-os.environ["SPCONV_ALGO"] = "native"
-os.environ["ATTN_BACKEND"] = "sdpa"
-os.environ["SPARSE_ATTN"] = "sdpa"
-os.environ["MPLBACKEND"] = "agg"
+for _mod in ("flash_attn", "flash_attn.flash_attn_interface",
+             "flash_attn.flash_attn_func", "flash_attn.bert_padding"):
+    sys.modules[_mod] = _MockModule(_mod)
 
+# ── CẤU HÌNH BACKEND (phải đặt TRƯỚC mọi import TRELLIS) ─────────────
+import os, json, torch
+os.environ["SPCONV_ALGO"]         = "native"
+os.environ["ATTN_BACKEND"]        = "sdpa"
+os.environ["SPARSE_ATTN_BACKEND"] = "sdpa"
+os.environ["MPLBACKEND"]          = "agg"
+
+# ── Clone TRELLIS nếu chưa có ────────────────────────────────────────
 if not os.path.exists("/kaggle/working/TRELLIS/trellis"):
     print("Auto-cloning TRELLIS repository...")
     import shutil, subprocess
@@ -60,8 +70,9 @@ from PIL import Image
 with open("{meta_json_path}") as f:
     objects = json.load(f)
 
+# Load pipeline và chuyển sang GPU (KHÔNG dùng dtype - Pipeline.to() không hỗ trợ)
 pipeline = TrellisImageTo3DPipeline.from_pretrained("JeffreyXiang/TRELLIS-image-large")
-pipeline.to("cuda", dtype=torch.float16)
+pipeline.to("cuda")
 
 for name, info in objects.items():
     print(f"Dựng mô hình 3D cho {{name}}...")
