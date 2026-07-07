@@ -24,6 +24,8 @@ sys.modules['triton'] = None
 import sys, types
 class MockFlashAttn(types.ModuleType):
     def __getattr__(self, name):
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(f"Mock module has no attribute '{name}'")
         return lambda *args, **kwargs: None
 sys.modules['flash_attn'] = MockFlashAttn("flash_attn")
 
