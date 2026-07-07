@@ -22,20 +22,38 @@ sys.modules['triton'] = None
 
 # ── Đồng bộ bộ ba Torch 2.1.0 + Torchvision 0.16.0 + xFormers 0.0.22.post7 ──
 print("Dong bo lai phien ban thu vien (Torch 2.1.0 + xFormers)...")
-subprocess.run(
-    [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "torch==2.1.0", "torchvision==0.16.0", "xformers==0.0.22.post7", "--index-url", "https://download.pytorch.org/whl/cu121"],
-    capture_output=True, timeout=300
+r1 = subprocess.run(
+    [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "--no-cache-dir", "torch==2.1.0", "torchvision==0.16.0", "xformers==0.0.22.post7", "--index-url", "https://download.pytorch.org/whl/cu121"],
+    capture_output=True, text=True, timeout=300
 )
+if r1.returncode != 0:
+    print("Loi dong bo torch/xformers:", r1.stderr)
 
-print("Dang compile lai nvdiffrast + utils3d de tuong thich...")
-subprocess.run(
-    [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "git+https://github.com/NVlabs/nvdiffrast.git"],
-    capture_output=True, timeout=180
+# Thiết lập PATH chứa nvcc để compile CUDA extension
+import os
+compile_env = os.environ.copy()
+compile_env["CUDA_HOME"] = "/usr/local/cuda"
+compile_env["PATH"] = "/usr/local/cuda/bin:" + compile_env.get("PATH", "")
+
+print("Dang compile lai nvdiffrast...")
+r2 = subprocess.run(
+    [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "git+https://github.com/NVlabs/nvdiffrast.git"],
+    capture_output=True, text=True, timeout=180, env=compile_env
 )
-subprocess.run(
-    [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "--no-build-isolation", "git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8"],
-    capture_output=True, timeout=180
+if r2.returncode != 0:
+    print("Loi compile nvdiffrast:", r2.stderr)
+else:
+    print("Nvdiffrast OK!")
+
+print("Dang compile lai utils3d...")
+r3 = subprocess.run(
+    [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "--no-build-isolation", "git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8"],
+    capture_output=True, text=True, timeout=180, env=compile_env
 )
+if r3.returncode != 0:
+    print("Loi compile utils3d:", r3.stderr)
+else:
+    print("Utils3d OK!")
 print("Dong bo hoan tat!")
 
 # ── CẤU HÌNH BACKEND (giống code cũ chạy thành công) ─────────────
