@@ -61,7 +61,7 @@ with open("{meta_json_path}") as f:
     objects = json.load(f)
 
 pipeline = TrellisImageTo3DPipeline.from_pretrained("JeffreyXiang/TRELLIS-image-large")
-pipeline.to("cuda")
+pipeline.to("cuda", dtype=torch.float16)
 
 for name, info in objects.items():
     print(f"Dựng mô hình 3D cho {{name}}...")
