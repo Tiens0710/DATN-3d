@@ -20,6 +20,13 @@ sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 import os, json, torch
 sys.modules['triton'] = None
 
+# Giả lập flash_attn để tránh lỗi import khi chạy sdpa
+import sys, types
+class MockFlashAttn(types.ModuleType):
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
+sys.modules['flash_attn'] = MockFlashAttn("flash_attn")
+
 os.environ["SPCONV_ALGO"] = "native"
 os.environ["ATTN_BACKEND"] = "sdpa"
 os.environ["SPARSE_ATTN"] = "sdpa"
