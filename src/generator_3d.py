@@ -23,9 +23,13 @@ sys.modules['triton'] = None
 # ── MOCK 2: Giả lập flash_attn + tất cả sub-modules ──────────────────
 import types
 class _MockModule(types.ModuleType):
+    __version__ = "0.0.0"
+    __file__    = "<mock>"
+    __path__    = []
+    __all__     = []
+    __loader__  = None
+    __spec__    = None
     def __getattr__(self, name):
-        if name.startswith("__") and name.endswith("__"):
-            raise AttributeError(name)
         child = _MockModule(self.__name__ + "." + name)
         sys.modules[child.__name__] = child
         return child
