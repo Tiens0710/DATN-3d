@@ -14,40 +14,24 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
         json.dump(objects_dict, f)
 
     script = f"""
-import sys
+import sys, subprocess
 sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 
-# ── MOCK 1: Chặn triton và xformers (cả hai đều không tương thích) ──
+# ── MOCK: Chặn triton (bitsandbytes) ──
 sys.modules['triton'] = None
-sys.modules['xformers'] = None
-sys.modules['xformers.ops'] = None
 
-# ── MOCK 2: Giả lập flash_attn + tất cả sub-modules ──────────────────
-import types
-class _MockModule(types.ModuleType):
-    __version__ = "0.0.0"
-    __file__    = "<mock>"
-    __path__    = []
-    __all__     = []
-    __loader__  = None
-    __spec__    = None
-    def __getattr__(self, name):
-        child = _MockModule(self.__name__ + "." + name)
-        sys.modules[child.__name__] = child
-        return child
-    def __call__(self, *a, **kw):
-        return None
+# ── Cài lại xformers tương thích với PyTorch hiện tại ──
+subprocess.run(
+    [sys.executable, "-m", "pip", "install", "-q", "--no-build-isolation", "xformers"],
+    capture_output=True, timeout=300
+)
 
-for _mod in ("flash_attn", "flash_attn.flash_attn_interface",
-             "flash_attn.flash_attn_func", "flash_attn.bert_padding"):
-    sys.modules[_mod] = _MockModule(_mod)
-
-# ── CẤU HÌNH BACKEND (phải đặt TRƯỚC mọi import TRELLIS) ─────────────
+# ── CẤU HÌNH BACKEND (giống code cũ chạy thành công) ─────────────
 import os, json, torch
-os.environ["SPCONV_ALGO"]         = "native"
-os.environ["ATTN_BACKEND"]        = "sdpa"
-os.environ["SPARSE_ATTN_BACKEND"] = "sdpa"
-os.environ["MPLBACKEND"]          = "agg"
+os.environ["SPCONV_ALGO"]  = "native"
+os.environ["ATTN_BACKEND"] = "xformers"
+os.environ["SPARSE_ATTN"]  = "xformers"
+os.environ["MPLBACKEND"]   = "agg"
 
 # ── Clone TRELLIS nếu chưa có ────────────────────────────────────────
 if not os.path.exists("/kaggle/working/TRELLIS/trellis"):
