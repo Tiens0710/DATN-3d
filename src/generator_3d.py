@@ -20,11 +20,13 @@ sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 # ── MOCK: Chặn triton (bitsandbytes) ──
 sys.modules['triton'] = None
 
-# ── Cài lại xformers tương thích với PyTorch hiện tại ──
+# ── Đồng bộ bộ ba Torch 2.1.0 + Torchvision 0.16.0 + xFormers 0.0.22.post7 ──
+print("Dong bo lai phien ban thu vien (Torch 2.1.0 + xFormers)...")
 subprocess.run(
-    [sys.executable, "-m", "pip", "install", "-q", "--no-build-isolation", "xformers"],
+    [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "torch==2.1.0", "torchvision==0.16.0", "xformers==0.0.22.post7", "--index-url", "https://download.pytorch.org/whl/cu121"],
     capture_output=True, timeout=300
 )
+print("Dong bo hoan tat!")
 
 # ── CẤU HÌNH BACKEND (giống code cũ chạy thành công) ─────────────
 import os, json, torch
