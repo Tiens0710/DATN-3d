@@ -52,8 +52,23 @@ if needs_sync:
     )
     if r1.returncode != 0:
         print("Loi dong bo torch/xformers:", r1.stderr)
+    # Reinstall setuptools to restore pkg_resources (broken by torch force-reinstall)
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "setuptools>=69.0"],
+        capture_output=True, text=True, timeout=60
+    )
 else:
     print("Moi truong Torch 2.1.0 + xFormers da hop le, bo qua dong bo.")
+
+# Ensure setuptools/pkg_resources is always available for compile steps
+try:
+    import pkg_resources
+except ModuleNotFoundError:
+    print("pkg_resources not found, installing setuptools...")
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", "setuptools>=69.0"],
+        capture_output=True, text=True, timeout=60
+    )
 
 # Thiết lập PATH chứa nvcc để compile CUDA extension
 import os
