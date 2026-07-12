@@ -15,7 +15,7 @@ def run_grounded_sam2(input_image_path: str, layout: dict, crops_dir: str) -> li
     if not labels_list:
         labels_list = ["chair", "table"]
 
-    script = f"""
+    script = """
 import sys
 sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 
@@ -114,7 +114,7 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     crop_path = f"{crops_dir}/" + name + ".png"
     crop.save(crop_path)
     
-    results.append({{
+    results.append({
         "name": name,
         "label": phrase,
         "box": [x1, y1, x2, y2],
@@ -123,7 +123,7 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
         "mask_score": float(scores[0]),
         "crop_url": "/crops/" + name + ".png",
         "crop_path": crop_path
-    }})
+    })
 
 # Lưu ảnh trực quan hóa mặt nạ SAM2
 Image.fromarray(visual_img).save(f"{crops_dir}/sam2_visual.png")
@@ -132,6 +132,11 @@ with open("{crops_dir}/sam2_results.json", "w") as f:
     json.dump(results, f, indent=2)
 print("✅ Tách nền SAM2 hoàn tất.")
 """
+    # Replace templates in plain string
+    script = script.replace("{input_image_path}", input_image_path)
+    script = script.replace("{labels_list}", str(labels_list))
+    script = script.replace("{crops_dir}", crops_dir)
+
     r = subprocess.run([PY_PATH, "-c", script], capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"Lỗi chạy Grounded-SAM2: {r.stderr}")
