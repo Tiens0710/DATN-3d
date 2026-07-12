@@ -3,8 +3,6 @@ import json
 import subprocess
 
 PY_PATH = "/opt/venv310/bin/python"
-SEGMENTER_VERSION = "v2.0-safe-replace"
-print(f"[SEGMENTER] Loaded segmenter.py {SEGMENTER_VERSION} (uses .replace, no f-string)")
 
 def run_grounded_sam2(input_image_path: str, layout: dict, crops_dir: str) -> list:
     """

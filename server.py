@@ -1,7 +1,6 @@
 import os
 import sys
 import shutil
-import traceback
 
 # Self-healing check: Force downgrade NumPy if it's 2.x to avoid PyTorch crash
 try:
@@ -121,9 +120,7 @@ def api_run_sam2(request: Sam2Request):
         crops_data = run_grounded_sam2(input_image_path, request.layout, CROPS_DIR)
         return {"status": "success", "crops": crops_data}
     except Exception as e:
-        tb = traceback.format_exc()
-        print(f"[SAM2 ERROR TRACEBACK]\n{tb}", flush=True)
-        raise HTTPException(status_code=500, detail=f"{str(e)}\n\nTraceback:\n{tb}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/generate_3d")
 def api_generate_3d(request: TrellisRequest):
