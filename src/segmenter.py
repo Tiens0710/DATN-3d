@@ -114,7 +114,7 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     crop_path = f"{crops_dir}/" + name + ".png"
     crop.save(crop_path)
     
-    results.append({
+    results.append({{
         "name": name,
         "label": phrase,
         "box": [x1, y1, x2, y2],
@@ -123,7 +123,7 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
         "mask_score": float(scores[0]),
         "crop_url": "/crops/" + name + ".png",
         "crop_path": crop_path
-    })
+    }})
 
 # Lưu ảnh trực quan hóa mặt nạ SAM2
 Image.fromarray(visual_img).save(f"{crops_dir}/sam2_visual.png")
