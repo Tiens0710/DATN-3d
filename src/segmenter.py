@@ -15,6 +15,8 @@ def run_grounded_sam2(input_image_path: str, layout: dict, crops_dir: str) -> li
     if not labels_list:
         labels_list = ["chair", "table"]
 
+    # Use .replace() instead of f-string to avoid "Invalid format specifier" errors
+    # caused by Python dict/list literals inside the script body
     script = """
 import sys
 sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
@@ -30,8 +32,8 @@ CKPT_PATH = "/kaggle/working/groundingdino_ckpt/groundingdino_swint_ogc.pth"
 CONFIG_PATH = "/kaggle/working/groundingdino_ckpt/GroundingDINO_SwinT_OGC.py"
 model_dino = load_model(CONFIG_PATH, CKPT_PATH)
 
-image_source, image_tensor = load_image("{input_image_path}")
-labels = {labels_list}
+image_source, image_tensor = load_image("__INPUT_IMAGE_PATH__")
+labels = __LABELS_LIST__
 text_prompt = " . ".join(labels)
 
 boxes, logits, phrases = predict(
@@ -46,7 +48,7 @@ SAM2_CKPT = "/kaggle/working/sam2_ckpt/sam2_hiera_small.pt"
 sam2_model = build_sam2("sam2_hiera_s.yaml", SAM2_CKPT, device="cuda")
 predictor = SAM2ImagePredictor(sam2_model)
 
-img_rgb = np.array(Image.open("{input_image_path}").convert("RGB"))
+img_rgb = np.array(Image.open("__INPUT_IMAGE_PATH__").convert("RGB"))
 predictor.set_image(img_rgb)
 H, W, _ = img_rgb.shape
 
@@ -111,7 +113,7 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     crop = img_rgba.crop((cx1, cy1, cx2, cy2))
     
     name = "object_" + str(i+1)
-    crop_path = f"{crops_dir}/" + name + ".png"
+    crop_path = "__CROPS_DIR__/" + name + ".png"
     crop.save(crop_path)
     
     results.append({
@@ -126,16 +128,17 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     })
 
 # Lưu ảnh trực quan hóa mặt nạ SAM2
-Image.fromarray(visual_img).save(f"{crops_dir}/sam2_visual.png")
+Image.fromarray(visual_img).save("__CROPS_DIR__/sam2_visual.png")
 
-with open("{crops_dir}/sam2_results.json", "w") as f:
+with open("__CROPS_DIR__/sam2_results.json", "w") as f:
     json.dump(results, f, indent=2)
 print("✅ Tách nền SAM2 hoàn tất.")
 """
-    # Replace templates in plain string
-    script = script.replace("{input_image_path}", input_image_path)
-    script = script.replace("{labels_list}", str(labels_list))
-    script = script.replace("{crops_dir}", crops_dir)
+
+    # Safe string substitution - no f-string parsing issues
+    script = script.replace("__INPUT_IMAGE_PATH__", input_image_path)
+    script = script.replace("__LABELS_LIST__", repr(labels_list))
+    script = script.replace("__CROPS_DIR__", crops_dir)
 
     r = subprocess.run([PY_PATH, "-c", script], capture_output=True, text=True)
     if r.returncode != 0:
