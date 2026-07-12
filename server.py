@@ -2,7 +2,7 @@ import os
 import sys
 import shutil
 
-# Self-healing check: Force downgrade NumPy if it's 2.x to avoid PyTorch crash
+# Self-healing check: Force downgrade NumPy if it's 2.x and ensure setuptools is installed
 try:
     import numpy as np
     if np.__version__.startswith("2."):
@@ -13,6 +13,15 @@ try:
         os.execv(sys.executable, [sys.executable] + sys.argv)
 except Exception as e:
     print(f"NumPy self-healing check error: {e}")
+
+try:
+    import pkg_resources
+except ModuleNotFoundError:
+    import subprocess
+    print("⚠️ pkg_resources (setuptools) not found! Installing setuptools...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "setuptools>=69.0"], check=True)
+    print("✓ setuptools installed. Restarting server...")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
