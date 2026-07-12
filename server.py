@@ -122,7 +122,36 @@ def api_combine_scene(request: CombineRequest):
         output_scene_path = os.path.join(OUT_DIR, "scene_combined.glb")
         success = combine_scene_meshes(request.models, output_scene_path, request.scale_factor)
         if success:
-            return {"status": "success", "scene_url": "/outputs/scene_combined.glb"}
+            # Create a zip package containing all generated assets (2D images + 3D models)
+            import zipfile
+            zip_path = os.path.join(OUT_DIR, "scene_assets.zip")
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # 1. Add generated 2D image
+                input_img = os.path.join(KAGGLE_WORKING, "input.png")
+                if os.path.exists(input_img):
+                    zipf.write(input_img, "input_image.png")
+                
+                # 2. Add cropped object images
+                for f in os.listdir(CROPS_DIR):
+                    f_path = os.path.join(CROPS_DIR, f)
+                    if os.path.isfile(f_path) and f != "sam2_visual.png":
+                        zipf.write(f_path, os.path.join("crops", f))
+                        
+                # 3. Add individual GLB models
+                for f in os.listdir(MULTI_GLB_DIR):
+                    f_path = os.path.join(MULTI_GLB_DIR, f)
+                    if os.path.isfile(f_path):
+                        zipf.write(f_path, os.path.join("models", f))
+                        
+                # 4. Add combined scene mesh
+                if os.path.exists(output_scene_path):
+                    zipf.write(output_scene_path, "scene_combined.glb")
+
+            return {
+                "status": "success", 
+                "scene_url": "/outputs/scene_combined.glb",
+                "zip_url": "/outputs/scene_assets.zip"
+            }
         else:
             raise HTTPException(status_code=500, detail="Scene combining failed")
     except Exception as e:

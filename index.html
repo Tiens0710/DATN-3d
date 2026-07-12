@@ -1270,6 +1270,7 @@
                 if (res.ok) {
                     const data = await res.json();
                     this.properties.sceneUrl = `${backendUrl}${data.scene_url}`;
+                    this.properties.zipUrl = `${backendUrl}${data.zip_url}`;
                     this.setOutputData(0, this.properties.sceneUrl);
                     writeLog("🎉 HỆ THỐNG ĐÃ HOÀN TẤT DỰNG CẢNH 3D!", "success");
 
@@ -1332,6 +1333,7 @@
                         <div class="viewer-controls">
                             <button class="viewer-btn" id="btn-spin-${this.id}">Stop Spin</button>
                             <button class="viewer-btn" id="btn-reset-${this.id}">Reset View</button>
+                            <button class="viewer-btn" id="btn-download-${this.id}" style="background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%); color: white; border-color: rgba(255,255,255,0.2);">📦 Tải gói ZIP</button>
                         </div>
                     </model-viewer>
                     `;
@@ -1348,6 +1350,24 @@
                         e.stopPropagation();
                         modelViewer.cameraOrbit = "0deg 75deg auto";
                         modelViewer.fieldOfView = "auto";
+                    };
+
+                    viewer.querySelector(`#btn-download-${this.id}`).onclick = (e) => {
+                        e.stopPropagation();
+                        if (this.properties.zipUrl) {
+                            const a = document.createElement("a");
+                            // Append ngrok bypass query parameter to skip warning window on new tab
+                            const downloadUrl = new URL(this.properties.zipUrl);
+                            downloadUrl.searchParams.set("ngrok-skip-browser-warning", "1");
+                            
+                            a.href = downloadUrl.toString();
+                            a.download = "scene_assets.zip";
+                            a.target = "_blank";
+                            a.click();
+                            writeLog("📦 Đang bắt đầu tải xuống gói ZIP tài nguyên...", "success");
+                        } else {
+                            writeLog("❌ Lỗi: Link tải ZIP chưa sẵn sàng.", "error");
+                        }
                     };
                 })
                 .catch(err => {
