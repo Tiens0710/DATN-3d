@@ -14,13 +14,29 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
         json.dump(objects_dict, f)
 
     script = f"""
-import sys, subprocess
+import sys, subprocess, os
 sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
+
+# ── STEP 0: Ensure setuptools/pkg_resources exists BEFORE any torch import ──
+try:
+    import pkg_resources
+except ModuleNotFoundError:
+    print("pkg_resources not found, installing setuptools FIRST...")
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", "setuptools>=69.0"],
+        capture_output=True, text=True, timeout=60
+    )
+    # Force Python to find the newly installed package
+    import importlib
+    import site
+    importlib.invalidate_caches()
+    site.main()
+    import pkg_resources
+    print("setuptools installed OK!")
 
 # ── MOCK: Chặn triton (bitsandbytes) ──
 sys.modules['triton'] = None
 
-# ── Đồng bộ bộ ba Torch 2.1.0 + Torchvision 0.16.0 + xFormers 0.0.22.post7 ──
 # ── Đồng bộ bộ ba Torch 2.1.0 + Torchvision 0.16.0 + xFormers 0.0.22.post7 ──
 needs_sync = False
 try:
@@ -39,7 +55,6 @@ except Exception:
 
 if needs_sync:
     print("Dong bo lai phien ban thu vien (Torch 2.1.0 + xFormers)...")
-    # Clean up numpy directories first to avoid "Frankenstein" mix of numpy 1.x and 2.x
     import shutil, glob
     for p in glob.glob("/opt/venv310/lib/python3.10/site-packages/numpy*"):
         try:
@@ -52,23 +67,13 @@ if needs_sync:
     )
     if r1.returncode != 0:
         print("Loi dong bo torch/xformers:", r1.stderr)
-    # Reinstall setuptools to restore pkg_resources (broken by torch force-reinstall)
+    # Reinstall setuptools (force-reinstall torch may remove it)
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "setuptools>=69.0"],
         capture_output=True, text=True, timeout=60
     )
 else:
     print("Moi truong Torch 2.1.0 + xFormers da hop le, bo qua dong bo.")
-
-# Ensure setuptools/pkg_resources is always available for compile steps
-try:
-    import pkg_resources
-except ModuleNotFoundError:
-    print("pkg_resources not found, installing setuptools...")
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "setuptools>=69.0"],
-        capture_output=True, text=True, timeout=60
-    )
 
 # Thiết lập PATH chứa nvcc để compile CUDA extension
 import os
