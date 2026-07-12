@@ -1,5 +1,19 @@
 import os
+import sys
 import shutil
+
+# Self-healing check: Force downgrade NumPy if it's 2.x to avoid PyTorch crash
+try:
+    import numpy as np
+    if np.__version__.startswith("2."):
+        import subprocess
+        print("⚠️ NumPy 2.x detected! Force downgrading to numpy==1.26.4 inside venv...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "--force-reinstall", "numpy==1.26.4"], check=True)
+        print("✓ Downgrade completed. Restarting server...")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+except Exception as e:
+    print(f"NumPy self-healing check error: {e}")
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
