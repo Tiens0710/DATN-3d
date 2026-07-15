@@ -17,6 +17,15 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
 import sys, subprocess, os
 sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 
+# torch.utils.cpp_extension and nvdiffrast still import pkg_resources.
+# setuptools >= 81 no longer ships pkg_resources, so pin a compatible version.
+subprocess.run(
+    [sys.executable, "-m", "pip", "install", "-q", "setuptools<81"],
+    check=True,
+)
+import importlib
+importlib.invalidate_caches()
+
 # ── STEP 0: Ensure setuptools/pkg_resources exists BEFORE any torch import ──
 # ── MOCK: Chặn triton (bitsandbytes) ──
 sys.modules['triton'] = None
@@ -53,7 +62,7 @@ if needs_sync:
         print("Loi dong bo torch/xformers:", r1.stderr)
     # Reinstall setuptools (force-reinstall torch may remove it)
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "setuptools>=69.0"],
+        [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "setuptools<81"],
         capture_output=True, text=True, timeout=60
     )
 else:
