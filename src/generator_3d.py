@@ -18,22 +18,6 @@ import sys, subprocess, os
 sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 
 # ── STEP 0: Ensure setuptools/pkg_resources exists BEFORE any torch import ──
-try:
-    import pkg_resources
-except ModuleNotFoundError:
-    print("pkg_resources not found, installing setuptools FIRST...")
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "setuptools>=69.0"],
-        capture_output=True, text=True, timeout=60
-    )
-    # Force Python to find the newly installed package
-    import importlib
-    import site
-    importlib.invalidate_caches()
-    site.main()
-    import pkg_resources
-    print("setuptools installed OK!")
-
 # ── MOCK: Chặn triton (bitsandbytes) ──
 sys.modules['triton'] = None
 
