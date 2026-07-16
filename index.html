@@ -386,6 +386,469 @@
             border-color: rgba(255, 255, 255, 0.35);
             box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), inset 0 2px 4px rgba(0, 0, 0, 0.3);
         }
+
+        /* ================================================================
+           ComfyUI-inspired application shell
+           ================================================================ */
+        :root {
+            --comfy-bg: #101112;
+            --comfy-canvas: #171819;
+            --comfy-panel: #202123;
+            --comfy-panel-2: #282a2d;
+            --comfy-border: #36383c;
+            --comfy-border-soft: #2b2d30;
+            --comfy-text: #e7e7e7;
+            --comfy-muted: #9a9da3;
+            --comfy-accent: #58a6ff;
+            --comfy-green: #42c774;
+        }
+
+        body,
+        html {
+            background: var(--comfy-bg);
+            color: var(--comfy-text);
+            font-family: Inter, "Segoe UI", Arial, sans-serif;
+        }
+
+        #app-container {
+            background: var(--comfy-bg);
+        }
+
+        header {
+            height: 46px;
+            flex: 0 0 46px;
+            padding: 0 10px;
+            gap: 12px;
+            justify-content: flex-start;
+            background: #191a1c;
+            border-bottom: 1px solid var(--comfy-border);
+            box-shadow: none;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+
+        .logo-section {
+            width: 218px;
+            flex: 0 0 218px;
+        }
+
+        .logo-section h1 {
+            font-size: 13px;
+            letter-spacing: 0.2px;
+            text-transform: none;
+            text-shadow: none;
+        }
+
+        .logo-section span {
+            font-size: 9px;
+            color: var(--comfy-muted);
+            letter-spacing: 0;
+        }
+
+        .workflow-tabs {
+            display: flex;
+            align-items: center;
+            align-self: stretch;
+            min-width: 160px;
+            border-left: 1px solid var(--comfy-border-soft);
+            border-right: 1px solid var(--comfy-border-soft);
+        }
+
+        .workflow-tab {
+            height: 100%;
+            padding: 0 14px;
+            border: 0;
+            border-radius: 0;
+            background: #222326;
+            box-shadow: inset 0 -2px 0 var(--comfy-accent);
+            color: var(--comfy-text);
+            font-size: 12px;
+            letter-spacing: 0;
+        }
+
+        .workflow-tab::before {
+            content: "●";
+            margin-right: 7px;
+            color: var(--comfy-accent);
+            font-size: 8px;
+        }
+
+        .controls {
+            margin-left: auto;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .input-group {
+            height: 30px;
+            padding: 0 8px;
+            border-radius: 4px;
+            background: #111214;
+            border-color: var(--comfy-border);
+            box-shadow: none;
+        }
+
+        .input-group:focus-within {
+            border-color: var(--comfy-accent);
+            box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.18);
+        }
+
+        .input-group label {
+            margin-right: 8px;
+            font-size: 9px;
+            letter-spacing: 0.4px;
+            color: var(--comfy-muted);
+        }
+
+        .input-group input {
+            width: min(260px, 20vw);
+            padding: 3px 0;
+            font-size: 11px;
+        }
+
+        button {
+            min-height: 30px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            border: 1px solid var(--comfy-border);
+            background: var(--comfy-panel-2);
+            box-shadow: none;
+            font-size: 11px;
+            letter-spacing: 0;
+            transition: background 0.12s ease, border-color 0.12s ease;
+        }
+
+        button:hover,
+        .secondary:hover {
+            background: #34363a;
+            border-color: #50535a;
+            box-shadow: none;
+        }
+
+        .secondary {
+            background: var(--comfy-panel-2);
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+
+        #btn-run {
+            background: #2f7dd1;
+            border-color: #3c91e8;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            font-weight: 650;
+        }
+
+        #btn-run:hover {
+            background: #398be0;
+            border-color: #65a9ef;
+            box-shadow: none;
+            filter: none;
+        }
+
+        .workspace-shell {
+            display: grid;
+            grid-template-columns: 226px minmax(0, 1fr) 330px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .left-sidebar,
+        .right-sidebar {
+            min-height: 0;
+            background: var(--comfy-panel);
+            color: var(--comfy-text);
+            z-index: 20;
+        }
+
+        .left-sidebar {
+            border-right: 1px solid var(--comfy-border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .right-sidebar {
+            border-left: 1px solid var(--comfy-border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-tabs,
+        .right-tabs {
+            height: 36px;
+            flex: 0 0 36px;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid var(--comfy-border);
+            background: #1b1c1e;
+        }
+
+        .sidebar-tab,
+        .right-tab {
+            height: 100%;
+            padding: 0 12px;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            color: var(--comfy-muted);
+            font-size: 11px;
+        }
+
+        .sidebar-tab.active,
+        .right-tab.active {
+            color: var(--comfy-text);
+            background: var(--comfy-panel);
+            box-shadow: inset 0 -2px 0 var(--comfy-accent);
+        }
+
+        .sidebar-tab:disabled,
+        .right-tab:disabled {
+            opacity: 0.38;
+            cursor: default;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            min-height: 0;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        .node-search {
+            width: 100%;
+            height: 30px;
+            box-sizing: border-box;
+            padding: 0 9px;
+            color: var(--comfy-text);
+            background: #151618;
+            border: 1px solid var(--comfy-border);
+            border-radius: 4px;
+            outline: none;
+            font-size: 11px;
+        }
+
+        .node-search:focus {
+            border-color: var(--comfy-accent);
+        }
+
+        .palette-heading {
+            margin: 14px 2px 6px;
+            color: #b6b8bd;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.7px;
+            text-transform: uppercase;
+        }
+
+        .node-palette {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .node-palette-item {
+            width: 100%;
+            justify-content: flex-start;
+            padding: 7px 8px;
+            background: transparent;
+            border-color: transparent;
+            color: #d4d5d7;
+            font-size: 11px;
+            text-align: left;
+        }
+
+        .node-palette-item:hover {
+            background: #2b2d30;
+            border-color: #3a3c40;
+        }
+
+        .node-palette-item .node-color {
+            width: 8px;
+            height: 8px;
+            flex: 0 0 8px;
+            border-radius: 2px;
+        }
+
+        .sidebar-hint {
+            margin-top: auto;
+            padding: 10px;
+            border-top: 1px solid var(--comfy-border);
+            color: var(--comfy-muted);
+            font-size: 9px;
+            line-height: 1.6;
+        }
+
+        #canvas-container {
+            min-width: 0;
+            width: auto;
+            height: auto;
+            background-color: var(--comfy-canvas);
+            background-image:
+                linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+
+        #graphcanvas {
+            background: transparent;
+        }
+
+        .canvas-toolbar {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            gap: 5px;
+            z-index: 12;
+            padding: 4px;
+            background: rgba(30, 31, 33, 0.96);
+            border: 1px solid var(--comfy-border);
+            border-radius: 5px;
+        }
+
+        .canvas-tool-btn {
+            min-height: 27px;
+            padding: 4px 8px;
+            background: #27292c;
+        }
+
+        .canvas-statusbar {
+            position: absolute;
+            left: 10px;
+            bottom: 8px;
+            z-index: 12;
+            display: flex;
+            gap: 12px;
+            padding: 5px 8px;
+            color: var(--comfy-muted);
+            background: rgba(25, 26, 28, 0.92);
+            border: 1px solid var(--comfy-border);
+            border-radius: 4px;
+            font-family: "Fira Code", monospace;
+            font-size: 9px;
+            pointer-events: none;
+        }
+
+        .queue-card {
+            padding: 12px;
+            border-bottom: 1px solid var(--comfy-border);
+        }
+
+        .queue-card-title {
+            display: flex;
+            justify-content: space-between;
+            color: var(--comfy-muted);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .queue-state {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            padding: 9px;
+            background: #18191b;
+            border: 1px solid var(--comfy-border-soft);
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .queue-state-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #73767c;
+        }
+
+        .queue-state.running .queue-state-dot {
+            background: #f0b429;
+            box-shadow: 0 0 8px rgba(240, 180, 41, 0.6);
+        }
+
+        .queue-state.success .queue-state-dot {
+            background: var(--comfy-green);
+        }
+
+        .queue-state.error .queue-state-dot {
+            background: #f05d5e;
+            box-shadow: 0 0 8px rgba(240, 93, 94, 0.55);
+        }
+
+        #log-panel {
+            position: relative;
+            inset: auto;
+            width: auto;
+            height: auto;
+            flex: 1;
+            min-height: 0;
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            background: var(--comfy-panel);
+            box-shadow: none;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+
+        #log-panel:hover {
+            border-color: transparent;
+            box-shadow: none;
+        }
+
+        #log-panel h3 {
+            margin: 0;
+            padding: 9px 11px;
+            border-bottom: 1px solid var(--comfy-border);
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+        }
+
+        #log-content {
+            margin: 0;
+            padding: 10px;
+            border: 0;
+            border-radius: 0;
+            background: #151618;
+            box-shadow: none;
+            font-size: 10px;
+            line-height: 1.55;
+        }
+
+        .node-3d-container {
+            background: #111214;
+            border-color: #3a3c40 !important;
+            border-radius: 4px;
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+
+        .node-textarea {
+            background: #161719;
+            border-color: #3b3d41;
+            border-radius: 3px;
+            box-shadow: none;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+
+        @media (max-width: 1180px) {
+            .workspace-shell {
+                grid-template-columns: 190px minmax(0, 1fr) 285px;
+            }
+
+            .logo-section,
+            .workflow-tabs {
+                display: none;
+            }
+
+            .input-group input {
+                width: 190px;
+            }
+        }
     </style>
 </head>
 
@@ -394,35 +857,127 @@
     <div id="app-container">
         <header>
             <div class="logo-section">
-                <h1>DATN: AUTOMATED 3D SCENE PIPELINE</h1>
-                <span>Thiết kế & Dựng cảnh 3D dựa trên Sơ đồ ngữ nghĩa không gian</span>
+                <h1>DATN Comfy Workspace</h1>
+                <span>Text → Image → Segment → 3D Scene</span>
+            </div>
+            <div class="workflow-tabs">
+                <button class="workflow-tab">Furniture Scene Workflow</button>
             </div>
             <div class="controls">
                 <div class="input-group">
-                    <label>Kaggle API URL</label>
+                    <label>Server</label>
                     <input type="text" id="ngrok-url" placeholder="https://xxxx.ngrok-free.app" value="">
                     <span class="status-dot" id="status-indicator"></span>
                 </div>
-                <button id="btn-connect" class="secondary">Kết nối GPU</button>
-                <button id="btn-kaggle-help" class="secondary">📖 Hướng dẫn Kaggle</button>
-                <button id="btn-run">▶ Queue Prompt</button>
+                <button id="btn-connect" class="secondary">Connect</button>
+                <button id="btn-kaggle-help" class="secondary">Kaggle Setup</button>
+                <button id="btn-run">▶ Queue</button>
             </div>
         </header>
 
-        <div id="canvas-container">
-            <canvas id="graphcanvas"></canvas>
+        <div class="workspace-shell">
+            <aside class="left-sidebar">
+                <div class="sidebar-tabs">
+                    <button class="sidebar-tab active">Nodes</button>
+                    <button class="sidebar-tab" disabled title="Sắp cập nhật">Models</button>
+                    <button class="sidebar-tab" disabled title="Sắp cập nhật">Assets</button>
+                </div>
+                <div class="sidebar-content">
+                    <input
+                        id="node-search"
+                        class="node-search"
+                        type="search"
+                        placeholder="Search nodes..."
+                    >
 
-            <!-- Console Terminal Logs -->
-            <div id="log-panel">
-                <h3>Terminal Logs 
-                    <div class="log-actions">
-                        <span id="btn-copy-logs">Copy Logs</span>
-                        <span id="btn-clear-logs">Clear Logs</span>
+                    <div class="palette-heading">Input</div>
+                    <div class="node-palette">
+                        <button class="node-palette-item" data-node-type="datn/input_prompt">
+                            <span class="node-color" style="background:#58a65c"></span>
+                            Text Prompt
+                        </button>
                     </div>
-                </h3>
-                <div id="log-content">Chưa kết nối máy chủ Kaggle. Vui lòng nhập link Ngrok và nhấn 'Kết nối GPU' để bắt
-                    đầu...</div>
-            </div>
+
+                    <div class="palette-heading">Generation</div>
+                    <div class="node-palette">
+                        <button class="node-palette-item" data-node-type="datn/sdxl_gen">
+                            <span class="node-color" style="background:#c62828"></span>
+                            Gemini + SD3.5 LoRA
+                        </button>
+                        <button class="node-palette-item" data-node-type="datn/grounded_sam2">
+                            <span class="node-color" style="background:#e65c00"></span>
+                            Grounded SAM2
+                        </button>
+                        <button class="node-palette-item" data-node-type="datn/trellis_3d">
+                            <span class="node-color" style="background:#1976d2"></span>
+                            TRELLIS 3D
+                        </button>
+                    </div>
+
+                    <div class="palette-heading">Scene</div>
+                    <div class="node-palette">
+                        <button class="node-palette-item" data-node-type="datn/scene_graph">
+                            <span class="node-color" style="background:#2e7d32"></span>
+                            Scene Graph Parser
+                        </button>
+                        <button class="node-palette-item" data-node-type="datn/layout_2d">
+                            <span class="node-color" style="background:#8a6d1d"></span>
+                            2D Layout
+                        </button>
+                        <button class="node-palette-item" data-node-type="datn/scene_combiner">
+                            <span class="node-color" style="background:#7b1fa2"></span>
+                            3D Scene Combiner
+                        </button>
+                    </div>
+                </div>
+                <div class="sidebar-hint">
+                    Double-click canvas để tìm node.<br>
+                    Kéo từ các socket để nối workflow.
+                </div>
+            </aside>
+
+            <main id="canvas-container">
+                <canvas id="graphcanvas"></canvas>
+
+                <div class="canvas-toolbar">
+                    <button id="btn-fit-view" class="canvas-tool-btn">Fit View</button>
+                    <button id="btn-reset-workflow" class="canvas-tool-btn">Reset Workflow</button>
+                </div>
+
+                <div class="canvas-statusbar">
+                    <span>Workflow: furniture_scene_v1</span>
+                    <span>Ctrl + Enter: Queue</span>
+                    <span id="canvas-zoom-label">Zoom 52%</span>
+                </div>
+            </main>
+
+            <aside class="right-sidebar">
+                <div class="right-tabs">
+                    <button class="right-tab active">Queue</button>
+                    <button class="right-tab" disabled title="Sắp cập nhật">History</button>
+                </div>
+
+                <div class="queue-card">
+                    <div class="queue-card-title">
+                        <span>Current execution</span>
+                        <span id="queue-count">0 running</span>
+                    </div>
+                    <div id="queue-state" class="queue-state">
+                        <span class="queue-state-dot"></span>
+                        <span id="queue-state-label">Idle — ready to queue</span>
+                    </div>
+                </div>
+
+                <div id="log-panel">
+                    <h3>Execution Log
+                        <div class="log-actions">
+                            <span id="btn-copy-logs">Copy</span>
+                            <span id="btn-clear-logs">Clear</span>
+                        </div>
+                    </h3>
+                    <div id="log-content">Chưa kết nối máy chủ Kaggle. Nhập link Ngrok và nhấn Connect để bắt đầu.</div>
+                </div>
+            </aside>
         </div>
     </div>
 
@@ -433,6 +988,11 @@
         // Global API Configuration
         let backendUrl = "";
         let isConnected = false;
+        const ngrokInput = document.getElementById("ngrok-url");
+        ngrokInput.value = localStorage.getItem("datn-ngrok-url") || "";
+        ngrokInput.addEventListener("change", () => {
+            localStorage.setItem("datn-ngrok-url", ngrokInput.value.trim());
+        });
 
         // Output logs styling and helper
         function writeLog(message, type = "info") {
@@ -491,6 +1051,8 @@
                     backendUrl = url;
                     isConnected = true;
                     document.getElementById("status-indicator").classList.add("connected");
+                    document.getElementById("btn-connect").innerText = "Connected";
+                    localStorage.setItem("datn-ngrok-url", url);
                     writeLog(`✅ Đã kết nối thành công! Phiên bản: ${data.version || '1.0.0'}`, "success");
                 } else {
                     throw new Error("Mã trạng thái phản hồi lỗi.");
@@ -498,6 +1060,7 @@
             } catch (e) {
                 isConnected = false;
                 document.getElementById("status-indicator").classList.remove("connected");
+                document.getElementById("btn-connect").innerText = "Connect";
                 writeLog(`❌ Lỗi kết nối: ${e.message}. Hãy đảm bảo server trên Kaggle đang chạy và Ngrok đã kết nối thành công.`, "error");
             }
         };
@@ -511,37 +1074,37 @@
         // =========================================================================
         // COMFYUI-AUTHENTIC THEME
         // =========================================================================
-        LiteGraph.NODE_DEFAULT_BGCOLOR = "rgba(28, 28, 32, 0.75)";
-        LiteGraph.NODE_DEFAULT_BOXCOLOR = "rgba(255, 255, 255, 0.1)";
-        LiteGraph.NODE_TEXT_COLOR = "#ffffff";
-        LiteGraph.NODE_TITLE_COLOR = "#ffffff";
+        LiteGraph.NODE_DEFAULT_BGCOLOR = "#26282b";
+        LiteGraph.NODE_DEFAULT_BOXCOLOR = "#111214";
+        LiteGraph.NODE_TEXT_COLOR = "#e6e6e6";
+        LiteGraph.NODE_TITLE_COLOR = "#f2f2f2";
         LiteGraph.NODE_SELECTED_TITLE_COLOR = "#ffffff";
         LiteGraph.NODE_DEFAULT_SHAPE = "box";
-        LiteGraph.LINK_COLOR = "#9A9";
-        LiteGraph.CONNECTING_LINK_COLOR = "#AFA";
-        LiteGraph.DEFAULT_LINK_TYPE_WIDTH = 3;
-        LiteGraph.CANVAS_GRID_SIZE = 16;
-        LiteGraph.NODE_TITLE_HEIGHT = 30;
+        LiteGraph.LINK_COLOR = "#8e959e";
+        LiteGraph.CONNECTING_LINK_COLOR = "#ffffff";
+        LiteGraph.DEFAULT_LINK_TYPE_WIDTH = 2;
+        LiteGraph.CANVAS_GRID_SIZE = 24;
+        LiteGraph.NODE_TITLE_HEIGHT = 26;
         LiteGraph.NODE_SLOT_HEIGHT = 20;
 
         // ComfyUI fonts
-        LiteGraph.NODE_TITLE_TEXT_Y = 20;
-        LiteGraph.NODE_TEXT_SIZE = 14;
-        LiteGraph.NODE_SUBTEXT_SIZE = 12;
-        LiteGraph.NODE_TITLE_FONT = "bold 14px 'Outfit'";
-        LiteGraph.NODE_LABEL_FONT = "normal 12px 'Outfit'";
+        LiteGraph.NODE_TITLE_TEXT_Y = 18;
+        LiteGraph.NODE_TEXT_SIZE = 12;
+        LiteGraph.NODE_SUBTEXT_SIZE = 10;
+        LiteGraph.NODE_TITLE_FONT = "600 12px Inter, 'Segoe UI', sans-serif";
+        LiteGraph.NODE_LABEL_FONT = "normal 11px Inter, 'Segoe UI', sans-serif";
 
         // ComfyUI wire colors by slot type
         LGraphCanvas.link_type_colors = {
-            "string": "#6A6",
-            "object": "#5AF",
-            "number": "#DA5",
-            "boolean": "#F5A"
+            "string": "#7ecb72",
+            "object": "#64a8e8",
+            "number": "#d8a95d",
+            "boolean": "#d981b5"
         };
 
         // ComfyUI-style smooth curved links
         canvas.render_connections_border = false;
-        canvas.connections_width = 3;
+        canvas.connections_width = 2;
         canvas.render_curved_connections = true;
         canvas.render_connection_arrows = false;
         canvas.highquality_render = true;
@@ -571,7 +1134,7 @@
             };
             this.size = [340, 150];
             this.color = "#5b7a3a";
-            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+            this.bgcolor = "#26282b";
         }
         NodePrompt.title = "✏️ Input Text Prompt";
         NodePrompt.title_color = "rgba(76, 175, 80, 0.85)";
@@ -613,13 +1176,65 @@
             textarea.style.top = `${y}px`;
             textarea.style.width = `${w}px`;
             textarea.style.height = `${h}px`;
-            textarea.style.fontSize = `${Math.max(10, 13 * scale)}px`;
+            textarea.style.fontSize = `${Math.max(9, 13 * scale)}px`;
+            textarea.style.padding = `${Math.max(3, 9 * scale)}px`;
+            textarea.style.lineHeight = "1.35";
 
-            if (scale < 0.25) {
+            if (scale < 0.45) {
                 textarea.style.display = "none";
             } else {
                 textarea.style.display = "block";
             }
+        };
+
+        NodePrompt.prototype.onDrawForeground = function (ctx) {
+            if (canvas.ds.scale >= 0.45) return;
+
+            const prompt = this.properties.prompt || "";
+            const x = 15;
+            const y = 45;
+            const width = this.size[0] - 30;
+            const height = this.size[1] - 60;
+
+            ctx.save();
+            ctx.fillStyle = "#161719";
+            ctx.strokeStyle = "#3b3d41";
+            ctx.lineWidth = 1;
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeRect(x, y, width, height);
+
+            ctx.beginPath();
+            ctx.rect(x + 6, y + 5, width - 12, height - 10);
+            ctx.clip();
+
+            ctx.fillStyle = "#e7e7e7";
+            ctx.font = "12px Inter, 'Segoe UI', sans-serif";
+
+            const words = prompt.split(/\s+/);
+            const lines = [];
+            let line = "";
+
+            for (const word of words) {
+                const candidate = line ? `${line} ${word}` : word;
+                if (ctx.measureText(candidate).width > width - 20) {
+                    if (line) lines.push(line);
+                    line = word;
+                } else {
+                    line = candidate;
+                }
+            }
+
+            if (line) lines.push(line);
+
+            lines.slice(0, 4).forEach((text, index) => {
+                ctx.fillText(text, x + 10, y + 20 + index * 16);
+            });
+
+            if (lines.length > 4) {
+                ctx.fillText("…", x + 10, y + height - 8);
+            }
+
+            ctx.restore();
         };
 
         NodePrompt.prototype.onRemoved = function () {
@@ -638,7 +1253,7 @@
             this.properties = { graphData: null };
             this.size = [340, 200];
             this.color = "#2e7d32";
-            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+            this.bgcolor = "#26282b";
         }
         NodeSceneGraph.title = "🧠 Scene Graph Parser";
         NodeSceneGraph.title_color = "rgba(46, 125, 50, 0.85)";
@@ -726,7 +1341,7 @@
             this.properties = { layoutData: null };
             this.size = [380, 260];
             this.color = "#6a4dc7";
-            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+            this.bgcolor = "#26282b";
         }
         NodeLayout2D.title = "📐 2D Layout Generator";
         NodeLayout2D.title_color = "rgba(106, 77, 199, 0.85)";
@@ -860,7 +1475,7 @@
 
             this.size = [450, 420];
             this.color = "rgba(198, 40, 40, 0.85)";
-            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+            this.bgcolor = "#26282b";
         }
         NodeSDXLGen.title = "🎨 SDXL + LoRA Generator";
         NodeSDXLGen.title_color = "rgba(198, 40, 40, 0.85)";
@@ -881,9 +1496,62 @@
             }
 
             this._lastPrompt = prompt;
-            writeLog("Chạy mô hình khuếch tán SDXL base + LoRA (Khoảng 20 giây)...", "system");
-
             try {
+                let generationPrompt = prompt;
+                writeLog(
+                    "Đang tối ưu prompt bằng Gemini 3.1 Flash-Lite...",
+                    "system"
+                );
+
+                try {
+                    const optimizeRes = await fetch(
+                        `${backendUrl}/api/optimize_prompt`,
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "ngrok-skip-browser-warning": "69420"
+                            },
+                            body: JSON.stringify({ prompt })
+                        }
+                    );
+
+                    if (optimizeRes.ok) {
+                        const optimizeData = await optimizeRes.json();
+                        generationPrompt =
+                            optimizeData.optimized_prompt || prompt;
+                        this.properties.optimizedPrompt = generationPrompt;
+
+                        if (optimizeData.used_gemini) {
+                            writeLog(
+                                "✅ Gemini đã tối ưu prompt cho SD3.5.",
+                                "success"
+                            );
+                        } else {
+                            writeLog(
+                                `⚠️ Tiếp tục với prompt gốc: ${optimizeData.warning || "Gemini chưa được cấu hình"}`,
+                                "warning"
+                            );
+                        }
+                    } else {
+                        const optimizeError = await optimizeRes.text();
+                        writeLog(
+                            `⚠️ Gemini API lỗi, tiếp tục với prompt gốc: ${optimizeError}`,
+                            "warning"
+                        );
+                    }
+                } catch (optimizeError) {
+                    writeLog(
+                        `⚠️ Không kết nối được Gemini, tiếp tục với prompt gốc: ${optimizeError.message}`,
+                        "warning"
+                    );
+                }
+
+                writeLog(
+                    "Chạy mô hình khuếch tán SD3.5 + LoRA...",
+                    "system"
+                );
+
                 const res = await fetch(`${backendUrl}/api/generate_image`, {
                     method: "POST",
                     headers: {
@@ -891,7 +1559,7 @@
                         "ngrok-skip-browser-warning": "69420"
                     },
                     body: JSON.stringify({
-                        prompt: prompt,
+                        prompt: generationPrompt,
                         layout: {}, // Send empty layout to satisfy backend schema
                         lora_scale: this.properties.loraScale
                     })
@@ -960,7 +1628,7 @@
             });
             this.size = [450, 420];
             this.color = "rgba(230, 81, 0, 0.85)";
-            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+            this.bgcolor = "#26282b";
         }
         NodeGroundedSAM2.title = "✂️ Grounded-SAM2 Segment";
         NodeGroundedSAM2.title_color = "rgba(230, 81, 0, 0.85)";
@@ -1150,7 +1818,7 @@
             this.properties = { models: [] };
             this.size = [380, 220];
             this.color = "#1565c0";
-            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+            this.bgcolor = "#26282b";
         }
         NodeTrellis3D.title = "🧊 TRELLIS 3D Generator";
         NodeTrellis3D.title_color = "rgba(21, 101, 192, 0.85)";
@@ -1288,7 +1956,7 @@
 
             this.size = [420, 400];
             this.color = "#6a1b9a";
-            this.bgcolor = "rgba(28, 28, 32, 0.75)";
+            this.bgcolor = "#26282b";
         }
         NodeSceneCombiner.title = "🌐 3D Scene Combiner";
         NodeSceneCombiner.title_color = "rgba(106, 27, 154, 0.85)";
@@ -1501,6 +2169,11 @@
         LGraphCanvas.prototype.draw = function () {
             originalDraw.apply(this, arguments);
 
+            const zoomLabel = document.getElementById("canvas-zoom-label");
+            if (zoomLabel) {
+                zoomLabel.innerText = `Zoom ${Math.round(canvas.ds.scale * 100)}%`;
+            }
+
             // Căn chỉnh vị trí 3D Viewer
             const combiners = graph.findNodesByType("datn/scene_combiner");
             if (combiners && combiners.length > 0) {
@@ -1575,6 +2248,13 @@
             isExecuting = true;
             const btnRun = document.getElementById("btn-run");
             const originalHTML = btnRun.innerHTML;
+            const queueState = document.getElementById("queue-state");
+            const queueStateLabel = document.getElementById("queue-state-label");
+            const queueCount = document.getElementById("queue-count");
+
+            queueState.className = "queue-state running";
+            queueStateLabel.innerText = "Running workflow...";
+            queueCount.innerText = "1 running";
             btnRun.disabled = true;
             btnRun.style.opacity = "0.6";
             btnRun.style.cursor = "not-allowed";
@@ -1621,10 +2301,15 @@
                     await runNode(combinerNode, "3D Scene Combiner");
                 }
                 writeLog("🎉 Thực thi toàn bộ quy trình pipeline THÀNH CÔNG!", "success");
+                queueState.className = "queue-state success";
+                queueStateLabel.innerText = "Completed successfully";
             } catch (err) {
                 writeLog("❌ Quy trình dừng lại do lỗi: " + err.message, "error");
+                queueState.className = "queue-state error";
+                queueStateLabel.innerText = "Execution failed";
             } finally {
                 isExecuting = false;
+                queueCount.innerText = "0 running";
                 btnRun.disabled = false;
                 btnRun.style.opacity = "1";
                 btnRun.style.cursor = "pointer";
@@ -1633,6 +2318,62 @@
         };
 
         setupDefaultGraph();
+
+        // ComfyUI-style node palette and canvas controls
+        const nodeSearch = document.getElementById("node-search");
+        const paletteItems = Array.from(
+            document.querySelectorAll(".node-palette-item")
+        );
+
+        nodeSearch.addEventListener("input", () => {
+            const query = nodeSearch.value.trim().toLowerCase();
+            paletteItems.forEach((item) => {
+                item.style.display = item.textContent
+                    .toLowerCase()
+                    .includes(query)
+                    ? "flex"
+                    : "none";
+            });
+        });
+
+        paletteItems.forEach((item) => {
+            item.addEventListener("click", () => {
+                const node = LiteGraph.createNode(item.dataset.nodeType);
+                if (!node) return;
+
+                const visible = canvas.visible_area;
+                node.pos = [
+                    visible[0] + visible[2] * 0.5 - node.size[0] * 0.5,
+                    visible[1] + visible[3] * 0.5 - node.size[1] * 0.5
+                ];
+
+                graph.add(node);
+                canvas.selectNode(node);
+                canvas.draw(true, true);
+                writeLog(`Đã thêm node: ${item.textContent.trim()}`, "info");
+            });
+        });
+
+        document.getElementById("btn-fit-view").onclick = () => {
+            canvas.ds.offset = [80, 50];
+            canvas.ds.scale = 0.52;
+            canvas.draw(true, true);
+        };
+
+        document.getElementById("btn-reset-workflow").onclick = () => {
+            document
+                .querySelectorAll(".node-textarea, .node-3d-container")
+                .forEach((element) => element.remove());
+            setupDefaultGraph();
+            canvas.draw(true, true);
+        };
+
+        window.addEventListener("keydown", (event) => {
+            if (event.ctrlKey && event.key === "Enter") {
+                event.preventDefault();
+                document.getElementById("btn-run").click();
+            }
+        });
 
 
         // Kaggle Modal Events

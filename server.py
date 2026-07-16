@@ -1,8 +1,10 @@
 import os
+import json
 import shutil
 import threading
 import uuid
 import zipfile
+from urllib import request as urllib_request
 from typing import Dict, List, Any
 
 from fastapi import FastAPI, HTTPException
@@ -53,6 +55,10 @@ class TextPrompt(BaseModel):
     text: str
 
 
+class PromptOptimizeRequest(BaseModel):
+    prompt: str
+
+
 class ImageGenRequest(BaseModel):
     prompt: str
     layout: Dict[str, Any]
@@ -76,6 +82,99 @@ class CombineRequest(BaseModel):
 
 trellis_jobs: Dict[str, Dict[str, Any]] = {}
 trellis_jobs_lock = threading.Lock()
+
+GEMINI_MODEL = os.environ.get(
+    "GEMINI_MODEL",
+    "gemini-3.1-flash-lite",
+)
+
+PROMPT_OPTIMIZER_INSTRUCTION = """
+You optimize user prompts for Stable Diffusion 3.5 furniture and interior
+product-scene generation.
+
+Return exactly one polished English image-generation prompt and nothing else.
+Preserve the user's requested objects, object count, materials, colors,
+attributes, and spatial relationships. Add only useful visual details such as
+camera composition, coherent scale, realistic geometry, studio or interior
+lighting, depth, and a clean background. Do not introduce extra furniture,
+people, text, logos, watermarks, duplicated objects, or contradictory details.
+Keep the result concise, concrete, and under 120 words.
+""".strip()
+
+
+def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
+    clean_prompt = " ".join(prompt.split()).strip()
+    if not clean_prompt:
+        raise ValueError("Prompt must not be empty")
+
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return {
+            "optimized_prompt": clean_prompt,
+            "used_gemini": False,
+            "warning": "GEMINI_API_KEY is not configured",
+            "model": GEMINI_MODEL,
+        }
+
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent"
+    )
+    payload = {
+        "systemInstruction": {
+            "parts": [{"text": PROMPT_OPTIMIZER_INSTRUCTION}]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": clean_prompt}],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.25,
+            "maxOutputTokens": 300,
+        },
+    }
+    http_request = urllib_request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(http_request, timeout=45) as response:
+            response_data = json.loads(response.read().decode("utf-8"))
+
+        parts = (
+            response_data.get("candidates", [{}])[0]
+            .get("content", {})
+            .get("parts", [])
+        )
+        optimized_prompt = " ".join(
+            part.get("text", "").strip()
+            for part in parts
+            if part.get("text")
+        ).strip()
+
+        if not optimized_prompt:
+            raise RuntimeError("Gemini returned an empty prompt")
+
+        return {
+            "optimized_prompt": optimized_prompt,
+            "used_gemini": True,
+            "model": GEMINI_MODEL,
+        }
+    except Exception as exc:
+        return {
+            "optimized_prompt": clean_prompt,
+            "used_gemini": False,
+            "warning": f"Gemini optimization failed: {exc}",
+            "model": GEMINI_MODEL,
+        }
 
 
 def run_trellis_job(job_id: str, crops: List[Dict[str, Any]]) -> None:
@@ -104,7 +203,20 @@ def root():
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "version": "1.0.0"}
+    return {
+        "status": "ok",
+        "version": "1.1.0",
+        "gemini_model": GEMINI_MODEL,
+        "gemini_configured": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+    }
+
+
+@app.post("/api/optimize_prompt")
+def api_optimize_prompt(request: PromptOptimizeRequest):
+    try:
+        return optimize_prompt_with_gemini(request.prompt)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/parse_scene_graph")
