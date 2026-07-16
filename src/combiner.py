@@ -16,6 +16,7 @@ sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
 
 import json, trimesh, os
 import numpy as np
+from PIL import Image
 
 with open("{models_json_path}") as f:
     models = json.load(f)
@@ -23,6 +24,10 @@ with open("{models_json_path}") as f:
 scene = trimesh.Scene()
 scale_factor = {scale_factor}
 img_w, img_h = 1024, 1024
+input_image = "/kaggle/working/input.png"
+if os.path.exists(input_image):
+    with Image.open(input_image) as source_image:
+        img_w, img_h = source_image.size
 
 for m in models:
     glb_path = m["model_path"]

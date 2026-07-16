@@ -73,10 +73,25 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     input_box = np.array([[x1, y1, x2, y2]])
     
     # Gợi ý thêm điểm dương ở tâm để giữ phần ruột kính phản chiếu của gương
+    box_w = max(1, x2 - x1)
+    box_h = max(1, y2 - y1)
     cx_px = (x1 + x2) // 2
     cy_px = (y1 + y2) // 2
-    point_coords = np.array([[cx_px, cy_px]])
-    point_labels = np.array([1]) # 1 là foreground point
+
+    # Generic furniture prompts: several positive points inside the box and
+    # negative points just outside it. This is more stable than a single
+    # center point while avoiding the bed-specific prompt pattern.
+    point_coords = np.array([
+        [cx_px, cy_px],
+        [cx_px, max(0, cy_px - box_h // 4)],
+        [max(0, cx_px - box_w // 4), cy_px],
+        [min(W - 1, cx_px + box_w // 4), cy_px],
+        [cx_px, min(H - 1, cy_px + box_h // 4)],
+        [cx_px, max(0, y1 - max(2, box_h // 12))],
+        [max(0, x1 - max(2, box_w // 12)), cy_px],
+        [min(W - 1, x2 + max(2, box_w // 12)), cy_px],
+    ])
+    point_labels = np.array([1, 1, 1, 1, 1, 0, 0, 0])
     
     masks, scores, _ = predictor.predict(
         point_coords=point_coords,
@@ -87,7 +102,15 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     
     import scipy.ndimage as ndimage
     # 1. Phép đóng (Closing) để kết nối các phần bị đứt nét và lấp khe hở nhỏ ở viền
-    closed_mask = ndimage.binary_closing(masks[0], structure=np.ones((7, 7)))
+    dilated_mask = ndimage.binary_dilation(
+        masks[0],
+        structure=np.ones((3, 3)),
+        iterations=1,
+    )
+    closed_mask = ndimage.binary_closing(
+        dilated_mask,
+        structure=np.ones((9, 9)),
+    )
     # 2. Điền đầy lỗ hổng (Fill holes) để lấp kín phần kính phản chiếu
     filled_mask = ndimage.binary_fill_holes(closed_mask)
     
@@ -98,7 +121,15 @@ for i, (box, logit, phrase) in enumerate(zip(boxes, logits, phrases)):
     
     # 3. Làm mịn cạnh (Anti-aliasing) bằng Gaussian Filter để tránh răng cưa
     alpha_array = (filled_mask * 255).astype(np.uint8)
-    alpha_smooth = ndimage.gaussian_filter(alpha_array.astype(float), sigma=1.2)
+    eroded_mask = ndimage.binary_erosion(
+        filled_mask,
+        structure=np.ones((3, 3)),
+        iterations=1,
+    )
+    alpha_smooth = ndimage.gaussian_filter(
+        eroded_mask.astype(float) * 255.0,
+        sigma=1.5,
+    )
     alpha_smooth = np.clip(alpha_smooth, 0, 255).astype(np.uint8)
     
     img_rgba = Image.fromarray(img_rgb).convert("RGBA")

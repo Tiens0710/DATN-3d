@@ -1,4 +1,5 @@
 import os
+import asyncio
 import json
 import shutil
 import threading
@@ -68,6 +69,7 @@ class ImageGenRequest(BaseModel):
 class Sam2Request(BaseModel):
     image_url: str
     layout: Dict[str, Any]
+    prompt: str = ""
 
 
 class TrellisRequest(BaseModel):
@@ -82,6 +84,10 @@ class CombineRequest(BaseModel):
 
 trellis_jobs: Dict[str, Dict[str, Any]] = {}
 trellis_jobs_lock = threading.Lock()
+# One worker processes GPU-heavy TRELLIS jobs in FIFO order.
+# Blocking inference runs outside the event loop via asyncio.to_thread().
+trellis_queue = asyncio.Queue()
+trellis_worker_task = None
 
 GEMINI_MODEL = os.environ.get(
     "GEMINI_MODEL",
@@ -89,16 +95,16 @@ GEMINI_MODEL = os.environ.get(
 )
 
 PROMPT_OPTIMIZER_INSTRUCTION = """
-You optimize user prompts for Stable Diffusion 3.5 furniture and interior
-product-scene generation.
-
-Return exactly one polished English image-generation prompt and nothing else.
-Preserve the user's requested objects, object count, materials, colors,
-attributes, and spatial relationships. Add only useful visual details such as
-camera composition, coherent scale, realistic geometry, studio or interior
-lighting, depth, and a clean background. Do not introduce extra furniture,
-people, text, logos, watermarks, duplicated objects, or contradictory details.
-Keep the result concise, concrete, and under 120 words.
+You optimize user prompts for Stable Diffusion 3.5 Medium in a furniture
+text-to-2D-to-3D pipeline. Return exactly one English prompt and nothing else.
+Preserve every requested object, object count, material, color, style, and
+spatial relationship. Never invent extra furniture or decorative props. If the
+input is Vietnamese, translate it naturally to English. Make each object fully
+visible with accurate geometry, realistic construction, and minimal overlap.
+Use a three-quarter product-photography view, centered composition, clean
+neutral studio background, soft even lighting, sharp focus, and realistic
+materials. The result must be suitable for GroundingDINO, SAM2 segmentation,
+and single-image 3D reconstruction. Keep the prompt under 90 words.
 """.strip()
 
 
@@ -110,7 +116,14 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return {
-            "optimized_prompt": clean_prompt,
+            "optimized_prompt": (
+                f"{clean_prompt}, photorealistic furniture product photography, "
+                "full objects visible, accurate proportions and construction, "
+                "three-quarter view, centered composition, clean neutral studio "
+                "background, soft even lighting, sharp focus, realistic materials, "
+                "minimal overlap, no people, no text, no watermark, no extra objects, "
+                "suitable for object segmentation and single-image 3D reconstruction"
+            ),
             "used_gemini": False,
             "warning": "GEMINI_API_KEY is not configured",
             "model": GEMINI_MODEL,
@@ -131,8 +144,8 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
             }
         ],
         "generationConfig": {
-            "temperature": 0.25,
-            "maxOutputTokens": 300,
+            "temperature": 0.2,
+            "maxOutputTokens": 220,
         },
     }
     http_request = urllib_request.Request(
@@ -170,7 +183,14 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
         }
     except Exception as exc:
         return {
-            "optimized_prompt": clean_prompt,
+            "optimized_prompt": (
+                f"{clean_prompt}, photorealistic furniture product photography, "
+                "full objects visible, accurate proportions and construction, "
+                "three-quarter view, centered composition, clean neutral studio "
+                "background, soft even lighting, sharp focus, realistic materials, "
+                "minimal overlap, no people, no text, no watermark, no extra objects, "
+                "suitable for object segmentation and single-image 3D reconstruction"
+            ),
             "used_gemini": False,
             "warning": f"Gemini optimization failed: {exc}",
             "model": GEMINI_MODEL,
@@ -194,6 +214,53 @@ def run_trellis_job(job_id: str, crops: List[Dict[str, Any]]) -> None:
                 "status": "failed",
                 "error": str(exc),
             }
+
+
+def get_trellis_queue_position(job_id: str) -> int:
+    with trellis_jobs_lock:
+        queued_ids = [
+            current_id
+            for current_id, job in trellis_jobs.items()
+            if job.get("status") == "queued"
+        ]
+        try:
+            return queued_ids.index(job_id) + 1
+        except ValueError:
+            return 0
+
+
+async def trellis_queue_worker() -> None:
+    """Process queued TRELLIS jobs without blocking the FastAPI event loop."""
+    while True:
+        job_id, crops = await trellis_queue.get()
+        try:
+            await asyncio.to_thread(run_trellis_job, job_id, crops)
+        finally:
+            trellis_queue.task_done()
+
+
+@app.on_event("startup")
+async def start_background_workers() -> None:
+    global trellis_worker_task
+    if trellis_worker_task is None or trellis_worker_task.done():
+        trellis_worker_task = asyncio.create_task(
+            trellis_queue_worker(),
+            name="trellis-queue-worker",
+        )
+
+
+@app.on_event("shutdown")
+async def stop_background_workers() -> None:
+    global trellis_worker_task
+    if trellis_worker_task is None:
+        return
+
+    trellis_worker_task.cancel()
+    try:
+        await trellis_worker_task
+    except asyncio.CancelledError:
+        pass
+    trellis_worker_task = None
 
 
 @app.get("/")
@@ -253,26 +320,45 @@ def api_generate_image(request: ImageGenRequest):
 def api_run_sam2(request: Sam2Request):
     try:
         input_path = os.path.join(KAGGLE_WORKING, "input.png")
-        crops = run_grounded_sam2(input_path, request.layout, CROPS_DIR)
-        return {"status": "success", "crops": crops}
+        effective_layout = request.layout
+        scene_graph = None
+
+        if (
+            not effective_layout.get("layout")
+            and request.prompt.strip()
+        ):
+            scene_graph = parse_scene_graph(request.prompt.strip())
+            effective_layout = compute_layout(scene_graph)
+
+        crops = run_grounded_sam2(
+            input_path,
+            effective_layout,
+            CROPS_DIR,
+        )
+        return {
+            "status": "success",
+            "crops": crops,
+            "scene_graph": scene_graph,
+            "layout": effective_layout,
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/generate_3d")
-def api_generate_3d(request: TrellisRequest):
+async def api_generate_3d(request: TrellisRequest):
     job_id = uuid.uuid4().hex
     with trellis_jobs_lock:
         trellis_jobs[job_id] = {"status": "queued"}
 
-    worker = threading.Thread(
-        target=run_trellis_job,
-        args=(job_id, request.crops),
-        daemon=True,
-    )
-    worker.start()
+    await trellis_queue.put((job_id, request.crops))
+    queue_position = get_trellis_queue_position(job_id)
 
-    return {"status": "queued", "job_id": job_id}
+    return {
+        "status": "queued",
+        "job_id": job_id,
+        "queue_position": queue_position,
+    }
 
 
 @app.get("/api/generate_3d/status/{job_id}")
@@ -281,7 +367,11 @@ def api_generate_3d_status(job_id: str):
         job = trellis_jobs.get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="TRELLIS job not found")
-        return dict(job)
+        result = dict(job)
+
+    if result.get("status") == "queued":
+        result["queue_position"] = get_trellis_queue_position(job_id)
+    return result
 
 
 @app.post("/api/combine_scene")
