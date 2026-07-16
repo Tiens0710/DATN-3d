@@ -1176,7 +1176,57 @@
                     body: JSON.stringify({ crops: cropsData })
                 });
                 if (res.ok) {
-                    const data = await res.json();
+                    let data = await res.json();
+
+                    // TRELLIS runs as a background job so Ngrok does not have to
+                    // keep one request open for several minutes.
+                    if (data.job_id) {
+                        const jobId = data.job_id;
+                        let finished = false;
+
+                        for (let attempt = 0; attempt < 240; attempt++) {
+                            await new Promise(resolve => setTimeout(resolve, 5000));
+
+                            const statusRes = await fetch(
+                                `${backendUrl}/api/generate_3d/status/${jobId}`,
+                                {
+                                    headers: {
+                                        "ngrok-skip-browser-warning": "69420"
+                                    }
+                                }
+                            );
+
+                            if (!statusRes.ok) {
+                                const statusError = await statusRes.text();
+                                throw new Error(
+                                    `TRELLIS status error: ${statusRes.status} - ${statusError}`
+                                );
+                            }
+
+                            data = await statusRes.json();
+
+                            if (data.status === "completed") {
+                                finished = true;
+                                break;
+                            }
+
+                            if (data.status === "failed") {
+                                throw new Error(data.error || "TRELLIS job failed");
+                            }
+
+                            if (attempt % 6 === 0) {
+                                writeLog(
+                                    `TRELLIS đang xử lý trên Kaggle... (${Math.round((attempt + 1) * 5 / 60)} phút)`,
+                                    "system"
+                                );
+                            }
+                        }
+
+                        if (!finished) {
+                            throw new Error("TRELLIS quá thời gian chờ 20 phút");
+                        }
+                    }
+
                     this.properties.models = data.models || [];
                     this.setOutputData(0, this.properties.models);
                     writeLog("✅ TRELLIS dựng hình 3D Mesh hoàn thành!", "success");

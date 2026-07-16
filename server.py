@@ -1,5 +1,7 @@
 import os
 import shutil
+import threading
+import uuid
 import zipfile
 from typing import Dict, List, Any
 
@@ -72,6 +74,29 @@ class CombineRequest(BaseModel):
     scale_factor: float = 0.01
 
 
+trellis_jobs: Dict[str, Dict[str, Any]] = {}
+trellis_jobs_lock = threading.Lock()
+
+
+def run_trellis_job(job_id: str, crops: List[Dict[str, Any]]) -> None:
+    with trellis_jobs_lock:
+        trellis_jobs[job_id]["status"] = "running"
+
+    try:
+        models = generate_3d_models(crops, MULTI_GLB_DIR)
+        with trellis_jobs_lock:
+            trellis_jobs[job_id] = {
+                "status": "completed",
+                "models": models,
+            }
+    except Exception as exc:
+        with trellis_jobs_lock:
+            trellis_jobs[job_id] = {
+                "status": "failed",
+                "error": str(exc),
+            }
+
+
 @app.get("/")
 def root():
     return {"status": "ok", "message": "DATN API is running"}
@@ -124,11 +149,27 @@ def api_run_sam2(request: Sam2Request):
 
 @app.post("/api/generate_3d")
 def api_generate_3d(request: TrellisRequest):
-    try:
-        models = generate_3d_models(request.crops, MULTI_GLB_DIR)
-        return {"status": "success", "models": models}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    job_id = uuid.uuid4().hex
+    with trellis_jobs_lock:
+        trellis_jobs[job_id] = {"status": "queued"}
+
+    worker = threading.Thread(
+        target=run_trellis_job,
+        args=(job_id, request.crops),
+        daemon=True,
+    )
+    worker.start()
+
+    return {"status": "queued", "job_id": job_id}
+
+
+@app.get("/api/generate_3d/status/{job_id}")
+def api_generate_3d_status(job_id: str):
+    with trellis_jobs_lock:
+        job = trellis_jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="TRELLIS job not found")
+        return dict(job)
 
 
 @app.post("/api/combine_scene")
