@@ -1,10 +1,12 @@
 import os
 import asyncio
+import importlib.util
 import json
 import shutil
 import threading
 import uuid
 import zipfile
+from pathlib import Path
 from urllib import request as urllib_request
 from typing import Dict, List, Any
 
@@ -172,7 +174,6 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
             for part in parts
             if part.get("text")
         ).strip()
-
         if not optimized_prompt:
             raise RuntimeError("Gemini returned an empty prompt")
 
@@ -195,6 +196,71 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
             "warning": f"Gemini optimization failed: {exc}",
             "model": GEMINI_MODEL,
         }
+
+
+def backend_readiness() -> Dict[str, Any]:
+    """Report whether the current Kaggle session can run every pipeline stage."""
+    required_files = {
+        "groundingdino_weights": Path(
+            "/kaggle/working/groundingdino_ckpt/groundingdino_swint_ogc.pth"
+        ),
+        "groundingdino_config": Path(
+            "/kaggle/working/groundingdino_ckpt/GroundingDINO_SwinT_OGC.py"
+        ),
+        "sam2_weights": Path(
+            "/kaggle/working/sam2_ckpt/sam2_hiera_small.pt"
+        ),
+        "trellis_source": Path("/kaggle/working/TRELLIS/trellis"),
+    }
+    required_modules = (
+        "torch",
+        "diffusers",
+        "transformers",
+        "peft",
+        "groundingdino",
+        "sam2",
+        "spconv",
+        "xformers",
+        "trimesh",
+    )
+
+    files = {name: path.exists() for name, path in required_files.items()}
+    modules = {
+        name: importlib.util.find_spec(name) is not None
+        for name in required_modules
+    }
+
+    cuda_available = False
+    cuda_name = None
+    try:
+        import torch
+
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            cuda_name = torch.cuda.get_device_name(0)
+    except Exception:
+        pass
+
+    checks = {
+        "hf_token": bool(os.environ.get("HF_TOKEN", "").strip()),
+        "gemini_api_key": bool(
+            os.environ.get("GEMINI_API_KEY", "").strip()
+        ),
+        "cuda": cuda_available,
+        "files": files,
+        "modules": modules,
+    }
+    ready = (
+        checks["hf_token"]
+        and checks["cuda"]
+        and all(files.values())
+        and all(modules.values())
+    )
+    return {
+        "ready": ready,
+        "checks": checks,
+        "cuda_name": cuda_name,
+    }
 
 
 def run_trellis_job(job_id: str, crops: List[Dict[str, Any]]) -> None:
@@ -270,11 +336,13 @@ def root():
 
 @app.get("/api/health")
 def health_check():
+    readiness = backend_readiness()
     return {
         "status": "ok",
         "version": "1.1.0",
+        **readiness,
         "gemini_model": GEMINI_MODEL,
-        "gemini_configured": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+        "gemini_configured": readiness["checks"]["gemini_api_key"],
     }
 
 

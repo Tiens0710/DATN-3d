@@ -1,219 +1,129 @@
-import os
 import json
+import os
 import subprocess
 
+
 PY_PATH = "/opt/venv310/bin/python"
+TRELLIS_ROOT = "/kaggle/working/TRELLIS"
+
 
 def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
-    """
-    Sử dụng TRELLIS để tạo các mô hình 3D (.glb) riêng lẻ từ ảnh tách nền.
-    """
+    """Generate one GLB per transparent SAM2 crop with TRELLIS."""
+    if not crops:
+        raise ValueError("No SAM2 crops were provided to TRELLIS")
+
+    if not os.path.isdir(os.path.join(TRELLIS_ROOT, "trellis")):
+        raise RuntimeError(
+            "TRELLIS source is missing. Run the backend notebook setup cells."
+        )
+
+    os.makedirs(multi_glb_dir, exist_ok=True)
     meta_json_path = "/kaggle/working/objects_meta_api.json"
     objects_dict = {crop["name"]: crop for crop in crops}
-    with open(meta_json_path, 'w') as f:
-        json.dump(objects_dict, f)
+    with open(meta_json_path, "w", encoding="utf-8") as file:
+        json.dump(objects_dict, file, ensure_ascii=False, indent=2)
 
     script = f"""
-import sys, subprocess, os
-sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
-
-# torch.utils.cpp_extension and nvdiffrast still import pkg_resources.
-# setuptools >= 81 no longer ships pkg_resources, so pin a compatible version.
-subprocess.run(
-    [sys.executable, "-m", "pip", "install", "-q", "setuptools<81"],
-    check=True,
-)
-import importlib
-importlib.invalidate_caches()
-
-# ── STEP 0: Ensure setuptools/pkg_resources exists BEFORE any torch import ──
-# ── MOCK: Chặn triton (bitsandbytes) ──
-sys.modules['triton'] = None
-
-# ── Đồng bộ bộ ba Torch 2.1.0 + Torchvision 0.16.0 + xFormers 0.0.22.post7 ──
-needs_sync = False
-try:
-    import torch
-    import torchvision
-    import xformers
-    import numpy as np
-    if not torch.__version__.startswith("2.1.0"):
-        needs_sync = True
-    if xformers.__version__ != "0.0.22.post7":
-        needs_sync = True
-    if np.__version__ != "1.26.4":
-        needs_sync = True
-except Exception:
-    needs_sync = True
-
-if needs_sync:
-    print("Dong bo lai phien ban thu vien (Torch 2.1.0 + xFormers)...")
-    import shutil, glob
-    for p in glob.glob("/opt/venv310/lib/python3.10/site-packages/numpy*"):
-        try:
-            if os.path.isdir(p): shutil.rmtree(p)
-            else: os.remove(p)
-        except Exception: pass
-    r1 = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "--no-cache-dir", "torch==2.1.0", "torchvision==0.16.0", "xformers==0.0.22.post7", "numpy==1.26.4", "--index-url", "https://download.pytorch.org/whl/cu121"],
-        capture_output=True, text=True, timeout=300
-    )
-    if r1.returncode != 0:
-        print("Loi dong bo torch/xformers:", r1.stderr)
-    # Reinstall setuptools (force-reinstall torch may remove it)
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "--force-reinstall", "setuptools<81"],
-        capture_output=True, text=True, timeout=60
-    )
-else:
-    print("Moi truong Torch 2.1.0 + xFormers da hop le, bo qua dong bo.")
-
-# Thiết lập PATH chứa nvcc để compile CUDA extension
+import json
 import os
-compile_env = os.environ.copy()
-compile_env["CUDA_HOME"] = "/usr/local/cuda"
-compile_env["PATH"] = "/usr/local/cuda/bin:" + compile_env.get("PATH", "")
+import sys
 
-needs_compile_nvdiffrast = needs_sync
-if not needs_compile_nvdiffrast:
-    try:
-        import nvdiffrast.torch as dr
-        print("Nvdiffrast da duoc compile, bo qua.")
-    except Exception:
-        needs_compile_nvdiffrast = True
+sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
+sys.path.insert(0, {TRELLIS_ROOT!r})
+sys.modules["triton"] = None
 
-if needs_compile_nvdiffrast:
-    print("Dang compile lai nvdiffrast...")
-    r2 = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps", "--no-cache-dir", "--no-build-isolation", "git+https://github.com/NVlabs/nvdiffrast.git"],
-        capture_output=True, text=True, timeout=180, env=compile_env
-    )
-    if r2.returncode != 0:
-        print("Loi compile nvdiffrast:", r2.stderr)
-    else:
-        print("Nvdiffrast OK!")
-
-needs_compile_utils3d = needs_sync
-if not needs_compile_utils3d:
-    try:
-        import utils3d
-        print("Utils3d da duoc compile, bo qua.")
-    except Exception:
-        needs_compile_utils3d = True
-
-if needs_compile_utils3d:
-    print("Dang compile lai utils3d...")
-    r3 = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps", "--no-cache-dir", "--no-build-isolation", "git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8"],
-        capture_output=True, text=True, timeout=180, env=compile_env
-    )
-    if r3.returncode != 0:
-        print("Loi compile utils3d:", r3.stderr)
-    else:
-        print("Utils3d OK!")
-
-needs_compile_diff_gaussian = needs_sync
-if not needs_compile_diff_gaussian:
-    try:
-        from diff_gaussian_rasterization import _C
-        print("diff_gaussian_rasterization da duoc compile, bo qua.")
-    except Exception:
-        needs_compile_diff_gaussian = True
-
-if needs_compile_diff_gaussian:
-    print("Dang compile lai diff_gaussian_rasterization...")
-    import shutil
-    if os.path.exists("/tmp/mip-splatting"):
-        try: shutil.rmtree("/tmp/mip-splatting")
-        except Exception: pass
-    r_clone = subprocess.run(
-        ["git", "clone", "--recursive", "https://github.com/autonomousvision/mip-splatting.git", "/tmp/mip-splatting"],
-        capture_output=True, text=True
-    )
-    r4 = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps", "--no-cache-dir", "--no-build-isolation", "/tmp/mip-splatting/submodules/diff-gaussian-rasterization"],
-        capture_output=True, text=True, timeout=300, env=compile_env
-    )
-    if r4.returncode != 0:
-        print("Loi compile diff_gaussian_rasterization:", r4.stderr)
-    else:
-        print("diff_gaussian_rasterization OK!")
-
-print("Dong bo hoan tat!")
-
-# ── CẤU HÌNH BACKEND (giống code cũ chạy thành công) ─────────────
-import os, json, torch
-os.environ["SPCONV_ALGO"]  = "native"
+os.environ["SPCONV_ALGO"] = "native"
 os.environ["ATTN_BACKEND"] = "xformers"
-os.environ["SPARSE_ATTN"]  = "xformers"
-os.environ["MPLBACKEND"]   = "agg"
+os.environ["SPARSE_ATTN"] = "xformers"
+os.environ["MPLBACKEND"] = "agg"
 
-# ── Clone TRELLIS nếu chưa có ────────────────────────────────────────
-if not os.path.exists("/kaggle/working/TRELLIS/trellis"):
-    print("Auto-cloning TRELLIS repository...")
-    import shutil, subprocess
-    if os.path.exists("/kaggle/working/TRELLIS"):
-        try:
-            shutil.rmtree("/kaggle/working/TRELLIS")
-        except Exception as e:
-            print("Warning: could not clean TRELLIS folder:", e)
-    res_clone = subprocess.run(
-        "GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/trellis-community/TRELLIS /kaggle/working/TRELLIS",
-        shell=True, capture_output=True, text=True
-    )
-    if res_clone.returncode != 0:
-        print("Git clone failed!")
-        print("STDOUT:", res_clone.stdout)
-        print("STDERR:", res_clone.stderr)
-        raise RuntimeError(f"Git clone failed: {{res_clone.stderr}}")
-
-sys.path.insert(0, "/kaggle/working/TRELLIS")
+import torch
+import nvdiffrast.torch
+import spconv
+import utils3d
+import xformers
+from diff_gaussian_rasterization import _C
+from PIL import Image
 from trellis.pipelines import TrellisImageTo3DPipeline
 from trellis.utils import postprocessing_utils
-from PIL import Image
 
-with open("{meta_json_path}") as f:
-    objects = json.load(f)
+with open({meta_json_path!r}, encoding="utf-8") as file:
+    objects = json.load(file)
 
-# Load pipeline và chuyển sang GPU (KHÔNG dùng dtype - Pipeline.to() không hỗ trợ)
-pipeline = TrellisImageTo3DPipeline.from_pretrained("JeffreyXiang/TRELLIS-image-large")
+print("Loading TRELLIS-image-large...")
+pipeline = TrellisImageTo3DPipeline.from_pretrained(
+    "JeffreyXiang/TRELLIS-image-large"
+)
 pipeline.to("cuda")
 
 for name, info in objects.items():
-    print(f"Dựng mô hình 3D cho {{name}}...")
-    img = Image.open(info["crop_path"]).convert("RGB")
-    image = pipeline.preprocess_image(img)
-    
+    crop_path = info["crop_path"]
+    if not os.path.isfile(crop_path):
+        raise FileNotFoundError(crop_path)
+
+    print(f"Generating TRELLIS model for {{name}}...")
+    image = Image.open(crop_path).convert("RGB")
+    image = pipeline.preprocess_image(image)
     outputs = pipeline.run(
         image,
         seed=42,
         formats=["gaussian", "mesh"],
         preprocess_image=False,
-        sparse_structure_sampler_params={{"steps": 12, "cfg_strength": 7.5}},
-        slat_sampler_params={{"steps": 12, "cfg_strength": 3.0}},
+        sparse_structure_sampler_params={{
+            "steps": 12,
+            "cfg_strength": 7.5,
+        }},
+        slat_sampler_params={{
+            "steps": 12,
+            "cfg_strength": 3.0,
+        }},
     )
-    
+
     glb = postprocessing_utils.to_glb(
-        outputs["gaussian"][0], outputs["mesh"][0],
-        simplify=0.95, texture_size=1024, verbose=False
+        outputs["gaussian"][0],
+        outputs["mesh"][0],
+        simplify=0.95,
+        texture_size=1024,
+        verbose=False,
     )
-    out_path = f"{multi_glb_dir}/{{name}}.glb"
-    glb.export(out_path)
-    print(f"Saved: {{out_path}}")
+    output_path = os.path.join({multi_glb_dir!r}, f"{{name}}.glb")
+    glb.export(output_path)
+    print("Saved:", output_path)
     torch.cuda.empty_cache()
 """
-    r = subprocess.run([PY_PATH, "-c", script], capture_output=True, text=True, timeout=1200)
-    if r.returncode != 0:
-        raise RuntimeError(f"Lỗi chạy TRELLIS: {r.stderr}\nLogs:\n{r.stdout}")
-        
+
+    environment = os.environ.copy()
+    environment.setdefault("SPCONV_ALGO", "native")
+    environment.setdefault("ATTN_BACKEND", "xformers")
+    environment.setdefault("SPARSE_ATTN", "xformers")
+    environment.setdefault("MPLBACKEND", "agg")
+
+    result = subprocess.run(
+        [PY_PATH, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=1200,
+        env=environment,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "TRELLIS failed. Run the notebook preflight cell before starting "
+            f"the server.\nSTDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}"
+        )
+
     models = []
     for crop in crops:
         name = crop["name"]
-        models.append({
-            "name": name,
-            "label": crop["label"],
-            "model_url": f"/multi_object_glb/{name}.glb",
-            "model_path": f"{multi_glb_dir}/{name}.glb",
-            "final_box": crop["final_box"]
-        })
+        model_path = os.path.join(multi_glb_dir, f"{name}.glb")
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(model_path)
+        models.append(
+            {
+                "name": name,
+                "label": crop["label"],
+                "model_url": f"/multi_object_glb/{name}.glb",
+                "model_path": model_path,
+                "final_box": crop["final_box"],
+            }
+        )
     return models

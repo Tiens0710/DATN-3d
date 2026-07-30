@@ -13,8 +13,6 @@
     <link rel="stylesheet" type="text/css" href="https://unpkg.com/litegraph.js@0.7.10/css/litegraph.css">
     <!-- Google Model Viewer for 3D rendering -->
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
-    <!-- Lucide icons -->
-    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
 
     <style>
         :root {
@@ -1514,610 +1512,6 @@
             }
         }
 
-        /* SpatialFlow workspace refinement */
-        :root {
-            --sf-bg: #090c11;
-            --sf-surface: #11161d;
-            --sf-surface-2: #171d25;
-            --sf-border: #28313d;
-            --sf-border-strong: #3a4655;
-            --sf-text: #eef2f7;
-            --sf-muted: #8d98a6;
-            --sf-cyan: #55c2d8;
-            --sf-green: #63c69b;
-            --sf-amber: #e2ad62;
-            --sf-purple: #8474e8;
-            --sf-danger: #e56f76;
-            --sf-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
-        }
-
-        body,
-        html {
-            background: var(--sf-bg);
-            letter-spacing: 0;
-        }
-
-        .spatial-header {
-            height: 64px;
-            padding: 0 16px 0 20px;
-            background: rgba(10, 14, 20, 0.97);
-            border-bottom-color: var(--sf-border);
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.24);
-        }
-
-        .spatial-header-left,
-        .spatial-brand,
-        .spatial-header-actions {
-            display: flex;
-            align-items: center;
-        }
-
-        .spatial-brand {
-            min-width: 172px;
-        }
-
-        .brand-mark {
-            width: 32px;
-            height: 32px;
-            border-radius: 7px;
-            background: #7867df;
-            box-shadow: 0 8px 20px rgba(120, 103, 223, 0.28);
-            transform: none;
-        }
-
-        .brand-name {
-            font-size: 17px;
-            font-weight: 650;
-        }
-
-        .project-context {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            min-width: 0;
-        }
-
-        .project-name {
-            color: #e0e5ec;
-            font-size: 13px;
-            font-weight: 550;
-        }
-
-        .project-stack {
-            color: #737f8e;
-            font-family: "Fira Code", monospace;
-            font-size: 9px;
-            white-space: nowrap;
-        }
-
-        .server-compact {
-            position: relative;
-            width: min(25vw, 300px);
-            height: 40px;
-            padding-left: 13px;
-            background: #10151c;
-            border-color: var(--sf-border);
-        }
-
-        .server-compact input {
-            width: 100%;
-            min-width: 0;
-            font-size: 11px;
-        }
-
-        .connection-copy {
-            display: flex;
-            flex-direction: column;
-            min-width: 60px;
-            margin-right: 2px;
-        }
-
-        .connection-copy strong {
-            color: #dce2ea;
-            font-size: 10px;
-            font-weight: 600;
-            line-height: 1.2;
-        }
-
-        .connection-copy span {
-            color: #707b89;
-            font-family: "Fira Code", monospace;
-            font-size: 8px;
-            line-height: 1.2;
-        }
-
-        .status-dot {
-            background: var(--sf-danger);
-            box-shadow: 0 0 10px rgba(229, 111, 118, 0.65);
-        }
-
-        .status-dot.connected {
-            background: var(--sf-green);
-            box-shadow: 0 0 10px rgba(99, 198, 155, 0.58);
-        }
-
-        .spatial-header-actions button {
-            height: 40px;
-            min-height: 40px;
-        }
-
-        .icon-label {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-        }
-
-        .icon-label svg,
-        .panel-icon-btn svg,
-        .rail-icon svg,
-        .view-control-btn svg,
-        .viewport-download svg {
-            width: 15px;
-            height: 15px;
-            flex: 0 0 auto;
-        }
-
-        #btn-run {
-            min-width: 92px;
-            background: #7767df;
-            border-color: #9184e8;
-            box-shadow: 0 10px 24px rgba(82, 68, 184, 0.28);
-        }
-
-        #btn-run:hover {
-            background: #8576e7;
-        }
-
-        .workspace-shell.spatial-workspace {
-            grid-template-columns: 68px minmax(520px, 50%) minmax(440px, 1fr);
-            gap: 8px;
-            padding: 8px;
-            background: #0b0f14;
-        }
-
-        .app-rail,
-        .graph-panel,
-        .viewport-panel {
-            border-radius: 8px;
-            border-color: var(--sf-border);
-            background: var(--sf-surface);
-            box-shadow: none;
-        }
-
-        .app-rail {
-            padding: 8px 5px;
-        }
-
-        .rail-item {
-            min-height: 56px;
-            color: #798593;
-        }
-
-        .rail-item:hover,
-        .rail-item.active {
-            color: #f3f6fa;
-            background: #1a202a;
-            box-shadow: inset 2px 0 0 var(--sf-purple);
-        }
-
-        .rail-icon {
-            display: grid;
-            place-items: center;
-            width: 22px;
-            height: 22px;
-        }
-
-        .panel-bar {
-            height: 46px;
-            min-height: 46px;
-            padding: 0 12px 0 14px;
-            background: #141a22;
-            border-bottom-color: var(--sf-border);
-        }
-
-        .panel-heading {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            min-width: 0;
-        }
-
-        .panel-heading-copy {
-            display: flex;
-            flex-direction: column;
-            gap: 1px;
-        }
-
-        .panel-heading-copy strong {
-            color: var(--sf-text);
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .panel-heading-copy span {
-            color: #697585;
-            font-family: "Fira Code", monospace;
-            font-size: 8px;
-        }
-
-        .panel-badge {
-            padding: 3px 6px;
-            border: 1px solid #34404e;
-            border-radius: 4px;
-            color: #9ca7b4;
-            background: #10151c;
-            font-family: "Fira Code", monospace;
-            font-size: 8px;
-        }
-
-        .panel-icon-btn {
-            display: grid;
-            place-items: center;
-        }
-
-        #canvas-container {
-            background:
-                linear-gradient(rgba(97, 113, 132, 0.075) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(97, 113, 132, 0.075) 1px, transparent 1px),
-                #0b1016;
-            background-size: 28px 28px;
-        }
-
-        .canvas-toolbar {
-            display: flex;
-            gap: 3px;
-            padding: 4px;
-            border-radius: 6px;
-            background: rgba(16, 22, 29, 0.94);
-        }
-
-        .canvas-tool-btn {
-            min-height: 30px;
-            padding: 5px 9px;
-            border-radius: 4px;
-            font-size: 10px;
-        }
-
-        .canvas-statusbar {
-            right: 10px;
-            bottom: 9px;
-            left: 10px;
-            display: flex;
-            justify-content: space-between;
-            padding: 6px 9px;
-            border-radius: 5px;
-            background: rgba(11, 16, 22, 0.9);
-        }
-
-        .pipeline-progress {
-            display: grid;
-            grid-template-columns: repeat(6, minmax(0, 1fr));
-            gap: 0;
-            min-height: 48px;
-            padding: 0 14px;
-            border-bottom: 1px solid var(--sf-border);
-            background: #0f141b;
-        }
-
-        .pipeline-step {
-            position: relative;
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            min-width: 0;
-            color: #687483;
-            font-size: 9px;
-        }
-
-        .pipeline-step:not(:last-child)::after {
-            content: "";
-            position: absolute;
-            top: 50%;
-            right: 7px;
-            left: 29px;
-            height: 1px;
-            background: #2a3440;
-            transform: translateY(-50%);
-        }
-
-        .pipeline-step-dot {
-            position: relative;
-            z-index: 1;
-            width: 18px;
-            height: 18px;
-            display: grid;
-            place-items: center;
-            flex: 0 0 auto;
-            border: 1px solid #35404d;
-            border-radius: 50%;
-            background: #151b23;
-            font-family: "Fira Code", monospace;
-            font-size: 7px;
-        }
-
-        .pipeline-step-label {
-            position: relative;
-            z-index: 1;
-            overflow: hidden;
-            padding-right: 8px;
-            background: #0f141b;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .pipeline-step.running {
-            color: #d8d3ff;
-        }
-
-        .pipeline-step.running .pipeline-step-dot {
-            border-color: var(--sf-purple);
-            background: #282247;
-            box-shadow: 0 0 0 3px rgba(132, 116, 232, 0.12);
-        }
-
-        .pipeline-step.done {
-            color: #9ed9bf;
-        }
-
-        .pipeline-step.done .pipeline-step-dot {
-            border-color: #4c9e7b;
-            background: #17352b;
-        }
-
-        .pipeline-step.error {
-            color: #f09a9f;
-        }
-
-        .pipeline-step.error .pipeline-step-dot {
-            border-color: var(--sf-danger);
-            background: #3a1e23;
-        }
-
-        .viewport-stage {
-            margin: 0;
-            border-radius: 0;
-            background:
-                radial-gradient(circle at 50% 38%, rgba(58, 70, 83, 0.55), rgba(16, 22, 29, 0.96) 55%),
-                #10161d;
-            box-shadow: none;
-        }
-
-        .viewport-stage::before {
-            content: "";
-            position: absolute;
-            z-index: 0;
-            right: -15%;
-            bottom: -34%;
-            left: -15%;
-            height: 68%;
-            opacity: 0.48;
-            background:
-                linear-gradient(rgba(103, 120, 139, 0.22) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(103, 120, 139, 0.22) 1px, transparent 1px);
-            background-size: 38px 38px;
-            transform: perspective(420px) rotateX(64deg);
-            transform-origin: center bottom;
-        }
-
-        .viewport-stage::after {
-            height: 28%;
-            background: linear-gradient(transparent, rgba(6, 9, 13, 0.72));
-        }
-
-        .viewport-empty {
-            color: #e5eaf0;
-        }
-
-        .viewport-empty-mark {
-            width: 58px;
-            height: 58px;
-            border-radius: 8px;
-            border-color: #4a5664;
-            background: rgba(17, 23, 31, 0.72);
-            color: #9da8b6;
-            box-shadow: 0 18px 42px rgba(0, 0, 0, 0.2);
-        }
-
-        .viewport-empty-mark svg {
-            width: 27px;
-            height: 27px;
-        }
-
-        .viewport-empty strong {
-            font-size: 15px;
-        }
-
-        .viewport-empty span {
-            color: #8d98a5;
-        }
-
-        .viewport-controls,
-        .render-controls,
-        .scene-telemetry {
-            border-radius: 7px;
-            border-color: rgba(104, 118, 135, 0.42);
-            background: rgba(12, 17, 23, 0.84);
-            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
-        }
-
-        .viewport-controls {
-            top: 96px;
-            width: 112px;
-        }
-
-        .view-control-btn {
-            gap: 7px;
-        }
-
-        .render-controls {
-            bottom: 68px;
-        }
-
-        .scene-telemetry {
-            position: absolute;
-            z-index: 6;
-            bottom: 18px;
-            left: 18px;
-            width: 188px;
-            padding: 10px 12px;
-            color: #d7dde5;
-        }
-
-        .telemetry-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            min-height: 22px;
-            gap: 10px;
-            font-size: 9px;
-        }
-
-        .telemetry-row span:first-child {
-            color: #7c8897;
-        }
-
-        .telemetry-row strong {
-            overflow: hidden;
-            max-width: 112px;
-            color: #cbd3dc;
-            font-family: "Fira Code", monospace;
-            font-size: 8px;
-            font-weight: 500;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .viewport-download {
-            min-width: 164px;
-            border-radius: 7px;
-            background: #171d25;
-        }
-
-        .orientation-widget {
-            width: 62px;
-            height: 62px;
-            background: rgba(12, 17, 23, 0.72);
-        }
-
-        .left-sidebar,
-        .right-sidebar {
-            border-radius: 8px;
-        }
-
-        @media (max-width: 1180px) {
-            .workspace-shell.spatial-workspace {
-                grid-template-columns: 58px minmax(430px, 52%) minmax(360px, 1fr);
-            }
-
-            .project-stack,
-            .spatial-nav,
-            #btn-kaggle-help {
-                display: none;
-            }
-
-            .server-compact {
-                width: 210px;
-            }
-
-            .pipeline-step-label {
-                display: none;
-            }
-        }
-
-        @media (max-width: 860px) {
-            body,
-            html {
-                min-height: 100%;
-                overflow: auto;
-            }
-
-            #app-container {
-                min-height: 100vh;
-                height: auto;
-            }
-
-            .spatial-header {
-                position: sticky;
-                top: 0;
-                height: auto;
-                min-height: 60px;
-                flex-wrap: wrap;
-                gap: 8px;
-                padding: 10px 12px;
-            }
-
-            .project-context,
-            .connection-copy {
-                display: none;
-            }
-
-            .spatial-header-actions {
-                flex: 1;
-                min-width: 0;
-            }
-
-            .server-compact {
-                flex: 1;
-                width: auto;
-                min-width: 120px;
-            }
-
-            .workspace-shell.spatial-workspace {
-                grid-template-columns: 52px minmax(0, 1fr);
-                grid-template-rows: minmax(520px, 62vh) minmax(440px, 55vh);
-                min-height: 1150px;
-            }
-
-            .app-rail {
-                grid-row: 1 / span 2;
-            }
-
-            .viewport-panel {
-                display: flex;
-                grid-column: 2;
-                grid-row: 2;
-            }
-
-            .pipeline-progress {
-                padding: 0 8px;
-            }
-
-            .scene-telemetry {
-                display: none;
-            }
-        }
-
-        @media (max-width: 560px) {
-            .brand-name,
-            #btn-connect .button-copy,
-            #btn-run .button-copy {
-                display: none;
-            }
-
-            .spatial-brand {
-                min-width: auto;
-                padding-right: 10px;
-            }
-
-            .spatial-header-actions button {
-                width: 40px;
-                min-width: 40px;
-                padding: 0;
-                justify-content: center;
-            }
-
-            .viewport-controls {
-                top: 76px;
-                right: 10px;
-            }
-
-            .render-controls {
-                right: 10px;
-                bottom: 62px;
-                width: 190px;
-            }
-        }
-
     </style>
 </head>
 
@@ -2131,10 +1525,7 @@
                     <div class="brand-mark">S</div>
                     <div class="brand-name">SpatialFlow</div>
                 </div>
-                <div class="project-context">
-                    <div class="project-name">Furniture 3D Studio</div>
-                    <div class="project-stack">SD3.5 / SAM2 / TRELLIS</div>
-                </div>
+                <div class="project-name">Furniture 3D Studio</div>
                 <nav class="spatial-nav" aria-label="Menu chính">
                     <button type="button">File</button>
                     <button type="button">Edit</button>
@@ -2144,73 +1535,59 @@
             </div>
 
             <div class="spatial-header-actions">
-                <div class="connection-copy">
-                    <strong id="connection-label">Offline</strong>
-                    <span id="connection-detail">GPU endpoint</span>
-                </div>
                 <div class="server-compact" title="Địa chỉ máy chủ Kaggle/Ngrok">
                     <span class="status-dot" id="status-indicator"></span>
                     <input type="text" id="ngrok-url" placeholder="Ngrok server URL" value="">
                 </div>
-                <button id="btn-connect" class="secondary" title="Connect GPU endpoint">
-                    <span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Connect</span></span>
-                </button>
-                <button id="btn-kaggle-help" class="secondary" title="Environment setup">
-                    <span class="icon-label"><i data-lucide="settings-2"></i><span class="button-copy">Setup</span></span>
-                </button>
-                <button id="btn-run" title="Run workflow">
-                    <span class="icon-label"><i data-lucide="play"></i><span class="button-copy">Run</span></span>
-                </button>
+                <button id="btn-connect" class="secondary">Connect</button>
+                <button id="btn-kaggle-help" class="secondary">Setup</button>
+                <button id="btn-run">▶ Run</button>
             </div>
         </header>
 
         <div class="workspace-shell spatial-workspace">
             <aside class="app-rail" aria-label="Công cụ">
                 <button class="rail-item active" id="btn-rail-graph" type="button">
-                    <span class="rail-icon"><i data-lucide="workflow"></i></span><span>Graph</span>
+                    <span class="rail-icon">⌁</span><span>Graph</span>
                 </button>
                 <button class="rail-item" id="btn-toggle-library" type="button">
-                    <span class="rail-icon"><i data-lucide="blocks"></i></span><span>Nodes</span>
+                    <span class="rail-icon">▧</span><span>Nodes</span>
                 </button>
                 <button class="rail-item" type="button">
-                    <span class="rail-icon"><i data-lucide="image"></i></span><span>Image</span>
+                    <span class="rail-icon">◇</span><span>Image</span>
                 </button>
                 <button class="rail-item" type="button">
-                    <span class="rail-icon"><i data-lucide="box"></i></span><span>3D</span>
+                    <span class="rail-icon">⬡</span><span>3D</span>
                 </button>
                 <button class="rail-item" id="btn-toggle-logs" type="button">
-                    <span class="rail-icon"><i data-lucide="list-tree"></i></span><span>Logs</span>
+                    <span class="rail-icon">≡</span><span>Logs</span>
                 </button>
                 <div class="rail-spacer"></div>
                 <button class="rail-item" type="button">
-                    <span class="rail-icon"><i data-lucide="circle-help"></i></span><span>Help</span>
+                    <span class="rail-icon">?</span><span>Help</span>
                 </button>
                 <button class="rail-item" type="button">
-                    <span class="rail-icon"><i data-lucide="settings"></i></span><span>Settings</span>
+                    <span class="rail-icon">⚙</span><span>Settings</span>
                 </button>
             </aside>
 
             <section class="graph-panel">
                 <div class="panel-bar">
-                    <div class="panel-heading">
-                        <div class="panel-heading-copy">
-                            <strong>Workflow graph</strong>
-                            <span>furniture_scene_v1</span>
-                        </div>
-                        <span class="panel-badge" id="graph-node-count">8 nodes</span>
+                    <div class="panel-tabs">
+                        <button class="panel-tab active" id="btn-panel-library" type="button">Nodes library</button>
+                        <button class="panel-tab" type="button">ComfyUI</button>
                     </div>
                     <div class="panel-actions">
-                        <button class="panel-icon-btn" id="btn-panel-library" type="button" title="Node library"><i data-lucide="panel-left-open"></i></button>
-                        <button class="panel-icon-btn" id="btn-panel-logs" type="button" title="Execution logs"><i data-lucide="terminal-square"></i></button>
-                        <button class="panel-icon-btn" type="button" title="More options"><i data-lucide="ellipsis"></i></button>
+                        <button class="panel-icon-btn" id="btn-panel-logs" type="button" title="Execution logs">☷</button>
+                        <button class="panel-icon-btn" type="button" title="More">•••</button>
                     </div>
                 </div>
 
                 <main id="canvas-container">
                     <canvas id="graphcanvas"></canvas>
                     <div class="canvas-toolbar">
-                        <button id="btn-fit-view" class="canvas-tool-btn"><span class="icon-label"><i data-lucide="maximize"></i>Fit</span></button>
-                        <button id="btn-reset-workflow" class="canvas-tool-btn"><span class="icon-label"><i data-lucide="rotate-ccw"></i>Reset</span></button>
+                        <button id="btn-fit-view" class="canvas-tool-btn">Fit View</button>
+                        <button id="btn-reset-workflow" class="canvas-tool-btn">Reset</button>
                     </div>
                     <div class="canvas-statusbar">
                         <span>furniture_scene_v1</span>
@@ -2222,33 +1599,19 @@
 
             <section class="viewport-panel">
                 <div class="panel-bar">
-                    <div class="panel-heading">
-                        <div class="panel-heading-copy">
-                            <strong>Scene viewport</strong>
-                            <span id="spatial-viewport-state">Waiting for output</span>
-                        </div>
-                        <span class="panel-badge">GLB</span>
-                    </div>
+                    <span class="panel-title">Viewport: 3D Generation</span>
+                    <span class="viewport-state" id="spatial-viewport-state">Waiting for output</span>
                     <div class="panel-actions">
-                        <button class="panel-icon-btn" id="btn-view-reset" type="button" title="Reset camera"><i data-lucide="focus"></i></button>
-                        <button class="panel-icon-btn" type="button" title="Viewport options"><i data-lucide="sliders-horizontal"></i></button>
+                        <button class="panel-icon-btn" id="btn-view-reset" type="button" title="Reset camera">↻</button>
+                        <button class="panel-icon-btn" type="button" title="Close">×</button>
                     </div>
-                </div>
-
-                <div class="pipeline-progress" id="pipeline-progress">
-                    <div class="pipeline-step" data-stage="prompt"><span class="pipeline-step-dot">01</span><span class="pipeline-step-label">Prompt</span></div>
-                    <div class="pipeline-step" data-stage="plan"><span class="pipeline-step-dot">02</span><span class="pipeline-step-label">Layout</span></div>
-                    <div class="pipeline-step" data-stage="image"><span class="pipeline-step-dot">03</span><span class="pipeline-step-label">Image</span></div>
-                    <div class="pipeline-step" data-stage="segment"><span class="pipeline-step-dot">04</span><span class="pipeline-step-label">Segment</span></div>
-                    <div class="pipeline-step" data-stage="mesh"><span class="pipeline-step-dot">05</span><span class="pipeline-step-label">3D mesh</span></div>
-                    <div class="pipeline-step" data-stage="scene"><span class="pipeline-step-dot">06</span><span class="pipeline-step-label">Scene</span></div>
                 </div>
 
                 <div class="viewport-stage">
                     <div class="viewport-empty" id="spatial-viewport-empty">
-                        <div class="viewport-empty-mark"><i data-lucide="box"></i></div>
-                        <strong>Scene preview</strong>
-                        <span>Your generated GLB will appear here when the workflow completes.</span>
+                        <div class="viewport-empty-mark">⬡</div>
+                        <strong>3D viewport is ready</strong>
+                        <span>Connect to Kaggle and run the workflow. The generated GLB scene will appear here.</span>
                     </div>
                     <model-viewer
                         id="spatial-global-viewer"
@@ -2265,10 +1628,10 @@
 
                     <div class="viewport-controls">
                         <div class="control-title">View Controls</div>
-                        <button class="view-control-btn" id="btn-view-spin" type="button"><i data-lucide="rotate-3d"></i>Rotate</button>
-                        <button class="view-control-btn" id="btn-view-front" type="button"><i data-lucide="move-horizontal"></i>Front</button>
-                        <button class="view-control-btn" id="btn-view-top" type="button"><i data-lucide="arrow-down-to-line"></i>Top</button>
-                        <button class="view-control-btn" id="btn-view-side" type="button"><i data-lucide="panel-right"></i>Side</button>
+                        <button class="view-control-btn" id="btn-view-spin" type="button">⟳ Rotate</button>
+                        <button class="view-control-btn" id="btn-view-front" type="button">◉ Front</button>
+                        <button class="view-control-btn" id="btn-view-top" type="button">⌃ Top</button>
+                        <button class="view-control-btn" id="btn-view-side" type="button">◫ Side</button>
                     </div>
 
                     <div class="render-controls">
@@ -2280,14 +1643,7 @@
                         </div>
                     </div>
 
-                    <div class="scene-telemetry" aria-label="Scene telemetry">
-                        <div class="telemetry-row"><span>Status</span><strong id="scene-meta-status">IDLE</strong></div>
-                        <div class="telemetry-row"><span>Objects</span><strong id="scene-meta-objects">0</strong></div>
-                        <div class="telemetry-row"><span>Format</span><strong>GLB / PBR</strong></div>
-                        <div class="telemetry-row"><span>Seed</span><strong>42</strong></div>
-                    </div>
-
-                    <button class="viewport-download" id="btn-spatial-download" type="button"><i data-lucide="download"></i>Download GLB</button>
+                    <button class="viewport-download" id="btn-spatial-download" type="button">↓ Download .GLB</button>
                 </div>
             </section>
         </div>
@@ -2372,13 +1728,6 @@
         // Global API Configuration
         let backendUrl = "";
         let isConnected = false;
-        window.lucide?.createIcons({
-            attrs: {
-                "stroke-width": 1.7,
-                "aria-hidden": "true"
-            }
-        });
-
         const ngrokInput = document.getElementById("ngrok-url");
         ngrokInput.value = localStorage.getItem("datn-ngrok-url") || "";
         ngrokInput.addEventListener("change", () => {
@@ -2391,29 +1740,10 @@
         let spatialLatestSceneUrl = "";
         let spatialLatestZipUrl = "";
 
-        function setPipelineStage(stage, state = "") {
-            const step = document.querySelector(`.pipeline-step[data-stage="${stage}"]`);
-            if (!step) return;
-            step.classList.remove("running", "done", "error");
-            if (state) step.classList.add(state);
-        }
-
-        function resetPipelineProgress() {
-            document.querySelectorAll(".pipeline-step").forEach((step) => {
-                step.classList.remove("running", "done", "error");
-            });
-            const sceneStatus = document.getElementById("scene-meta-status");
-            const objectCount = document.getElementById("scene-meta-objects");
-            if (sceneStatus) sceneStatus.textContent = "IDLE";
-            if (objectCount) objectCount.textContent = "0";
-        }
-
         function syncSpatialViewport(objectUrl, sceneUrl, zipUrl) {
             const globalViewer = document.getElementById("spatial-global-viewer");
             const emptyState = document.getElementById("spatial-viewport-empty");
             const stateLabel = document.getElementById("spatial-viewport-state");
-            const sceneStatus = document.getElementById("scene-meta-status");
-            const objectCount = document.getElementById("scene-meta-objects");
             if (!globalViewer || !objectUrl) return;
 
             spatialLatestSceneUrl = sceneUrl || "";
@@ -2422,19 +1752,11 @@
             globalViewer.hidden = false;
             if (emptyState) emptyState.style.display = "none";
             if (stateLabel) stateLabel.textContent = "Scene ready";
-            if (sceneStatus) sceneStatus.textContent = "READY";
-            const trellisNode = graph?.findNodesByType?.("datn/trellis_3d")?.[0];
-            if (objectCount) {
-                objectCount.textContent = String(trellisNode?.properties?.models?.length || 0);
-            }
-            setPipelineStage("scene", "done");
         }
 
         function setSpatialViewportError(message) {
             const stateLabel = document.getElementById("spatial-viewport-state");
-            const sceneStatus = document.getElementById("scene-meta-status");
             if (stateLabel) stateLabel.textContent = message || "Preview failed";
-            if (sceneStatus) sceneStatus.textContent = "ERROR";
         }
 
         const nodeLibraryDrawer = document.getElementById("node-library-drawer");
@@ -2457,12 +1779,11 @@
             if (!spatialViewer) return;
             if (spatialViewer.hasAttribute("auto-rotate")) {
                 spatialViewer.removeAttribute("auto-rotate");
-                event.currentTarget.innerHTML = '<i data-lucide="rotate-3d"></i>Auto rotate';
+                event.currentTarget.textContent = "⟳ Auto rotate";
             } else {
                 spatialViewer.setAttribute("auto-rotate", "");
-                event.currentTarget.innerHTML = '<i data-lucide="pause"></i>Stop rotate';
+                event.currentTarget.textContent = "⏸ Stop rotate";
             }
-            window.lucide?.createIcons();
         });
         document.getElementById("btn-view-reset")?.addEventListener("click", () => {
             if (!spatialViewer) return;
@@ -2584,11 +1905,7 @@
                     backendUrl = url;
                     isConnected = true;
                     document.getElementById("status-indicator").classList.add("connected");
-                    document.getElementById("connection-label").innerText = "GPU ready";
-                    document.getElementById("connection-detail").innerText = data.version || "API online";
-                    document.getElementById("btn-connect").innerHTML =
-                        '<span class="icon-label"><i data-lucide="check"></i><span class="button-copy">Connected</span></span>';
-                    window.lucide?.createIcons();
+                    document.getElementById("btn-connect").innerText = "Connected";
                     localStorage.setItem("datn-ngrok-url", url);
                     writeLog(`✅ Đã kết nối thành công! Phiên bản: ${data.version || '1.0.0'}`, "success");
                 } else {
@@ -2597,11 +1914,7 @@
             } catch (e) {
                 isConnected = false;
                 document.getElementById("status-indicator").classList.remove("connected");
-                document.getElementById("connection-label").innerText = "Offline";
-                document.getElementById("connection-detail").innerText = "Connection failed";
-                document.getElementById("btn-connect").innerHTML =
-                    '<span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Connect</span></span>';
-                window.lucide?.createIcons();
+                document.getElementById("btn-connect").innerText = "Connect";
                 writeLog(`❌ Lỗi kết nối: ${e.message}. Hãy đảm bảo server trên Kaggle đang chạy và Ngrok đã kết nối thành công.`, "error");
             }
         };
@@ -3961,62 +3274,44 @@
         function setupDefaultGraph() {
             graph.clear();
 
-            // Three readable rows keep the two branches separated:
-            // Prompt -> Gemini -> SD3.5
-            //    |        |          |
-            // Scene Graph -> Layout -> SAM2
-            //                         |
-            //                  TRELLIS -> Combiner
+            // Clean linear pipeline layout:
+            // [Prompt] ──▶ [Gemini Optimizer] ──▶ [SD3.5] ──▶ [SAM2] ──▶ [TRELLIS] ──▶ [Combiner]
 
             const nodePrompt = LiteGraph.createNode("datn/input_prompt");
-            nodePrompt.pos = [60, 180];
+            nodePrompt.pos = [100, 200];
             graph.add(nodePrompt);
 
             const nodeOptimizer = LiteGraph.createNode("datn/prompt_optimizer");
-            nodeOptimizer.pos = [450, 140];
+            nodeOptimizer.pos = [500, 200];
             graph.add(nodeOptimizer);
 
             const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
-            nodeSDXL.pos = [900, 80];
+            nodeSDXL.pos = [950, 200];
             graph.add(nodeSDXL);
 
-            const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
-            nodeSceneGraph.pos = [60, 620];
-            graph.add(nodeSceneGraph);
-
-            const nodeLayout = LiteGraph.createNode("datn/layout_2d");
-            nodeLayout.pos = [450, 580];
-            graph.add(nodeLayout);
-
             const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
-            nodeSAM2.pos = [900, 560];
+            nodeSAM2.pos = [1480, 200];
             graph.add(nodeSAM2);
 
             const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
-            nodeTrellis.pos = [450, 1100];
+            nodeTrellis.pos = [1960, 200];
             graph.add(nodeTrellis);
 
             const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
-            nodeCombiner.pos = [900, 1030];
+            nodeCombiner.pos = [2380, 200];
             graph.add(nodeCombiner);
 
             // Connect Node slots directly
             nodePrompt.connect(0, nodeOptimizer, 0);
             nodeOptimizer.connect(0, nodeSDXL, 0);
-            nodePrompt.connect(0, nodeSceneGraph, 0);
-            nodeSceneGraph.connect(0, nodeLayout, 0);
             nodeSDXL.connect(0, nodeSAM2, 0);
-            nodeLayout.connect(0, nodeSAM2, 1);
             nodePrompt.connect(0, nodeSAM2, 2);
             nodeSAM2.connect(0, nodeTrellis, 0);
             nodeTrellis.connect(0, nodeCombiner, 0);
 
-            // Fill the editor without shrinking the nodes into an unreadable cluster.
-            canvas.ds.offset = [18, 18];
-            canvas.ds.scale = 0.46;
-
-            const nodeCount = document.getElementById("graph-node-count");
-            if (nodeCount) nodeCount.textContent = `${graph._nodes.length} nodes`;
+            // Fit everything on screen
+            canvas.ds.offset = [80, 50];
+            canvas.ds.scale = 0.52;
 
             writeLog("Sơ đồ luồng pipeline mặc định đã được nạp thành công.", "info");
         }
@@ -4039,78 +3334,58 @@
             queueState.className = "queue-state running";
             queueStateLabel.innerText = "Running workflow...";
             queueCount.innerText = "1 running";
-            resetPipelineProgress();
-            document.getElementById("scene-meta-status").innerText = "RUNNING";
             btnRun.disabled = true;
             btnRun.style.opacity = "0.6";
             btnRun.style.cursor = "not-allowed";
-            btnRun.innerHTML = `<span class="icon-label"><i data-lucide="loader-circle"></i><span class="button-copy">Running</span></span>`;
-            window.lucide?.createIcons();
+            btnRun.innerHTML = `<span>⏳ Đang xử lý...</span>`;
             
             writeLog("🏁 Bắt đầu thực thi toàn bộ quy trình (Queue Prompt)...", "system");
             
             const promptNode = graph.findNodesByType("datn/input_prompt")[0];
-            const optimizerNode = graph.findNodesByType("datn/prompt_optimizer")[0];
-            const sceneGraphNode = graph.findNodesByType("datn/scene_graph")[0];
-            const layoutNode = graph.findNodesByType("datn/layout_2d")[0];
             const sdxlNode = graph.findNodesByType("datn/sdxl_gen")[0];
             const sam2Node = graph.findNodesByType("datn/grounded_sam2")[0];
             const trellisNode = graph.findNodesByType("datn/trellis_3d")[0];
             const combinerNode = graph.findNodesByType("datn/scene_combiner")[0];
-
-            const runNode = async (node, nodeName, stage) => {
+ 
+            const runNode = async (node, nodeName) => {
                 if (!node) return;
-                setPipelineStage(stage, "running");
-                node.boxcolor = "#8474e8";
+                node.boxcolor = "#00ff00"; // Highlight executing node with green border
                 canvas.draw(true, true);
                 writeLog(`⏳ Đang thực thi: ${nodeName}...`, "system");
                 try {
                     await node.onExecute();
-                    setPipelineStage(stage, "done");
-                    node.boxcolor = "#394554";
+                    node.boxcolor = "rgba(255, 255, 255, 0.1)"; // Restore border
                     canvas.draw(true, true);
                 } catch (err) {
-                    setPipelineStage(stage, "error");
-                    node.boxcolor = "#e56f76";
+                    node.boxcolor = "#f44336"; // Highlight error node with red border
                     canvas.draw(true, true);
                     throw err;
                 }
             };
-
+ 
             try {
                 if (promptNode) {
-                    await runNode(promptNode, "Input Text Prompt", "prompt");
-                }
-                if (optimizerNode) {
-                    await runNode(optimizerNode, "Gemini Prompt Optimizer", "prompt");
-                }
-                if (sceneGraphNode) {
-                    await runNode(sceneGraphNode, "Scene Graph Parser", "plan");
-                }
-                if (layoutNode) {
-                    await runNode(layoutNode, "2D Layout", "plan");
+                    await runNode(promptNode, "Input Text Prompt");
                 }
                 if (sdxlNode) {
-                    await runNode(sdxlNode, "SD3.5 Image Generator", "image");
+                    await runNode(sdxlNode, "SD3.5 Image Generator");
                 }
                 if (sam2Node) {
-                    await runNode(sam2Node, "Grounded-SAM2 Segment", "segment");
+                    await runNode(sam2Node, "Grounded-SAM2 Segment");
                 }
                 if (trellisNode) {
-                    await runNode(trellisNode, "TRELLIS 3D Generator", "mesh");
+                    await runNode(trellisNode, "TRELLIS 3D Generator");
                 }
                 if (combinerNode) {
-                    await runNode(combinerNode, "3D Scene Combiner", "scene");
+                    await runNode(combinerNode, "3D Scene Combiner");
                 }
                 writeLog("🎉 Thực thi toàn bộ quy trình pipeline THÀNH CÔNG!", "success");
                 queueState.className = "queue-state success";
                 queueStateLabel.innerText = "Completed successfully";
-                document.getElementById("scene-meta-status").innerText = "READY";
             } catch (err) {
                 writeLog("❌ Quy trình dừng lại do lỗi: " + err.message, "error");
                 queueState.className = "queue-state error";
                 queueStateLabel.innerText = "Execution failed";
-                document.getElementById("scene-meta-status").innerText = "ERROR";
             } finally {
                 isExecuting = false;
                 queueCount.innerText = "0 running";
@@ -4118,7 +3393,6 @@
                 btnRun.style.opacity = "1";
                 btnRun.style.cursor = "pointer";
                 btnRun.innerHTML = originalHTML;
-                window.lucide?.createIcons();
             }
         };
 
@@ -4225,8 +3499,8 @@
         });
 
         document.getElementById("btn-fit-view").onclick = () => {
-            canvas.ds.offset = [18, 18];
-            canvas.ds.scale = 0.46;
+            canvas.ds.offset = [80, 50];
+            canvas.ds.scale = 0.52;
             canvas.draw(true, true);
         };
 

@@ -10,10 +10,14 @@ diffusers==0.30.3
 transformers==4.41.2
 peft==0.10.0
 accelerate==0.30.1
-huggingface_hub
+huggingface_hub>=0.23.0,<0.26.0
 
 # NLP (Scene Graph Parsing)
 spacy>=3.5.0
+timm==0.9.16
+supervision
+addict
+yapf
 
 # 3D Processing & Geometry
 trimesh==4.5.3
@@ -29,6 +33,7 @@ scipy
 fastapi
 uvicorn
 pyngrok
+requests
 
 # Image & Video Processing
 pillow==10.4.0
@@ -38,3 +43,6 @@ opencv-python-headless
 tqdm
 easydict
 rembg[cpu]
+ninja
+setuptools==69.5.1
+wheel
