@@ -2408,6 +2408,21 @@
             if (objectCount) objectCount.textContent = "0";
         }
 
+        async function previewBackendGlb(url, sceneUrl = "", zipUrl = "") {
+            const response = await fetch(url, {
+                headers: { "ngrok-skip-browser-warning": "69420" }
+            });
+            if (!response.ok) {
+                throw new Error(`Cannot load GLB preview (HTTP ${response.status})`);
+            }
+            const blob = await response.blob();
+            const previousUrl = spatialViewer?.dataset?.objectUrl;
+            if (previousUrl) URL.revokeObjectURL(previousUrl);
+            const objectUrl = URL.createObjectURL(blob);
+            if (spatialViewer) spatialViewer.dataset.objectUrl = objectUrl;
+            syncSpatialViewport(objectUrl, sceneUrl, zipUrl);
+        }
+
         function syncSpatialViewport(objectUrl, sceneUrl, zipUrl) {
             const globalViewer = document.getElementById("spatial-global-viewer");
             const emptyState = document.getElementById("spatial-viewport-empty");
@@ -2421,13 +2436,14 @@
             globalViewer.src = objectUrl;
             globalViewer.hidden = false;
             if (emptyState) emptyState.style.display = "none";
-            if (stateLabel) stateLabel.textContent = "Scene ready";
-            if (sceneStatus) sceneStatus.textContent = "READY";
+            const finalScene = Boolean(sceneUrl);
+            if (stateLabel) stateLabel.textContent = finalScene ? "Scene ready" : "3D mesh preview";
+            if (sceneStatus) sceneStatus.textContent = finalScene ? "READY" : "PREVIEW";
             const trellisNode = graph?.findNodesByType?.("datn/trellis_3d")?.[0];
             if (objectCount) {
                 objectCount.textContent = String(trellisNode?.properties?.models?.length || 0);
             }
-            setPipelineStage("scene", "done");
+            if (finalScene) setPipelineStage("scene", "done");
         }
 
         function setSpatialViewportError(message) {
@@ -2571,16 +2587,32 @@
                 writeLog("Vui lòng nhập đường dẫn Ngrok!", "error");
                 return;
             }
+            if (!/^https?:\/\//i.test(url)) {
+                url = `https://${url}`;
+                document.getElementById("ngrok-url").value = url;
+            }
             if (url.endsWith("/")) url = url.slice(0, -1);
 
             writeLog(`Đang kết nối tới server GPU Kaggle: ${url}...`, "system");
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
             try {
                 const res = await fetch(`${url}/api/health`, {
                     method: 'GET',
-                    headers: { "ngrok-skip-browser-warning": "69420" }
+                    headers: { "ngrok-skip-browser-warning": "69420" },
+                    signal: controller.signal,
                 });
                 if (res.ok) {
                     const data = await res.json();
+                    if (data.ready === false) {
+                        const failedChecks = Object.entries(data.checks || {})
+                            .filter(([, value]) => value === false)
+                            .map(([name]) => name)
+                            .join(", ");
+                        throw new Error(
+                            `Backend chưa sẵn sàng${failedChecks ? ` (${failedChecks})` : ""}.`
+                        );
+                    }
                     backendUrl = url;
                     isConnected = true;
                     document.getElementById("status-indicator").classList.add("connected");
@@ -2592,18 +2624,26 @@
                     localStorage.setItem("datn-ngrok-url", url);
                     writeLog(`✅ Đã kết nối thành công! Phiên bản: ${data.version || '1.0.0'}`, "success");
                 } else {
-                    throw new Error("Mã trạng thái phản hồi lỗi.");
+                    const detail = await res.text().catch(() => "");
+                    throw new Error(
+                        `HTTP ${res.status}${detail ? `: ${detail.slice(0, 180)}` : ""}`
+                    );
                 }
             } catch (e) {
                 isConnected = false;
+                localStorage.removeItem("datn-ngrok-url");
                 document.getElementById("status-indicator").classList.remove("connected");
                 document.getElementById("connection-label").innerText = "Offline";
                 document.getElementById("connection-detail").innerText = "Connection failed";
                 document.getElementById("btn-connect").innerHTML =
                     '<span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Connect</span></span>';
                 window.lucide?.createIcons();
-                writeLog(`❌ Lỗi kết nối: ${e.message}. Hãy đảm bảo server trên Kaggle đang chạy và Ngrok đã kết nối thành công.`, "error");
+                const message = e.name === "AbortError"
+                    ? "timeout sau 15 giây"
+                    : e.message;
+                writeLog(`❌ Lỗi kết nối: ${message}. Hãy kiểm tra cell FastAPI và Ngrok trên Kaggle.`, "error");
             }
+            clearTimeout(timeout);
         };
 
         // Initialize LiteGraph
@@ -3095,6 +3135,7 @@
         // Node 5: SD3.5 Image Generator
         function NodeSDXLGen() {
             this.addInput("prompt", "string");
+            this.addInput("object_layout", "object");
             this.addOutput("image_url", "string");
 
             this.properties = {
@@ -3226,15 +3267,17 @@
         // above so SD3.5 receives the optimizer output exactly once.
         NodeSDXLGen.prototype.onExecute = async function () {
             const prompt = this.getInputData(0);
+            const objectLayout = this.getInputData(1) || {};
             if (!prompt) throw new Error("Thiếu prompt cho SD3.5");
             if (!isConnected) throw new Error("Chưa kết nối GPU Kaggle");
 
-            if (this._lastPrompt === prompt && this.properties.imageUrl) {
+            const requestKey = JSON.stringify({ prompt, objectLayout });
+            if (this._lastRequestKey === requestKey && this.properties.imageUrl) {
                 this.setOutputData(0, this.properties.imageUrl);
                 return;
             }
 
-            this._lastPrompt = prompt;
+            this._lastRequestKey = requestKey;
             writeLog("Chạy mô hình khuếch tán SD3.5 mặc định...", "system");
 
             const res = await fetch(`${backendUrl}/api/generate_image`, {
@@ -3245,7 +3288,7 @@
                 },
                 body: JSON.stringify({
                     prompt,
-                    layout: {},
+                    layout: objectLayout,
                     lora_scale: 0.0
                 })
             });
@@ -3256,6 +3299,7 @@
 
             const data = await res.json();
             this.properties.imageUrl = `${backendUrl}${data.image_url}`;
+            this.properties.objectImages = data.images || [];
             this._imageObj = null;
             this.setOutputData(0, this.properties.imageUrl);
             writeLog("✅ Đã sinh ảnh 2D thành công.", "success");
@@ -3646,6 +3690,10 @@
 
                     this.properties.models = data.models || [];
                     this.setOutputData(0, this.properties.models);
+                    const firstModel = this.properties.models.find((model) => model.model_url);
+                    if (firstModel) {
+                        await previewBackendGlb(`${backendUrl}${firstModel.model_url}`);
+                    }
                     writeLog("✅ TRELLIS dựng hình 3D Mesh hoàn thành!", "success");
                     this.setDirtyCanvas(true, true);
                 } else {
@@ -3685,6 +3733,7 @@
         // Node 7: 3D Scene Combiner (Integrates the Interactive 3D Model-Viewer Web Component)
         function NodeSceneCombiner() {
             this.addInput("models_data", "object");
+            this.addInput("relation_layout", "object");
             this.addOutput("scene_url", "string");
 
             this.properties = {
@@ -3707,6 +3756,7 @@
         NodeSceneCombiner.title_color = "rgba(106, 27, 154, 0.85)";
         NodeSceneCombiner.prototype.onExecute = async function () {
             const modelsData = this.getInputData(0);
+            const relationLayout = this.getInputData(1) || {};
             if (!modelsData) {
                 writeLog("❌ 3D Scene Combiner: Thiếu dữ liệu mô hình models_data!", "error");
                 throw new Error("Thiếu dữ liệu mô hình models_data");
@@ -3733,7 +3783,7 @@
                     },
                     body: JSON.stringify({
                         models: modelsData,
-                        layout: {}, // Send empty layout to satisfy backend schema
+                        layout: relationLayout,
                         scale_factor: this.properties.scaleFactor
                     })
                 });
@@ -4005,11 +4055,13 @@
             nodeOptimizer.connect(0, nodeSDXL, 0);
             nodePrompt.connect(0, nodeSceneGraph, 0);
             nodeSceneGraph.connect(0, nodeLayout, 0);
+            nodeLayout.connect(0, nodeSDXL, 1);
             nodeSDXL.connect(0, nodeSAM2, 0);
             nodeLayout.connect(0, nodeSAM2, 1);
             nodePrompt.connect(0, nodeSAM2, 2);
             nodeSAM2.connect(0, nodeTrellis, 0);
             nodeTrellis.connect(0, nodeCombiner, 0);
+            nodeLayout.connect(0, nodeCombiner, 1);
 
             // Fill the editor without shrinking the nodes into an unreadable cluster.
             canvas.ds.offset = [18, 18];
@@ -4132,6 +4184,8 @@
             const nodes = [
                 [graph.findNodesByType("datn/input_prompt")[0], "Input Text Prompt"],
                 [graph.findNodesByType("datn/prompt_optimizer")[0], "Gemini Prompt Optimizer"],
+                [graph.findNodesByType("datn/scene_graph")[0], "Object Plan"],
+                [graph.findNodesByType("datn/layout_2d")[0], "Relation Layout"],
                 [graph.findNodesByType("datn/sdxl_gen")[0], "SD3.5 Image Generator"],
                 [graph.findNodesByType("datn/grounded_sam2")[0], "Grounded-SAM2 Segment"],
                 [graph.findNodesByType("datn/trellis_3d")[0], "TRELLIS 3D Generator"],

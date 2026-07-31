@@ -1,52 +1,111 @@
-import sys
-import json
-import subprocess
+import re
+import unicodedata
 
-PY_PATH = "/opt/venv310/bin/python"
+
+FURNITURE_ALIASES = {
+    "armchair": ("armchair",),
+    "chair": ("dining chair", "wooden chair", "chair", "ghe", "ghế"),
+    "table": ("dining table", "coffee table", "wooden table", "table", "ban", "bàn"),
+    "sofa": ("sofa", "couch"),
+    "bed": ("bed", "giuong", "giường"),
+    "desk": ("desk",),
+    "stool": ("stool",),
+    "bench": ("bench",),
+    "cabinet": ("cabinet", "tu", "tủ"),
+    "wardrobe": ("wardrobe",),
+    "bookshelf": ("bookshelf",),
+    "shelf": ("shelf",),
+    "lamp": ("lamp", "den", "đèn"),
+    "ottoman": ("ottoman",),
+    "nightstand": ("nightstand", "bedside table"),
+    "dresser": ("dresser",),
+}
+
+
+def _normalized(text: str) -> str:
+    decomposed = unicodedata.normalize("NFD", str(text).lower())
+    without_marks = "".join(
+        character
+        for character in decomposed
+        if unicodedata.category(character) != "Mn"
+    )
+    return re.sub(r"\s+", " ", without_marks).strip()
+
+
+def _extract_labels(prompt: str) -> list[str]:
+    text = _normalized(prompt)
+    matches = []
+    for label, aliases in FURNITURE_ALIASES.items():
+        for alias in aliases:
+            alias_normalized = _normalized(alias)
+            for match in re.finditer(
+                rf"(?<!\w){re.escape(alias_normalized)}(?!\w)", text
+            ):
+                matches.append((match.start(), match.end(), -len(alias_normalized), label))
+
+    matches.sort()
+    labels = []
+    occupied = []
+    for start, end, _, label in matches:
+        if any(not (end <= old_start or start >= old_end) for old_start, old_end in occupied):
+            continue
+        occupied.append((start, end))
+        labels.append(label)
+
+    # Keep repeated objects. The downstream generator gives each one a unique id.
+    return labels or ["furniture"]
+
+
+def _relation(prompt: str) -> str:
+    text = f" {_normalized(prompt)} "
+    patterns = (
+        ("on_top_of", (" on top of ", " placed on ", " tren ", " dat tren ")),
+        ("under", (" under ", " underneath ", " below ", " duoi ")),
+        ("in_front_of", (" in front of ", " phia truoc ")),
+        ("behind", (" behind ", " phia sau ")),
+        ("left_of", (" to the left of ", " left of ", " ben trai ")),
+        ("right_of", (" to the right of ", " right of ", " ben phai ")),
+        ("next_to", (" next to ", " beside ", " alongside ", " near ", " ke ben ", " ben canh ")),
+    )
+    for relation, phrases in patterns:
+        if any(phrase in text for phrase in phrases):
+            return relation
+    return "single" if len(_extract_labels(prompt)) == 1 else "next_to"
+
 
 def parse_scene_graph(prompt: str) -> dict:
-    """
-    Sử dụng spaCy NLP để phân tích cú pháp Scene Graph (Node & Edge) từ prompt.
-    """
-    # Tránh lỗi cú pháp khi prompt chứa dấu nháy hoặc ký tự đặc biệt
-    safe_text = prompt.replace('\\', '\\\\').replace('"', '\\"')
-    script = f"""
-import sys, json, spacy, re
-sys.modules['triton'] = None  # Chặn lỗi bitsandbytes
+    """Create a deterministic furniture-only plan for the object-wise pipeline."""
+    clean_prompt = " ".join(str(prompt).split()).strip()
+    if not clean_prompt:
+        raise ValueError("Prompt must not be empty")
 
-nlp = spacy.load("en_core_web_sm")
-RELATION_KEYWORDS = {{
-    "on": "on_top_of", "on top of": "on_top_of", "under": "under", "below": "under",
-    "next to": "next_to", "beside": "next_to", "behind": "behind", "in front of": "in_front_of",
-    "above": "above", "inside": "inside", "near": "next_to",
-}}
-
-def parse(text):
-    doc = nlp(text.lower())
+    labels = _extract_labels(clean_prompt)
     nodes = []
-    edges = []
-    for i, chunk in enumerate(doc.noun_chunks):
-        root = chunk.root.text
-        import re
-        clean_root = re.sub(r'[^a-zA-Z0-9]', '', root.lower())
-        if not clean_root:
-            clean_root = "object"
-        attrs = [t.text for t in chunk if t.pos_ == "ADJ"]
-        nodes.append({{"id": f"{{clean_root}}_{{i}}", "label": root, "attributes": attrs, "full": chunk.text}})
-    
-    text_lower = text.lower()
-    for phrase, rel_type in RELATION_KEYWORDS.items():
-        pattern = rf"(\w+(?:\s\w+)?)\s+(?:\w+\s+)*{{re.escape(phrase)}}\s+(\w+(?:\s\w+)?)"
-        for subj_text, obj_text in re.findall(pattern, text_lower):
-            subj_id = next((n["id"] for n in nodes if n["label"] in subj_text or subj_text in n["full"]), None)
-            obj_id  = next((n["id"] for n in nodes if n["label"] in obj_text  or obj_text  in n["full"]), None)
-            if subj_id and obj_id and subj_id != obj_id:
-                edges.append({{"subject": subj_id, "relation": rel_type, "object": obj_id}})
-    return {{"nodes": nodes, "edges": edges, "raw": text}}
+    for index, label in enumerate(labels, start=1):
+        nodes.append(
+            {
+                "id": f"{label}_{index}",
+                "label": label,
+                "full": f"one {label} requested by the user",
+                "description": clean_prompt,
+            }
+        )
 
-print(json.dumps(parse("{safe_text}")))
-"""
-    r = subprocess.run([PY_PATH, "-c", script], capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"Lỗi spaCy parser: {r.stderr}")
-    return json.loads(r.stdout.strip())
+    relation = _relation(clean_prompt)
+    edges = []
+    if len(nodes) >= 2:
+        edges.append(
+            {
+                "subject": nodes[0]["id"],
+                "relation": relation,
+                "object": nodes[1]["id"],
+            }
+        )
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "relation": relation,
+        "raw": clean_prompt,
+        "mode": "objectwise",
+    }

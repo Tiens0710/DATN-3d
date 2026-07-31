@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from src.parser import parse_scene_graph
 from src.layout import compute_layout
-from src.generator_2d import generate_2d_image
+from src.generator_2d import create_object_contact_sheet, generate_object_images
 from src.segmenter import run_grounded_sam2
 from src.generator_3d import generate_3d_models
 from src.combiner import combine_scene_meshes
@@ -27,10 +27,12 @@ KAGGLE_WORKING = "/kaggle/working"
 CROPS_DIR = os.path.join(KAGGLE_WORKING, "crops")
 MULTI_GLB_DIR = os.path.join(KAGGLE_WORKING, "multi_object_glb")
 OUT_DIR = os.path.join(KAGGLE_WORKING, "outputs", "trellis")
+OBJECT_IMAGE_DIR = os.path.join(KAGGLE_WORKING, "object_images")
 
 os.makedirs(CROPS_DIR, exist_ok=True)
 os.makedirs(MULTI_GLB_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
+os.makedirs(OBJECT_IMAGE_DIR, exist_ok=True)
 
 app = FastAPI(
     title="DATN 3D Scene Reconstruction API",
@@ -52,6 +54,11 @@ app.mount(
     name="multi_object_glb",
 )
 app.mount("/outputs", StaticFiles(directory=OUT_DIR), name="outputs")
+app.mount(
+    "/object_images",
+    StaticFiles(directory=OBJECT_IMAGE_DIR),
+    name="object_images",
+)
 
 
 class TextPrompt(BaseModel):
@@ -373,13 +380,36 @@ def api_generate_layout(scene_graph: Dict[str, Any]):
 @app.post("/api/generate_image")
 def api_generate_image(request: ImageGenRequest):
     try:
-        input_path = os.path.join(KAGGLE_WORKING, "input.png")
-        if not generate_2d_image(request.prompt, request.lora_scale, input_path):
-            raise RuntimeError("Image generation failed")
+        layout = dict(request.layout or {})
+        objects = list(layout.get("objects", []))
+        if not objects:
+            scene_graph = parse_scene_graph(request.prompt)
+            layout = compute_layout(scene_graph)
+            objects = layout["objects"]
 
-        output_path = os.path.join(OUT_DIR, "input_2d.png")
-        shutil.copy2(input_path, output_path)
-        return {"status": "success", "image_url": "/outputs/input_2d.png"}
+        generated = generate_object_images(
+            request.prompt,
+            objects,
+            request.lora_scale,
+        )
+        contact_sheet = os.path.join(OUT_DIR, "objectwise_2d.png")
+        create_object_contact_sheet(generated, contact_sheet)
+        shutil.copy2(contact_sheet, os.path.join(KAGGLE_WORKING, "input.png"))
+        images = [
+            {
+                "name": item["name"],
+                "label": item["label"],
+                "image_url": f"/object_images/{item['name']}.png",
+            }
+            for item in generated
+        ]
+        return {
+            "status": "success",
+            "mode": "objectwise",
+            "image_url": "/outputs/objectwise_2d.png",
+            "images": images,
+            "layout": layout,
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -449,6 +479,7 @@ def api_combine_scene(request: CombineRequest):
         if not combine_scene_meshes(
             request.models,
             scene_path,
+            request.layout,
             request.scale_factor,
         ):
             raise RuntimeError("Scene combining failed")
