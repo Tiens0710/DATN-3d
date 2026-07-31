@@ -67,7 +67,17 @@ sys.path.insert(0, '/opt/venv310/lib/python3.10/site-packages')
 sys.modules['triton'] = None
 
 import torch
+import diffusers
+from packaging.version import Version
 from diffusers import StableDiffusion3Pipeline
+
+if Version(diffusers.__version__) < Version('0.32.0'):
+    raise RuntimeError(
+        'SD3.5 Medium requires Diffusers >= 0.32.0. Found ' + diffusers.__version__ +
+        '. Run the API notebook dependency cell, then restart FastAPI.'
+    )
+
+print('Diffusers version:', diffusers.__version__)
 
 with open({jobs_path!r}, encoding='utf-8') as file:
     jobs = json.load(file)
