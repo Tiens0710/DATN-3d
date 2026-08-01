@@ -2309,14 +2309,181 @@
             background: linear-gradient(180deg, rgba(132, 116, 232, .22), rgba(132, 116, 232, .08));
         }
 
+        /* Clear input-mode switch: text workflow or image workflow. */
+        .workspace-shell.spatial-workspace {
+            grid-template-columns: 176px minmax(0, 1.08fr) minmax(390px, .92fr);
+        }
+
+        .app-rail {
+            align-items: stretch;
+            padding: 14px 10px;
+        }
+
+        .rail-section-label {
+            padding: 0 7px 8px;
+            color: #768292;
+            font-family: "Fira Code", monospace;
+            font-size: 9px;
+            letter-spacing: .7px;
+            text-transform: uppercase;
+        }
+
+        .input-mode-switch {
+            display: grid;
+            gap: 5px;
+        }
+
+        .input-mode-btn {
+            min-height: 44px;
+            justify-content: flex-start;
+            gap: 10px;
+            padding: 8px 10px;
+            border: 1px solid transparent;
+            border-radius: 7px;
+            background: transparent;
+            color: #8d98a6;
+            box-shadow: none;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .input-mode-btn svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .input-mode-btn:hover {
+            color: #f1f4f8;
+            background: #1a2029;
+            border-color: #2d3948;
+        }
+
+        .input-mode-btn.active {
+            color: #fff;
+            background: linear-gradient(135deg, rgba(132, 116, 232, .28), rgba(132, 116, 232, .1));
+            border-color: rgba(155, 143, 246, .55);
+            box-shadow: inset 2px 0 0 #a596ff, 0 8px 18px rgba(55, 45, 133, .12);
+        }
+
+        .mode-description {
+            min-height: 42px;
+            margin: 8px 2px 12px;
+            padding: 8px 9px;
+            border: 1px solid #26313e;
+            border-radius: 6px;
+            color: #7d8998;
+            background: #0f151c;
+            font-size: 10px;
+            line-height: 1.45;
+        }
+
+        .rail-divider {
+            height: 1px;
+            margin: 0 2px 10px;
+            background: #293442;
+        }
+
+        .app-rail .rail-item {
+            flex-direction: row;
+            justify-content: flex-start;
+            gap: 10px;
+            min-height: 40px;
+            padding: 7px 10px;
+            font-size: 11px;
+        }
+
+        .app-rail .rail-icon {
+            flex: 0 0 20px;
+        }
+
+        .image-only-control {
+            display: none;
+        }
+
+        .app-container-image-mode .image-only-control {
+            display: flex;
+        }
+
+        .app-container-image-mode #btn-run {
+            background: linear-gradient(135deg, #2d9b89, #49c294);
+            border-color: #6bd4ad;
+            box-shadow: 0 10px 24px rgba(38, 143, 116, .22);
+        }
+
+        .header-menu-wrap {
+            position: relative;
+        }
+
+        .header-menu-panel {
+            position: absolute;
+            top: calc(100% + 5px);
+            left: 0;
+            z-index: 500;
+            display: none;
+            min-width: 150px;
+            padding: 5px;
+            border: 1px solid #354253;
+            border-radius: 7px;
+            background: #151b23;
+            box-shadow: 0 14px 28px rgba(0, 0, 0, .35);
+        }
+
+        .header-menu-panel.open {
+            display: grid;
+            gap: 2px;
+        }
+
+        .header-menu-panel button {
+            justify-content: flex-start;
+            min-height: 30px;
+            padding: 6px 9px;
+            border: 0;
+            border-radius: 4px;
+            background: transparent;
+            color: #c5ccd6;
+            box-shadow: none;
+            font-size: 11px;
+        }
+
+        .header-menu-panel button:hover {
+            background: #273242;
+            color: #fff;
+        }
+
+        .viewport-controls.is-hidden,
+        .render-controls.is-hidden {
+            display: none;
+        }
+
+        .pipeline-progress.image-mode {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .pipeline-progress.image-mode .pipeline-step[data-stage="plan"],
+        .pipeline-progress.image-mode .pipeline-step[data-stage="image"] {
+            display: none;
+        }
+
         @media (max-width: 1180px) {
             .workspace-shell.spatial-workspace {
-                grid-template-columns: 58px minmax(0, 1fr) minmax(340px, .82fr);
+                grid-template-columns: 160px minmax(0, 1fr) minmax(340px, .82fr);
+            }
+        }
+
+        @media (max-width: 1180px) {
+            .workspace-shell.spatial-workspace {
+                grid-template-columns: 160px minmax(0, 1fr) minmax(340px, .82fr);
             }
 
             .canvas-minimap {
                 width: 138px;
                 height: 88px;
+            }
+        }
+
+        @media (max-width: 860px) {
+            .workspace-shell.spatial-workspace {
+                grid-template-columns: 164px minmax(0, 1fr);
             }
         }
 
@@ -2338,10 +2505,16 @@
                     <div class="project-stack">SD3.5 / SAM2 / TRELLIS</div>
                 </div>
                 <nav class="spatial-nav" aria-label="Menu chính">
-                    <button type="button">File</button>
-                    <button type="button">Edit</button>
-                    <button type="button">View</button>
-                    <button type="button">Help</button>
+                <div class="header-menu-wrap">
+                    <button type="button" id="btn-menu-file">File</button>
+                    <div class="header-menu-panel" id="file-menu">
+                        <button type="button" id="btn-save-workflow">Save workflow</button>
+                        <button type="button" id="btn-load-workflow">Load workflow</button>
+                    </div>
+                </div>
+                <button type="button" id="btn-menu-edit">Edit</button>
+                <button type="button" id="btn-menu-view">View</button>
+                <button type="button" id="btn-menu-help">Help</button>
                 </nav>
             </div>
 
@@ -2360,7 +2533,7 @@
                 <button id="btn-kaggle-help" class="secondary" title="Environment setup">
                     <span class="icon-label"><i data-lucide="settings-2"></i><span class="button-copy">Setup</span></span>
                 </button>
-                <button id="btn-upload-image" class="secondary" title="Upload an input image">
+                <button id="btn-upload-image" class="secondary image-only-control" title="Upload an input image">
                     <span class="icon-label"><i data-lucide="image-up"></i><span class="button-copy">Upload image</span></span>
                 </button>
                 <input id="image-upload-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
@@ -2372,14 +2545,24 @@
 
         <div class="workspace-shell spatial-workspace">
             <aside class="app-rail" aria-label="Công cụ">
+                <div class="rail-section-label">Input mode</div>
+                <div class="input-mode-switch" role="tablist" aria-label="Chọn loại đầu vào">
+                    <button class="input-mode-btn active" id="btn-mode-text" type="button" role="tab" aria-selected="true">
+                        <i data-lucide="type"></i><span>Văn bản</span>
+                    </button>
+                    <button class="input-mode-btn" id="btn-mode-image" type="button" role="tab" aria-selected="false">
+                        <i data-lucide="image-plus"></i><span>Hình ảnh</span>
+                    </button>
+                </div>
+                <div class="mode-description" id="mode-description">
+                    Mô tả cảnh bằng prompt rồi sinh ảnh và mô hình 3D.
+                </div>
+                <div class="rail-divider"></div>
                 <button class="rail-item active" id="btn-rail-graph" type="button">
                     <span class="rail-icon"><i data-lucide="workflow"></i></span><span>Graph</span>
                 </button>
                 <button class="rail-item" id="btn-toggle-library" type="button">
                     <span class="rail-icon"><i data-lucide="blocks"></i></span><span>Nodes</span>
-                </button>
-                <button class="rail-item" id="btn-rail-upload-image" type="button">
-                    <span class="rail-icon"><i data-lucide="image"></i></span><span>Image</span>
                 </button>
                 <button class="rail-item" id="btn-rail-viewport" type="button">
                     <span class="rail-icon"><i data-lucide="box"></i></span><span>3D</span>
@@ -2408,7 +2591,7 @@
                     <div class="panel-actions">
                         <button class="panel-icon-btn" id="btn-panel-library" type="button" title="Node library"><i data-lucide="panel-left-open"></i></button>
                         <button class="panel-icon-btn" id="btn-panel-logs" type="button" title="Execution logs"><i data-lucide="terminal-square"></i></button>
-                        <button class="panel-icon-btn" type="button" title="More options"><i data-lucide="ellipsis"></i></button>
+                        <button class="panel-icon-btn" id="btn-panel-more" type="button" title="Workflow actions"><i data-lucide="ellipsis"></i></button>
                     </div>
                 </div>
 
@@ -2441,7 +2624,7 @@
                     </div>
                     <div class="panel-actions">
                         <button class="panel-icon-btn" id="btn-view-reset" type="button" title="Reset camera"><i data-lucide="focus"></i></button>
-                        <button class="panel-icon-btn" type="button" title="Viewport options"><i data-lucide="sliders-horizontal"></i></button>
+                        <button class="panel-icon-btn" id="btn-viewport-options" type="button" title="Viewport options"><i data-lucide="sliders-horizontal"></i></button>
                     </div>
                 </div>
 
@@ -2515,6 +2698,9 @@
                     <button class="node-palette-item" data-node-type="datn/input_prompt">
                         <span class="node-color" style="background:#58a65c"></span>Text Prompt
                     </button>
+                    <button class="node-palette-item" data-node-type="datn/image_input">
+                        <span class="node-color" style="background:#3d8e86"></span>Input Image
+                    </button>
                 </div>
                 <div class="palette-heading">Generation</div>
                 <div class="node-palette">
@@ -2584,6 +2770,7 @@
         let isConnected = false;
         let uploadedImageUrl = "";
         let uploadedImageName = "";
+        let pendingUploadFile = null;
         window.lucide?.createIcons({
             attrs: {
                 "stroke-width": 1.7,
@@ -2595,6 +2782,9 @@
         ngrokInput.value = localStorage.getItem("datn-ngrok-url") || "";
         ngrokInput.addEventListener("change", () => {
             localStorage.setItem("datn-ngrok-url", ngrokInput.value.trim());
+        });
+        ngrokInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") document.getElementById("btn-connect")?.click();
         });
 
 
@@ -2728,6 +2918,14 @@
             });
         });
 
+        document.getElementById("btn-panel-more")?.addEventListener("click", () => {
+            saveWorkflowFile();
+        });
+        document.getElementById("btn-viewport-options")?.addEventListener("click", () => {
+            document.querySelector(".viewport-controls")?.classList.toggle("is-hidden");
+            document.querySelector(".render-controls")?.classList.toggle("is-hidden");
+        });
+
 
         // Output logs styling and helper
         function writeLog(message, type = "info") {
@@ -2769,6 +2967,85 @@
                 await new Promise(resolve => setTimeout(resolve, 250));
             }
         }
+
+        function closeHeaderMenus() {
+            document.querySelectorAll(".header-menu-panel").forEach((menu) => menu.classList.remove("open"));
+        }
+
+        function saveWorkflowFile() {
+            if (typeof graph === "undefined") return;
+            const payload = {
+                version: 1,
+                input_mode: inputMode,
+                graph: graph.serialize(),
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `spatialflow_${inputMode}_workflow.json`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            writeLog("✅ Đã lưu workflow JSON.", "success");
+        }
+
+        async function loadWorkflowFile(file) {
+            if (!file || typeof graph === "undefined") return;
+            try {
+                const payload = JSON.parse(await file.text());
+                if (!payload.graph || !Array.isArray(payload.graph.nodes)) {
+                    throw new Error("File workflow không đúng định dạng");
+                }
+                document.querySelectorAll(".node-textarea, .node-3d-container").forEach((element) => element.remove());
+                if (payload.input_mode && payload.input_mode !== inputMode) {
+                    inputMode = payload.input_mode === "image" ? "image" : "text";
+                }
+                graph.configure(payload.graph);
+                updateInputModeUI();
+                const nodeCount = document.getElementById("graph-node-count");
+                if (nodeCount) nodeCount.textContent = `${graph._nodes.length} nodes`;
+                requestAnimationFrame(() => fitGraphToView(60));
+                writeLog(`✅ Đã mở workflow ${file.name}.`, "success");
+            } catch (error) {
+                writeLog(`❌ Không thể mở workflow: ${error.message}`, "error");
+            }
+        }
+
+        document.getElementById("btn-menu-file")?.addEventListener("click", (event) => {
+            event.stopPropagation();
+            document.getElementById("file-menu")?.classList.toggle("open");
+        });
+        document.getElementById("btn-save-workflow")?.addEventListener("click", () => {
+            saveWorkflowFile();
+            closeHeaderMenus();
+        });
+        const workflowFileInput = document.createElement("input");
+        workflowFileInput.type = "file";
+        workflowFileInput.accept = ".json,application/json";
+        workflowFileInput.hidden = true;
+        document.body.appendChild(workflowFileInput);
+        document.getElementById("btn-load-workflow")?.addEventListener("click", () => {
+            workflowFileInput.click();
+            closeHeaderMenus();
+        });
+        workflowFileInput.addEventListener("change", async () => {
+            await loadWorkflowFile(workflowFileInput.files?.[0]);
+            workflowFileInput.value = "";
+        });
+        document.getElementById("btn-menu-edit")?.addEventListener("click", () => {
+            document.getElementById("btn-reset-workflow")?.click();
+        });
+        document.getElementById("btn-menu-view")?.addEventListener("click", () => {
+            document.getElementById("btn-fit-view")?.click();
+        });
+        document.getElementById("btn-menu-help")?.addEventListener("click", () => {
+            document.getElementById("kaggle-modal").style.display = "flex";
+        });
+        document.addEventListener("click", (event) => {
+            if (!event.target.closest(".header-menu-wrap")) closeHeaderMenus();
+        });
 
         document.getElementById("btn-copy-logs").onclick = () => {
             const logContent = document.getElementById("log-content");
@@ -2835,6 +3112,10 @@
                     window.lucide?.createIcons();
                     localStorage.setItem("datn-ngrok-url", url);
                     writeLog(`✅ Đã kết nối thành công! Phiên bản: ${data.version || '1.0.0'}`, "success");
+                    if (pendingUploadFile) {
+                        writeLog("Đang tải ảnh đã chọn lên backend...", "system");
+                        void uploadImageFile(pendingUploadFile);
+                    }
                 } else {
                     const detail = await res.text().catch(() => "");
                     throw new Error(
@@ -2956,26 +3237,38 @@
 
         const imageUploadInput = document.getElementById("image-upload-input");
         const openImagePicker = () => {
-            if (!isConnected) {
-                writeLog("Vui lòng kết nối GPU Kaggle trước khi nhập ảnh.", "warning");
-                return;
-            }
+            // Let the browser open the picker even while offline. The selected
+            // file is kept locally and uploaded automatically after Connect.
             imageUploadInput?.click();
         };
+        window.openImagePicker = openImagePicker;
         document.getElementById("btn-upload-image")?.addEventListener("click", openImagePicker);
         document.getElementById("btn-rail-upload-image")?.addEventListener("click", openImagePicker);
-        imageUploadInput?.addEventListener("change", async () => {
-            const file = imageUploadInput.files?.[0];
+
+        async function uploadImageFile(file) {
             if (!file) return;
+            if (!isConnected) {
+                pendingUploadFile = file;
+                writeLog(`Đã chọn ảnh ${file.name}. Hãy Connect GPU để bắt đầu tải ảnh lên.`, "warning");
+                return;
+            }
+
+            pendingUploadFile = null;
+            const uploadButton = document.getElementById("btn-upload-image");
+            const originalUploadButton = uploadButton?.innerHTML;
             if (!file.type.startsWith("image/")) {
                 writeLog("Chỉ hỗ trợ file ảnh PNG, JPG hoặc WebP.", "error");
-                imageUploadInput.value = "";
                 return;
             }
 
             const formData = new FormData();
             formData.append("file", file);
             writeLog(`Đang tải ảnh ${file.name} lên backend...`, "system");
+            if (uploadButton) {
+                uploadButton.disabled = true;
+                uploadButton.innerHTML = '<span class="icon-label"><i data-lucide="loader-circle"></i><span class="button-copy">Uploading...</span></span>';
+                window.lucide?.createIcons();
+            }
             try {
                 const response = await fetch(`${backendUrl}/api/upload_image`, {
                     method: "POST",
@@ -2988,14 +3281,17 @@
                 const data = await response.json();
                 uploadedImageUrl = `${backendUrl}${data.image_url}`;
                 uploadedImageName = file.name;
-                const imageNode = graph.findNodesByType("datn/sdxl_gen")?.[0];
-                if (imageNode) {
+                const imageNodes = [
+                    ...(graph.findNodesByType("datn/image_input") || []),
+                    ...(graph.findNodesByType("datn/sdxl_gen") || []),
+                ];
+                imageNodes.forEach((imageNode) => {
                     imageNode.properties.imageUrl = uploadedImageUrl;
                     imageNode.properties.objectImages = [];
                     imageNode._imageObj = null;
                     imageNode.setOutputData(0, uploadedImageUrl);
                     imageNode.setDirtyCanvas(true, true);
-                }
+                });
                 writeLog(
                     `✅ Đã nhập ảnh ${file.name}. Bước SD3.5 sẽ được bỏ qua; ảnh sẽ đi thẳng vào Grounded-SAM2.`,
                     "success",
@@ -3005,8 +3301,20 @@
                 uploadedImageName = "";
                 writeLog(`❌ Không thể nhập ảnh: ${error.message}`, "error");
             } finally {
-                imageUploadInput.value = "";
+                if (uploadButton) {
+                    uploadButton.disabled = false;
+                    uploadButton.innerHTML = originalUploadButton;
+                    window.lucide?.createIcons();
+                }
             }
+        }
+
+        imageUploadInput?.addEventListener("change", async () => {
+            const file = imageUploadInput.files?.[0];
+            imageUploadInput.value = "";
+            if (!file) return;
+            pendingUploadFile = file;
+            await uploadImageFile(file);
         });
 
         // =========================================================================
@@ -3063,6 +3371,71 @@
         // =========================================================================
         // CUSTOM LITEGRAPH NODES DEFINITION
         // =========================================================================
+
+        // Image input node used by the image-first workflow.
+        function NodeImageInput() {
+            this.addOutput("image_url", "string");
+            this.properties = { imageUrl: "" };
+            this.addWidget("button", "Choose image", () => {
+                if (window.openImagePicker) window.openImagePicker();
+            });
+            this.addWidget("button", "▶ Run to here", () => {
+                if (window.runPipelineUntil) window.runPipelineUntil(this);
+            });
+            this.size = [360, 320];
+            this.color = "#3d8e86";
+            this.bgcolor = "#26282b";
+        }
+        NodeImageInput.title = "🖼️ Input Image";
+        NodeImageInput.title_color = "#72d3be";
+        NodeImageInput.prototype.onExecute = function () {
+            const imageUrl = uploadedImageUrl || this.properties.imageUrl;
+            if (!imageUrl) {
+                writeLog("❌ Input Image: Hãy chọn một ảnh trước.", "error");
+                throw new Error("Chưa chọn ảnh đầu vào");
+            }
+            this.properties.imageUrl = imageUrl;
+            this.setOutputData(0, imageUrl);
+            this.setDirtyCanvas(true, true);
+        };
+        NodeImageInput.prototype.onDrawBackground = function (ctx) {
+            const imageUrl = uploadedImageUrl || this.properties.imageUrl;
+            ctx.fillStyle = "#111820";
+            ctx.fillRect(15, 72, 330, 215);
+            ctx.strokeStyle = "#334353";
+            ctx.strokeRect(15, 72, 330, 215);
+
+            if (!imageUrl) {
+                ctx.fillStyle = "#7d8998";
+                ctx.font = "12px Inter, 'Segoe UI', sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("Chọn ảnh để bắt đầu", 180, 180);
+                ctx.font = "10px Inter, 'Segoe UI', sans-serif";
+                ctx.fillStyle = "#5f6d7d";
+                ctx.fillText("PNG / JPG / WebP", 180, 200);
+                ctx.textAlign = "left";
+                return;
+            }
+
+            if (!this._imageObj || this._imageObj._rawUrl !== imageUrl) {
+                this._imageObj = new Image();
+                this._imageObj._rawUrl = imageUrl;
+                fetch(imageUrl, { headers: { "ngrok-skip-browser-warning": "69420" } })
+                    .then((res) => res.blob())
+                    .then((blob) => {
+                        this._imageObj.src = URL.createObjectURL(blob);
+                        this._imageObj.onload = () => this.setDirtyCanvas(true, true);
+                    })
+                    .catch(() => {});
+            }
+
+            try {
+                ctx.drawImage(this._imageObj, 15, 72, 330, 215);
+            } catch (error) {
+                // The image is still loading; the framed preview remains visible.
+            }
+        };
+        LiteGraph.registerNodeType("datn/image_input", NodeImageInput);
 
         // Node 1: Input Text Prompt
         function NodePrompt() {
@@ -3718,7 +4091,7 @@
 
             this.properties = { 
                 crops: [],
-                labels: ""
+                labels: "chair, table"
             };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
@@ -3778,6 +4151,11 @@
                 }
             } else {
                 const labelsArray = this.properties.labels.split(",").map(s => s.trim()).filter(Boolean);
+                finalLayout.objects = labelsArray.map((label, idx) => ({
+                    id: `${label}_${idx}`,
+                    label,
+                    description: label,
+                }));
                 labelsArray.forEach((lbl, idx) => {
                     finalLayout.layout[`${lbl}_${idx}`] = { x: 0, y: 0, w: 0, h: 0 };
                 });
@@ -4390,68 +4768,126 @@
         // =========================================================================
         // 3. GRAPH SETUP & DEFAULT TEMPLATE
         // =========================================================================
-        function setupDefaultGraph() {
+        let inputMode = "text";
+
+        function updateInputModeUI() {
+            const app = document.getElementById("app-container");
+            const imageMode = inputMode === "image";
+            app?.classList.toggle("app-container-image-mode", imageMode);
+
+            document.querySelectorAll(".input-mode-btn").forEach((button) => {
+                const active = button.id === `btn-mode-${inputMode}`;
+                button.classList.toggle("active", active);
+                button.setAttribute("aria-selected", String(active));
+            });
+
+            const description = document.getElementById("mode-description");
+            if (description) {
+                description.textContent = imageMode
+                    ? "Tải ảnh, nhập nhãn vật thể trong node SAM2 rồi dựng scene 3D."
+                    : "Mô tả cảnh bằng prompt rồi sinh ảnh và mô hình 3D.";
+            }
+
+            const progress = document.getElementById("pipeline-progress");
+            progress?.classList.toggle("image-mode", imageMode);
+            const promptLabel = document.querySelector('.pipeline-step[data-stage="prompt"] .pipeline-step-label');
+            const planLabel = document.querySelector('.pipeline-step[data-stage="plan"] .pipeline-step-label');
+            const imageLabel = document.querySelector('.pipeline-step[data-stage="image"] .pipeline-step-label');
+            if (promptLabel) promptLabel.textContent = imageMode ? "Input image" : "Prompt";
+            if (planLabel) planLabel.textContent = "Layout";
+            if (imageLabel) imageLabel.textContent = "Image";
+
+            const runButton = document.getElementById("btn-run");
+            if (runButton) runButton.title = imageMode ? "Run image workflow" : "Run text workflow";
+        }
+
+        function setupGraphForMode(mode = inputMode) {
+            inputMode = mode;
             graph.clear();
 
-            // Three readable rows keep the two branches separated:
-            // Prompt -> Gemini -> SD3.5
-            //    |        |          |
-            // Scene Graph -> Layout -> SAM2
-            //                         |
-            //                  TRELLIS -> Combiner
+            if (inputMode === "image") {
+                const nodeImage = LiteGraph.createNode("datn/image_input");
+                nodeImage.pos = [70, 220];
+                nodeImage.properties.imageUrl = uploadedImageUrl || "";
+                graph.add(nodeImage);
 
-            const nodePrompt = LiteGraph.createNode("datn/input_prompt");
-            nodePrompt.pos = [60, 80];
-            graph.add(nodePrompt);
+                const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
+                nodeSAM2.pos = [500, 170];
+                graph.add(nodeSAM2);
 
-            const nodeOptimizer = LiteGraph.createNode("datn/prompt_optimizer");
-            nodeOptimizer.pos = [450, 60];
-            graph.add(nodeOptimizer);
+                const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
+                nodeTrellis.pos = [1010, 250];
+                graph.add(nodeTrellis);
 
-            const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
-            nodeSDXL.pos = [900, 40];
-            graph.add(nodeSDXL);
+                const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
+                nodeCombiner.pos = [1450, 170];
+                graph.add(nodeCombiner);
 
-            const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
-            nodeSceneGraph.pos = [60, 390];
-            graph.add(nodeSceneGraph);
+                nodeImage.connect(0, nodeSAM2, 0);
+                nodeSAM2.connect(0, nodeTrellis, 0);
+                nodeTrellis.connect(0, nodeCombiner, 0);
+                updateInputModeUI();
+                requestAnimationFrame(() => fitGraphToView(72));
+                writeLog("Flow hình ảnh đã được nạp: Upload → SAM2 → TRELLIS → Scene.", "info");
+            } else {
+                // Prompt -> Gemini -> SD3.5
+                //    |        |          |
+                // Scene Graph -> Layout -> SAM2 -> TRELLIS -> Combiner
+                const nodePrompt = LiteGraph.createNode("datn/input_prompt");
+                nodePrompt.pos = [60, 80];
+                graph.add(nodePrompt);
 
-            const nodeLayout = LiteGraph.createNode("datn/layout_2d");
-            nodeLayout.pos = [450, 360];
-            graph.add(nodeLayout);
+                const nodeOptimizer = LiteGraph.createNode("datn/prompt_optimizer");
+                nodeOptimizer.pos = [450, 60];
+                graph.add(nodeOptimizer);
 
-            const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
-            nodeSAM2.pos = [900, 450];
-            graph.add(nodeSAM2);
+                const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
+                nodeSDXL.pos = [900, 40];
+                graph.add(nodeSDXL);
 
-            const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
-            nodeTrellis.pos = [450, 900];
-            graph.add(nodeTrellis);
+                const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
+                nodeSceneGraph.pos = [60, 390];
+                graph.add(nodeSceneGraph);
 
-            const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
-            nodeCombiner.pos = [900, 850];
-            graph.add(nodeCombiner);
+                const nodeLayout = LiteGraph.createNode("datn/layout_2d");
+                nodeLayout.pos = [450, 360];
+                graph.add(nodeLayout);
 
-            // Connect Node slots directly
-            nodePrompt.connect(0, nodeOptimizer, 0);
-            nodeOptimizer.connect(0, nodeSDXL, 0);
-            nodePrompt.connect(0, nodeSceneGraph, 0);
-            nodeSceneGraph.connect(0, nodeLayout, 0);
-            nodeLayout.connect(0, nodeSDXL, 1);
-            nodeSDXL.connect(0, nodeSAM2, 0);
-            nodeLayout.connect(0, nodeSAM2, 1);
-            nodePrompt.connect(0, nodeSAM2, 2);
-            nodeSAM2.connect(0, nodeTrellis, 0);
-            nodeTrellis.connect(0, nodeCombiner, 0);
-            nodeLayout.connect(0, nodeCombiner, 1);
+                const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
+                nodeSAM2.pos = [900, 450];
+                graph.add(nodeSAM2);
 
-            // Start with the complete workflow framed inside the editor.
-            requestAnimationFrame(() => fitGraphToView(60));
+                const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
+                nodeTrellis.pos = [450, 900];
+                graph.add(nodeTrellis);
+
+                const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
+                nodeCombiner.pos = [900, 850];
+                graph.add(nodeCombiner);
+
+                nodePrompt.connect(0, nodeOptimizer, 0);
+                nodeOptimizer.connect(0, nodeSDXL, 0);
+                nodePrompt.connect(0, nodeSceneGraph, 0);
+                nodeSceneGraph.connect(0, nodeLayout, 0);
+                nodeLayout.connect(0, nodeSDXL, 1);
+                nodeSDXL.connect(0, nodeSAM2, 0);
+                nodeLayout.connect(0, nodeSAM2, 1);
+                nodePrompt.connect(0, nodeSAM2, 2);
+                nodeSAM2.connect(0, nodeTrellis, 0);
+                nodeTrellis.connect(0, nodeCombiner, 0);
+                nodeLayout.connect(0, nodeCombiner, 1);
+                updateInputModeUI();
+                requestAnimationFrame(() => fitGraphToView(60));
+                writeLog("Flow văn bản đã được nạp: Prompt → SD3.5 → SAM2 → TRELLIS → Scene.", "info");
+            }
 
             const nodeCount = document.getElementById("graph-node-count");
             if (nodeCount) nodeCount.textContent = `${graph._nodes.length} nodes`;
+            canvas.draw(true, true);
+        }
 
-            writeLog("Sơ đồ luồng pipeline mặc định đã được nạp thành công.", "info");
+        function setupDefaultGraph() {
+            setupGraphForMode(inputMode);
         }
 
         let isExecuting = false;
@@ -4482,6 +4918,7 @@
             
             writeLog("🏁 Bắt đầu thực thi toàn bộ quy trình (Queue Prompt)...", "system");
             
+            const imageInputNode = graph.findNodesByType("datn/image_input")[0];
             const promptNode = graph.findNodesByType("datn/input_prompt")[0];
             const optimizerNode = graph.findNodesByType("datn/prompt_optimizer")[0];
             const sceneGraphNode = graph.findNodesByType("datn/scene_graph")[0];
@@ -4511,20 +4948,22 @@
             };
 
             try {
-                if (promptNode) {
+                if (imageInputNode) {
+                    await runNode(imageInputNode, "Input Image", "prompt");
+                } else if (promptNode) {
                     await runNode(promptNode, "Input Text Prompt", "prompt");
-                }
-                if (optimizerNode) {
-                    await runNode(optimizerNode, "Gemini Prompt Optimizer", "prompt");
-                }
-                if (sceneGraphNode) {
-                    await runNode(sceneGraphNode, "Scene Graph Parser", "plan");
-                }
-                if (layoutNode) {
-                    await runNode(layoutNode, "2D Layout", "plan");
-                }
-                if (sdxlNode) {
-                    await runNode(sdxlNode, "SD3.5 Image Generator", "image");
+                    if (optimizerNode) {
+                        await runNode(optimizerNode, "Gemini Prompt Optimizer", "prompt");
+                    }
+                    if (sceneGraphNode) {
+                        await runNode(sceneGraphNode, "Scene Graph Parser", "plan");
+                    }
+                    if (layoutNode) {
+                        await runNode(layoutNode, "2D Layout", "plan");
+                    }
+                    if (sdxlNode) {
+                        await runNode(sdxlNode, "SD3.5 Image Generator", "image");
+                    }
                 }
                 if (sam2Node) {
                     await runNode(sam2Node, "Grounded-SAM2 Segment", "segment");
@@ -4562,16 +5001,23 @@
                 return;
             }
 
-            const nodes = [
-                [graph.findNodesByType("datn/input_prompt")[0], "Input Text Prompt"],
-                [graph.findNodesByType("datn/prompt_optimizer")[0], "Gemini Prompt Optimizer"],
-                [graph.findNodesByType("datn/scene_graph")[0], "Object Plan"],
-                [graph.findNodesByType("datn/layout_2d")[0], "Relation Layout"],
-                [graph.findNodesByType("datn/sdxl_gen")[0], "SD3.5 Image Generator"],
-                [graph.findNodesByType("datn/grounded_sam2")[0], "Grounded-SAM2 Segment"],
-                [graph.findNodesByType("datn/trellis_3d")[0], "TRELLIS 3D Generator"],
-                [graph.findNodesByType("datn/scene_combiner")[0], "3D Scene Combiner"]
-            ];
+            const nodes = inputMode === "image"
+                ? [
+                    [graph.findNodesByType("datn/image_input")[0], "Input Image"],
+                    [graph.findNodesByType("datn/grounded_sam2")[0], "Grounded-SAM2 Segment"],
+                    [graph.findNodesByType("datn/trellis_3d")[0], "TRELLIS 3D Generator"],
+                    [graph.findNodesByType("datn/scene_combiner")[0], "3D Scene Combiner"]
+                ]
+                : [
+                    [graph.findNodesByType("datn/input_prompt")[0], "Input Text Prompt"],
+                    [graph.findNodesByType("datn/prompt_optimizer")[0], "Gemini Prompt Optimizer"],
+                    [graph.findNodesByType("datn/scene_graph")[0], "Object Plan"],
+                    [graph.findNodesByType("datn/layout_2d")[0], "Relation Layout"],
+                    [graph.findNodesByType("datn/sdxl_gen")[0], "SD3.5 Image Generator"],
+                    [graph.findNodesByType("datn/grounded_sam2")[0], "Grounded-SAM2 Segment"],
+                    [graph.findNodesByType("datn/trellis_3d")[0], "TRELLIS 3D Generator"],
+                    [graph.findNodesByType("datn/scene_combiner")[0], "3D Scene Combiner"]
+                ];
             const endIndex = nodes.findIndex(([node]) => node === targetNode);
             if (endIndex < 0) return;
 
@@ -4619,6 +5065,28 @@
         window.runPipelineUntil = runPipelineUntil;
 
         setupDefaultGraph();
+
+        function selectInputMode(mode) {
+            if (mode === inputMode) return;
+            if (isExecuting) {
+                writeLog("Không thể đổi flow khi pipeline đang chạy.", "warning");
+                return;
+            }
+            if (mode === "text") {
+                uploadedImageUrl = "";
+                uploadedImageName = "";
+                pendingUploadFile = null;
+            }
+            setupGraphForMode(mode);
+        }
+
+        document.getElementById("btn-mode-text")?.addEventListener("click", () => {
+            selectInputMode("text");
+        });
+        document.getElementById("btn-mode-image")?.addEventListener("click", () => {
+            selectInputMode("image");
+            if (!isExecuting) window.openImagePicker?.();
+        });
 
         // ComfyUI-style node palette and canvas controls
         const nodeSearch = document.getElementById("node-search");
@@ -4687,6 +5155,7 @@
             nodeLibraryDrawer?.classList.remove("open");
             executionDrawer?.classList.remove("open");
             const viewport = document.querySelector(".viewport-panel");
+            viewport?.scrollIntoView({ behavior: "smooth", block: "nearest" });
             viewport?.classList.add("focus-flash");
             setTimeout(() => viewport?.classList.remove("focus-flash"), 650);
         });
@@ -4701,7 +5170,14 @@
         });
 
         window.addEventListener("keydown", (event) => {
-            if (event.ctrlKey && event.key === "Enter") {
+            const modifier = event.ctrlKey || event.metaKey;
+            if (modifier && event.key.toLowerCase() === "s") {
+                event.preventDefault();
+                saveWorkflowFile();
+            } else if (modifier && event.key.toLowerCase() === "o") {
+                event.preventDefault();
+                document.getElementById("btn-load-workflow")?.click();
+            } else if (modifier && event.key === "Enter") {
                 event.preventDefault();
                 document.getElementById("btn-run").click();
             }
