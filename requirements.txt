@@ -8,7 +8,7 @@ spconv-cu121==2.3.8
 # Generative AI & HuggingFace Models
 diffusers==0.39.0
 transformers==4.46.3
-peft==0.10.0
+peft==0.17.0
 accelerate==0.34.2
 huggingface_hub==0.34.6
 safetensors>=0.4.5
@@ -17,6 +17,7 @@ safetensors>=0.4.5
 spacy>=3.5.0
 timm==0.9.16
 supervision
+pycocotools
 addict
 yapf
 
