@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -11,17 +12,91 @@ OBJECT_MANIFEST = "/kaggle/working/object_images_manifest.json"
 SD35_CACHE_DIR = "/kaggle/working/sd35_medium_cache_v1"
 
 
+_OBJECT_ALIASES = {
+    "chair": ("dining chair", "wooden chair", "chair", "ghế", "ghe"),
+    "table": ("dining table", "coffee table", "wooden table", "table", "bàn", "ban"),
+    "sofa": ("sofa", "couch"),
+    "bed": ("bed", "giường", "giuong"),
+    "desk": ("desk",),
+    "stool": ("stool",),
+    "bench": ("bench",),
+    "cabinet": ("cabinet", "tủ", "tu"),
+    "wardrobe": ("wardrobe",),
+    "bookshelf": ("bookshelf",),
+    "shelf": ("shelf",),
+    "lamp": ("lamp", "đèn", "den"),
+    "ottoman": ("ottoman",),
+    "nightstand": ("nightstand", "bedside table"),
+    "dresser": ("dresser",),
+}
+
+_CLAUSE_BREAKS = re.compile(
+    r"\s*(?:,|;|\band\b|\bwith\b|\bnext to\b|\bbeside\b|"
+    r"\balongside\b|\bnear\b|\bto the left of\b|\bto the right of\b|"
+    r"\bto left of\b|\bto right of\b|\bleft of\b|\bright of\b|"
+    r"\bbên cạnh\b|\bke ben\b|\bbên trái\b|\bbên phải\b|"
+    r"\bphía trước\b|\bphía sau\b|\bđặt trên\b|\bdat tren\b|"
+    r"\bon top of\b|\bplaced on\b|\bunderneath\b|\bunder\b|\bbelow\b|"
+    r"\babove\b|\bbelow\b|\btrên\b|\btren\b|\bdưới\b|\bduoi\b)\s*",
+    flags=re.IGNORECASE,
+)
+
+_GLOBAL_PROMPT_MARKERS = (
+    "photorealistic",
+    "product photography",
+    "full objects visible",
+    "clean neutral studio background",
+    "clean white studio background",
+    "soft even lighting",
+    "sharp focus",
+    "realistic materials",
+)
+
+
+def _object_descriptor(label: str, scene_prompt: str) -> str:
+    """Extract only the target object's noun phrase from the full scene prompt."""
+    text = " ".join(str(scene_prompt).split()).strip()
+    lowered = text.lower()
+    marker_positions = [
+        lowered.find(marker)
+        for marker in _GLOBAL_PROMPT_MARKERS
+        if lowered.find(marker) >= 0
+    ]
+    if marker_positions:
+        text = text[: min(marker_positions)].rstrip(" ,.;:")
+
+    aliases = _OBJECT_ALIASES.get(label, (label,))
+    alias_pattern = re.compile(
+        r"(?<!\w)(?:" + "|".join(re.escape(alias) for alias in aliases) + r")(?!\w)",
+        flags=re.IGNORECASE,
+    )
+    clauses = [clause.strip(" ,.;:") for clause in _CLAUSE_BREAKS.split(text)]
+    for clause in clauses:
+        if alias_pattern.search(clause):
+            descriptor = re.sub(
+                r"^(?:a|an|one|the|exactly one)\s+",
+                "",
+                clause,
+                flags=re.IGNORECASE,
+            ).strip(" ,.;:")
+            return descriptor or label
+    return label
+
+
 def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tuple[str, str]:
     excluded = ", ".join(sorted(set(all_labels) - {label})) or "other furniture"
+    descriptor = _object_descriptor(label, scene_prompt)
     positive = (
-        f"Exactly one complete standalone {label}, centered and fully visible. "
-        f"Preserve the material, color and style requested in this scene: {scene_prompt}. "
-        "Render only the requested object, from top to bottom, with generous margins, "
-        "correct structure, realistic proportions, clean white studio background, soft "
-        "even lighting, sharp product photography, suitable for image-to-3D reconstruction."
+        f"Exactly one complete standalone {descriptor}, centered and fully visible. "
+        "This is an isolated single-object product photo. Render only this object, "
+        "with no spatial scene, no companion furniture, no duplicate parts, generous "
+        "margins, correct structure, realistic proportions, clean white studio "
+        "background, soft even lighting, sharp focus, realistic materials, suitable "
+        "for single-image 3D reconstruction."
     )
     negative = (
-        f"multiple objects, duplicate object, extra furniture, {excluded}, cropped, close-up, "
+        f"multiple objects, second {label}, duplicate object, extra furniture, {excluded}, "
+        "room scene, spatial relationship, cropped, close-up, "
         "fused parts, intersecting parts, missing parts, duplicate legs, floating parts, "
         "deformed, blurry, low quality, room, people, text, watermark"
     )
