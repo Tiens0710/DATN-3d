@@ -2118,6 +2118,208 @@
             }
         }
 
+        /* ================================================================
+           Final graph-editor polish
+           ================================================================ */
+        :root {
+            --sf-grid: rgba(128, 145, 166, 0.075);
+            --sf-grid-major: rgba(128, 145, 166, 0.12);
+        }
+
+        .spatial-header {
+            height: 58px;
+            min-height: 58px;
+        }
+
+        .workspace-shell.spatial-workspace {
+            grid-template-columns: 64px minmax(0, 1.08fr) minmax(390px, .92fr);
+            gap: 8px;
+            padding: 8px;
+        }
+
+        .graph-panel,
+        .viewport-panel,
+        .app-rail {
+            border-color: #2b3542;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, .18);
+        }
+
+        .viewport-panel.focus-flash {
+            border-color: var(--sf-purple-2);
+            box-shadow: 0 0 0 2px rgba(132, 116, 232, .18), 0 12px 30px rgba(0, 0, 0, .2);
+        }
+
+        .panel-bar {
+            height: 44px;
+            min-height: 44px;
+            background: linear-gradient(180deg, #18202a, #141a22);
+        }
+
+        .panel-heading-copy strong {
+            font-size: 12px;
+            letter-spacing: .1px;
+        }
+
+        .panel-heading-copy span {
+            color: #758292;
+        }
+
+        #canvas-container {
+            position: relative;
+            isolation: isolate;
+            background-color: #0b1016;
+            background-image:
+                linear-gradient(var(--sf-grid-major) 1px, transparent 1px),
+                linear-gradient(90deg, var(--sf-grid-major) 1px, transparent 1px),
+                radial-gradient(circle, rgba(155, 173, 197, .14) 1px, transparent 1px);
+            background-size: 112px 112px, 112px 112px, 28px 28px;
+        }
+
+        #canvas-container::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            background: radial-gradient(circle at center, transparent 42%, rgba(4, 7, 11, .28));
+        }
+
+        #graphcanvas {
+            cursor: grab;
+        }
+
+        #graphcanvas:active {
+            cursor: grabbing;
+        }
+
+        .canvas-toolbar {
+            top: 12px;
+            left: 12px;
+            gap: 3px;
+            padding: 4px;
+            border-color: #354253;
+            background: rgba(17, 23, 31, .96);
+            box-shadow: 0 8px 22px rgba(0, 0, 0, .24);
+        }
+
+        .canvas-toolbar-label {
+            display: inline-flex;
+            align-items: center;
+            padding: 0 7px;
+            color: #7f8c9c;
+            font-family: "Fira Code", monospace;
+            font-size: 9px;
+            letter-spacing: .55px;
+        }
+
+        .canvas-tool-btn {
+            min-width: 29px;
+            min-height: 29px;
+            padding: 4px 8px;
+            color: #bfc8d4;
+        }
+
+        .canvas-tool-btn.icon-only {
+            width: 29px;
+            padding: 0;
+            justify-content: center;
+        }
+
+        .canvas-tool-btn.active,
+        .canvas-tool-btn:hover {
+            color: #fff;
+            background: #273242;
+            border-color: #45556a;
+        }
+
+        .canvas-minimap {
+            position: absolute;
+            z-index: 12;
+            top: 12px;
+            right: 12px;
+            width: 164px;
+            height: 104px;
+            overflow: hidden;
+            border: 1px solid #354253;
+            border-radius: 6px;
+            background: rgba(12, 17, 23, .91);
+            box-shadow: 0 8px 22px rgba(0, 0, 0, .28);
+            pointer-events: none;
+        }
+
+        .canvas-minimap::before {
+            content: "MINIMAP";
+            position: absolute;
+            top: 6px;
+            left: 8px;
+            z-index: 2;
+            color: #7e8a99;
+            font-family: "Fira Code", monospace;
+            font-size: 8px;
+            letter-spacing: .6px;
+        }
+
+        .minimap-node {
+            position: absolute;
+            min-width: 3px;
+            min-height: 3px;
+            border: 1px solid rgba(255, 255, 255, .32);
+            border-radius: 1px;
+            opacity: .9;
+        }
+
+        .minimap-viewport {
+            position: absolute;
+            border: 1px solid rgba(255, 255, 255, .65);
+            border-radius: 2px;
+            background: rgba(255, 255, 255, .04);
+        }
+
+        .canvas-statusbar {
+            right: 12px;
+            bottom: 12px;
+            left: 12px;
+            border-color: #303c4b;
+            background: rgba(10, 15, 21, .94);
+            box-shadow: 0 7px 18px rgba(0, 0, 0, .2);
+        }
+
+        .canvas-statusbar strong {
+            color: #b4c0cf;
+            font-weight: 500;
+        }
+
+        .left-sidebar,
+        .right-sidebar {
+            border-color: #3a4655;
+            background: rgba(17, 23, 31, .985);
+        }
+
+        .sidebar-content,
+        .queue-card {
+            scrollbar-color: #3c4857 transparent;
+        }
+
+        .rail-item {
+            min-height: 53px;
+        }
+
+        .rail-item.active {
+            color: #fff;
+            background: linear-gradient(180deg, rgba(132, 116, 232, .22), rgba(132, 116, 232, .08));
+        }
+
+        @media (max-width: 1180px) {
+            .workspace-shell.spatial-workspace {
+                grid-template-columns: 58px minmax(0, 1fr) minmax(340px, .82fr);
+            }
+
+            .canvas-minimap {
+                width: 138px;
+                height: 88px;
+            }
+        }
+
     </style>
 </head>
 
@@ -2179,17 +2381,17 @@
                 <button class="rail-item" id="btn-rail-upload-image" type="button">
                     <span class="rail-icon"><i data-lucide="image"></i></span><span>Image</span>
                 </button>
-                <button class="rail-item" type="button">
+                <button class="rail-item" id="btn-rail-viewport" type="button">
                     <span class="rail-icon"><i data-lucide="box"></i></span><span>3D</span>
                 </button>
                 <button class="rail-item" id="btn-toggle-logs" type="button">
                     <span class="rail-icon"><i data-lucide="list-tree"></i></span><span>Logs</span>
                 </button>
                 <div class="rail-spacer"></div>
-                <button class="rail-item" type="button">
+                <button class="rail-item" id="btn-rail-help" type="button">
                     <span class="rail-icon"><i data-lucide="circle-help"></i></span><span>Help</span>
                 </button>
-                <button class="rail-item" type="button">
+                <button class="rail-item" id="btn-rail-settings" type="button">
                     <span class="rail-icon"><i data-lucide="settings"></i></span><span>Settings</span>
                 </button>
             </aside>
@@ -2213,12 +2415,16 @@
                 <main id="canvas-container">
                     <canvas id="graphcanvas"></canvas>
                     <div class="canvas-toolbar">
+                        <span class="canvas-toolbar-label">GRAPH</span>
                         <button id="btn-fit-view" class="canvas-tool-btn"><span class="icon-label"><i data-lucide="maximize"></i>Fit</span></button>
+                        <button id="btn-zoom-out" class="canvas-tool-btn icon-only" title="Zoom out"><i data-lucide="minus"></i></button>
+                        <button id="btn-zoom-in" class="canvas-tool-btn icon-only" title="Zoom in"><i data-lucide="plus"></i></button>
                         <button id="btn-reset-workflow" class="canvas-tool-btn"><span class="icon-label"><i data-lucide="rotate-ccw"></i>Reset</span></button>
                     </div>
+                    <div class="canvas-minimap" id="canvas-minimap" aria-label="Workflow minimap"></div>
                     <div class="canvas-statusbar">
-                        <span>furniture_scene_v1</span>
-                        <span>Ctrl + Enter: Run</span>
+                        <span><strong id="canvas-selection-label">Nothing selected</strong></span>
+                        <span>Double-click: add node&nbsp;&nbsp;•&nbsp;&nbsp;Ctrl + Enter: Run</span>
                         <span id="canvas-zoom-label">Zoom 52%</span>
                     </div>
                 </main>
@@ -2657,6 +2863,96 @@
         const canvas = new LGraphCanvas("#graphcanvas", graph);
         canvas.show_stats = false; // Hide default performance statistics
         canvas.background_image = null; // Background handled by CSS grid pattern
+
+        function fitGraphToView(padding = 72) {
+            const parent = document.getElementById("canvas-container");
+            const nodes = graph._nodes || [];
+            if (!parent || !nodes.length) return;
+
+            const width = Math.max(parent.clientWidth, 1);
+            const height = Math.max(parent.clientHeight, 1);
+            const minX = Math.min(...nodes.map((node) => node.pos[0]));
+            const minY = Math.min(...nodes.map((node) => node.pos[1]));
+            const maxX = Math.max(...nodes.map((node) => node.pos[0] + node.size[0]));
+            const maxY = Math.max(...nodes.map((node) => node.pos[1] + node.size[1]));
+            const graphWidth = Math.max(maxX - minX, 1);
+            const graphHeight = Math.max(maxY - minY, 1);
+            const scale = Math.max(.28, Math.min(.62,
+                (width - padding * 2) / graphWidth,
+                (height - padding * 2) / graphHeight
+            ));
+
+            canvas.ds.scale = scale;
+            canvas.ds.offset = [
+                (width - graphWidth * scale) / 2 - minX * scale,
+                (height - graphHeight * scale) / 2 - minY * scale
+            ];
+            canvas.draw(true, true);
+        }
+
+        function zoomCanvas(factor) {
+            const parent = document.getElementById("canvas-container");
+            if (!parent) return;
+            const previousScale = canvas.ds.scale;
+            const nextScale = Math.max(.2, Math.min(1.2, previousScale * factor));
+            const centerX = parent.clientWidth / 2;
+            const centerY = parent.clientHeight / 2;
+            const ratio = nextScale / previousScale;
+            canvas.ds.offset[0] = centerX - (centerX - canvas.ds.offset[0]) * ratio;
+            canvas.ds.offset[1] = centerY - (centerY - canvas.ds.offset[1]) * ratio;
+            canvas.ds.scale = nextScale;
+            canvas.draw(true, true);
+        }
+
+        // Keep dense node previews readable at a distance. This mirrors the
+        // overview behavior of ComfyUI: far zoom shows compact title cards,
+        // close zoom restores widgets and previews.
+        const GRAPH_COMPACT_SCALE = 0.34;
+        function syncGraphZoomDensity() {
+            const compact = canvas.ds.scale < GRAPH_COMPACT_SCALE;
+            (graph._nodes || []).forEach((node) => {
+                node.flags = node.flags || {};
+                if (compact && !node.flags.collapsed) {
+                    node.flags.collapsed = true;
+                    node._spatialAutoCollapsed = true;
+                } else if (!compact && node._spatialAutoCollapsed) {
+                    node.flags.collapsed = false;
+                    node._spatialAutoCollapsed = false;
+                }
+            });
+        }
+
+        function renderMiniMap() {
+            const minimap = document.getElementById("canvas-minimap");
+            const parent = document.getElementById("canvas-container");
+            const nodes = graph._nodes || [];
+            if (!minimap || !parent || !nodes.length) return;
+
+            const minX = Math.min(...nodes.map((node) => node.pos[0]));
+            const minY = Math.min(...nodes.map((node) => node.pos[1]));
+            const maxX = Math.max(...nodes.map((node) => node.pos[0] + node.size[0]));
+            const maxY = Math.max(...nodes.map((node) => node.pos[1] + node.size[1]));
+            const graphWidth = Math.max(maxX - minX, 1);
+            const graphHeight = Math.max(maxY - minY, 1);
+            const mapWidth = minimap.clientWidth;
+            const mapHeight = minimap.clientHeight;
+            const scale = Math.min((mapWidth - 16) / graphWidth, (mapHeight - 22) / graphHeight);
+            const offsetX = (mapWidth - graphWidth * scale) / 2;
+            const offsetY = 17 + (mapHeight - 17 - graphHeight * scale) / 2;
+            const fragments = nodes.map((node) => {
+                const color = typeof node.color === "string" && node.color.startsWith("#")
+                    ? node.color
+                    : "#65758a";
+                return `<span class="minimap-node" style="left:${offsetX + (node.pos[0] - minX) * scale}px;top:${offsetY + (node.pos[1] - minY) * scale}px;width:${Math.max(3, node.size[0] * scale)}px;height:${Math.max(3, node.size[1] * scale)}px;background:${color}"></span>`;
+            });
+
+            const visibleWidth = Math.min(mapWidth - 12, parent.clientWidth / canvas.ds.scale * scale);
+            const visibleHeight = Math.min(mapHeight - 21, parent.clientHeight / canvas.ds.scale * scale);
+            const visibleX = offsetX + ((-canvas.ds.offset[0] / canvas.ds.scale) - minX) * scale;
+            const visibleY = offsetY + ((-canvas.ds.offset[1] / canvas.ds.scale) - minY) * scale;
+            fragments.push(`<span class="minimap-viewport" style="left:${visibleX}px;top:${visibleY}px;width:${Math.max(8, visibleWidth)}px;height:${Math.max(8, visibleHeight)}px"></span>`);
+            minimap.innerHTML = fragments.join("");
+        }
 
         const imageUploadInput = document.getElementById("image-upload-input");
         const openImagePicker = () => {
@@ -4043,7 +4339,7 @@
             viewer.style.height = `${h}px`;
 
             // Prevent rendering when zoomed out excessively to optimize drawing performance
-            if (scale < 0.25) {
+            if (scale < GRAPH_COMPACT_SCALE) {
                 viewer.style.display = "none";
             } else {
                 viewer.style.display = "block";
@@ -4053,12 +4349,22 @@
         // Auto align overlays when zooming or dragging canvas
         const originalDraw = LGraphCanvas.prototype.draw;
         LGraphCanvas.prototype.draw = function () {
+            syncGraphZoomDensity();
             originalDraw.apply(this, arguments);
 
             const zoomLabel = document.getElementById("canvas-zoom-label");
             if (zoomLabel) {
                 zoomLabel.innerText = `Zoom ${Math.round(canvas.ds.scale * 100)}%`;
             }
+
+            const selectionLabel = document.getElementById("canvas-selection-label");
+            const selectedNodes = Object.values(canvas.selected_nodes || {});
+            if (selectionLabel) {
+                selectionLabel.textContent = selectedNodes.length
+                    ? `${selectedNodes.length === 1 ? "Selected" : `${selectedNodes.length} selected`}: ${selectedNodes[0].title || selectedNodes[0].type}`
+                    : "Nothing selected";
+            }
+            renderMiniMap();
 
             // Căn chỉnh vị trí 3D Viewer
             const combiners = graph.findNodesByType("datn/scene_combiner");
@@ -4095,35 +4401,35 @@
             //                  TRELLIS -> Combiner
 
             const nodePrompt = LiteGraph.createNode("datn/input_prompt");
-            nodePrompt.pos = [60, 180];
+            nodePrompt.pos = [60, 80];
             graph.add(nodePrompt);
 
             const nodeOptimizer = LiteGraph.createNode("datn/prompt_optimizer");
-            nodeOptimizer.pos = [450, 140];
+            nodeOptimizer.pos = [450, 60];
             graph.add(nodeOptimizer);
 
             const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
-            nodeSDXL.pos = [900, 80];
+            nodeSDXL.pos = [900, 40];
             graph.add(nodeSDXL);
 
             const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
-            nodeSceneGraph.pos = [60, 620];
+            nodeSceneGraph.pos = [60, 390];
             graph.add(nodeSceneGraph);
 
             const nodeLayout = LiteGraph.createNode("datn/layout_2d");
-            nodeLayout.pos = [450, 580];
+            nodeLayout.pos = [450, 360];
             graph.add(nodeLayout);
 
             const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
-            nodeSAM2.pos = [900, 560];
+            nodeSAM2.pos = [900, 450];
             graph.add(nodeSAM2);
 
             const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
-            nodeTrellis.pos = [450, 1100];
+            nodeTrellis.pos = [450, 900];
             graph.add(nodeTrellis);
 
             const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
-            nodeCombiner.pos = [900, 1030];
+            nodeCombiner.pos = [900, 850];
             graph.add(nodeCombiner);
 
             // Connect Node slots directly
@@ -4139,9 +4445,8 @@
             nodeTrellis.connect(0, nodeCombiner, 0);
             nodeLayout.connect(0, nodeCombiner, 1);
 
-            // Fill the editor without shrinking the nodes into an unreadable cluster.
-            canvas.ds.offset = [18, 18];
-            canvas.ds.scale = 0.46;
+            // Start with the complete workflow framed inside the editor.
+            requestAnimationFrame(() => fitGraphToView(60));
 
             const nodeCount = document.getElementById("graph-node-count");
             if (nodeCount) nodeCount.textContent = `${graph._nodes.length} nodes`;
@@ -4313,10 +4618,6 @@
 
         window.runPipelineUntil = runPipelineUntil;
 
-        document.getElementById("btn-run").onclick = () => {
-            runPipelineUntil(graph.findNodesByType("datn/scene_combiner")[0]);
-        };
-
         setupDefaultGraph();
 
         // ComfyUI-style node palette and canvas controls
@@ -4349,16 +4650,24 @@
 
                 graph.add(node);
                 canvas.selectNode(node);
+                const nodeCount = document.getElementById("graph-node-count");
+                if (nodeCount) nodeCount.textContent = `${graph._nodes.length} nodes`;
                 canvas.draw(true, true);
                 writeLog(`Đã thêm node: ${item.textContent.trim()}`, "info");
             });
         });
 
         document.getElementById("btn-fit-view").onclick = () => {
-            canvas.ds.offset = [18, 18];
-            canvas.ds.scale = 0.46;
-            canvas.draw(true, true);
+            fitGraphToView(60);
         };
+
+        document.getElementById("btn-zoom-in")?.addEventListener("click", () => {
+            zoomCanvas(1.16);
+        });
+
+        document.getElementById("btn-zoom-out")?.addEventListener("click", () => {
+            zoomCanvas(1 / 1.16);
+        });
 
         document.getElementById("btn-reset-workflow").onclick = () => {
             document
@@ -4367,6 +4676,29 @@
             setupDefaultGraph();
             canvas.draw(true, true);
         };
+
+        document.getElementById("btn-rail-graph")?.addEventListener("click", () => {
+            nodeLibraryDrawer?.classList.remove("open");
+            executionDrawer?.classList.remove("open");
+            fitGraphToView(60);
+        });
+
+        document.getElementById("btn-rail-viewport")?.addEventListener("click", () => {
+            nodeLibraryDrawer?.classList.remove("open");
+            executionDrawer?.classList.remove("open");
+            const viewport = document.querySelector(".viewport-panel");
+            viewport?.classList.add("focus-flash");
+            setTimeout(() => viewport?.classList.remove("focus-flash"), 650);
+        });
+
+        document.getElementById("btn-rail-help")?.addEventListener("click", () => {
+            const modal = document.getElementById("kaggle-modal");
+            if (modal) modal.style.display = "flex";
+        });
+
+        document.getElementById("btn-rail-settings")?.addEventListener("click", () => {
+            ngrokInput?.focus();
+        });
 
         window.addEventListener("keydown", (event) => {
             if (event.ctrlKey && event.key === "Enter") {
