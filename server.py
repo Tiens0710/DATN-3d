@@ -1,5 +1,6 @@
 import os
 import asyncio
+import io
 import importlib.util
 import json
 import shutil
@@ -8,11 +9,13 @@ import uuid
 import zipfile
 from pathlib import Path
 from urllib import request as urllib_request
+from urllib.parse import urlparse
 from typing import Dict, List, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 from pydantic import BaseModel
 
 from src.parser import parse_scene_graph
@@ -28,11 +31,13 @@ CROPS_DIR = os.path.join(KAGGLE_WORKING, "crops")
 MULTI_GLB_DIR = os.path.join(KAGGLE_WORKING, "multi_object_glb")
 OUT_DIR = os.path.join(KAGGLE_WORKING, "outputs", "trellis")
 OBJECT_IMAGE_DIR = os.path.join(KAGGLE_WORKING, "object_images")
+UPLOADS_DIR = os.path.join(KAGGLE_WORKING, "uploads")
 
 os.makedirs(CROPS_DIR, exist_ok=True)
 os.makedirs(MULTI_GLB_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(OBJECT_IMAGE_DIR, exist_ok=True)
+os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 app = FastAPI(
     title="DATN 3D Scene Reconstruction API",
@@ -59,6 +64,7 @@ app.mount(
     StaticFiles(directory=OBJECT_IMAGE_DIR),
     name="object_images",
 )
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 
 class TextPrompt(BaseModel):
@@ -79,6 +85,7 @@ class Sam2Request(BaseModel):
     image_url: str
     layout: Dict[str, Any]
     prompt: str = ""
+    mode: str = "objectwise"
 
 
 class TrellisRequest(BaseModel):
@@ -229,6 +236,7 @@ def backend_readiness() -> Dict[str, Any]:
         "spconv",
         "xformers",
         "trimesh",
+        "multipart",
     )
 
     files = {name: path.exists() for name, path in required_files.items()}
@@ -361,6 +369,40 @@ def api_optimize_prompt(request: PromptOptimizeRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/api/upload_image")
+async def api_upload_image(file: UploadFile = File(...)):
+    """Store a user image for the upload-to-3D branch of the pipeline."""
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=415, detail="Only image files are supported")
+
+    raw = await file.read(20 * 1024 * 1024 + 1)
+    if len(raw) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image must be 20 MB or smaller")
+
+    try:
+        with Image.open(io.BytesIO(raw)) as image:
+            image.verify()
+        with Image.open(io.BytesIO(raw)) as image:
+            rgb = image.convert("RGB")
+            width, height = rgb.size
+            filename = f"upload_{uuid.uuid4().hex}.png"
+            output_path = os.path.join(UPLOADS_DIR, filename)
+            rgb.save(output_path, format="PNG")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {exc}")
+
+    # Keep the legacy path available for archive/download tooling.
+    shutil.copy2(output_path, os.path.join(KAGGLE_WORKING, "input.png"))
+    return {
+        "status": "success",
+        "mode": "uploaded",
+        "image_url": f"/uploads/{filename}",
+        "filename": filename,
+        "width": width,
+        "height": height,
+    }
+
+
 @app.post("/api/parse_scene_graph")
 def api_parse_scene_graph(request: TextPrompt):
     try:
@@ -417,7 +459,13 @@ def api_generate_image(request: ImageGenRequest):
 @app.post("/api/run_sam2")
 def api_run_sam2(request: Sam2Request):
     try:
+        source_mode = str(request.mode or "objectwise").lower()
         input_path = os.path.join(KAGGLE_WORKING, "input.png")
+        if source_mode == "uploaded":
+            upload_name = Path(urlparse(request.image_url).path).name
+            input_path = os.path.join(UPLOADS_DIR, upload_name)
+            if not upload_name or not os.path.isfile(input_path):
+                raise FileNotFoundError("Uploaded image was not found on the backend")
         effective_layout = request.layout
         scene_graph = None
 
@@ -432,9 +480,11 @@ def api_run_sam2(request: Sam2Request):
             input_path,
             effective_layout,
             CROPS_DIR,
+            source_mode=source_mode,
         )
         return {
             "status": "success",
+            "mode": source_mode,
             "crops": crops,
             "scene_graph": scene_graph,
             "layout": effective_layout,

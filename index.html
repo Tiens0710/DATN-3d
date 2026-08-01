@@ -2158,6 +2158,10 @@
                 <button id="btn-kaggle-help" class="secondary" title="Environment setup">
                     <span class="icon-label"><i data-lucide="settings-2"></i><span class="button-copy">Setup</span></span>
                 </button>
+                <button id="btn-upload-image" class="secondary" title="Upload an input image">
+                    <span class="icon-label"><i data-lucide="image-up"></i><span class="button-copy">Upload image</span></span>
+                </button>
+                <input id="image-upload-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
                 <button id="btn-run" title="Run workflow">
                     <span class="icon-label"><i data-lucide="play"></i><span class="button-copy">Run</span></span>
                 </button>
@@ -2172,7 +2176,7 @@
                 <button class="rail-item" id="btn-toggle-library" type="button">
                     <span class="rail-icon"><i data-lucide="blocks"></i></span><span>Nodes</span>
                 </button>
-                <button class="rail-item" type="button">
+                <button class="rail-item" id="btn-rail-upload-image" type="button">
                     <span class="rail-icon"><i data-lucide="image"></i></span><span>Image</span>
                 </button>
                 <button class="rail-item" type="button">
@@ -2372,6 +2376,8 @@
         // Global API Configuration
         let backendUrl = "";
         let isConnected = false;
+        let uploadedImageUrl = "";
+        let uploadedImageName = "";
         window.lucide?.createIcons({
             attrs: {
                 "stroke-width": 1.7,
@@ -2651,6 +2657,61 @@
         const canvas = new LGraphCanvas("#graphcanvas", graph);
         canvas.show_stats = false; // Hide default performance statistics
         canvas.background_image = null; // Background handled by CSS grid pattern
+
+        const imageUploadInput = document.getElementById("image-upload-input");
+        const openImagePicker = () => {
+            if (!isConnected) {
+                writeLog("Vui lòng kết nối GPU Kaggle trước khi nhập ảnh.", "warning");
+                return;
+            }
+            imageUploadInput?.click();
+        };
+        document.getElementById("btn-upload-image")?.addEventListener("click", openImagePicker);
+        document.getElementById("btn-rail-upload-image")?.addEventListener("click", openImagePicker);
+        imageUploadInput?.addEventListener("change", async () => {
+            const file = imageUploadInput.files?.[0];
+            if (!file) return;
+            if (!file.type.startsWith("image/")) {
+                writeLog("Chỉ hỗ trợ file ảnh PNG, JPG hoặc WebP.", "error");
+                imageUploadInput.value = "";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", file);
+            writeLog(`Đang tải ảnh ${file.name} lên backend...`, "system");
+            try {
+                const response = await fetch(`${backendUrl}/api/upload_image`, {
+                    method: "POST",
+                    headers: { "ngrok-skip-browser-warning": "69420" },
+                    body: formData,
+                });
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status} - ${await response.text()}`);
+                }
+                const data = await response.json();
+                uploadedImageUrl = `${backendUrl}${data.image_url}`;
+                uploadedImageName = file.name;
+                const imageNode = graph.findNodesByType("datn/sdxl_gen")?.[0];
+                if (imageNode) {
+                    imageNode.properties.imageUrl = uploadedImageUrl;
+                    imageNode.properties.objectImages = [];
+                    imageNode._imageObj = null;
+                    imageNode.setOutputData(0, uploadedImageUrl);
+                    imageNode.setDirtyCanvas(true, true);
+                }
+                writeLog(
+                    `✅ Đã nhập ảnh ${file.name}. Bước SD3.5 sẽ được bỏ qua; ảnh sẽ đi thẳng vào Grounded-SAM2.`,
+                    "success",
+                );
+            } catch (error) {
+                uploadedImageUrl = "";
+                uploadedImageName = "";
+                writeLog(`❌ Không thể nhập ảnh: ${error.message}`, "error");
+            } finally {
+                imageUploadInput.value = "";
+            }
+        });
 
         // =========================================================================
         // COMFYUI-AUTHENTIC THEME
@@ -3271,6 +3332,19 @@
             if (!prompt) throw new Error("Thiếu prompt cho SD3.5");
             if (!isConnected) throw new Error("Chưa kết nối GPU Kaggle");
 
+            if (uploadedImageUrl) {
+                this.properties.imageUrl = uploadedImageUrl;
+                this.properties.objectImages = [];
+                this._imageObj = null;
+                this.setOutputData(0, uploadedImageUrl);
+                writeLog(
+                    `Đã chọn ảnh ${uploadedImageName || "upload"}; bỏ qua SD3.5 và dùng ảnh gốc.`,
+                    "system",
+                );
+                this.setDirtyCanvas(true, true);
+                return;
+            }
+
             const requestKey = JSON.stringify({ prompt, objectLayout });
             if (this._lastRequestKey === requestKey && this.properties.imageUrl) {
                 this.setOutputData(0, this.properties.imageUrl);
@@ -3380,7 +3454,7 @@
         NodeGroundedSAM2.title = "✂️ Grounded-SAM2 Segment";
         NodeGroundedSAM2.title_color = "rgba(230, 81, 0, 0.85)";
         NodeGroundedSAM2.prototype.onExecute = async function () {
-            const imageUrl = this.getInputData(0);
+            const imageUrl = uploadedImageUrl || this.getInputData(0);
             const inputLayout = this.getInputData(1);
             const userPrompt = this.getInputData(2) || "";
             if (!imageUrl) {
@@ -3417,7 +3491,8 @@
                 imageUrl,
                 userPrompt,
                 layout: finalLayout,
-                labels: this.properties.labels
+                labels: this.properties.labels,
+                mode: uploadedImageUrl ? "uploaded" : "objectwise",
             });
 
             if (
@@ -3441,7 +3516,8 @@
                     body: JSON.stringify({
                         image_url: imageUrl,
                         layout: finalLayout,
-                        prompt: userPrompt
+                        prompt: userPrompt,
+                        mode: uploadedImageUrl ? "uploaded" : "objectwise",
                     })
                 });
                 if (res.ok) {
@@ -3462,7 +3538,7 @@
             }
         };
         NodeGroundedSAM2.prototype.onDrawBackground = function (ctx) {
-            const imageUrl = this.getInputData(0);
+            const imageUrl = uploadedImageUrl || this.getInputData(0);
             if (!imageUrl) {
                 ctx.fillStyle = "#52525b";
                 ctx.font = "italic 13px 'Outfit'";
