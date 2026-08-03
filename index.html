@@ -2770,6 +2770,9 @@
         let isConnected = false;
         let uploadedImageUrl = "";
         let uploadedImageName = "";
+        // Keep a local preview while the file is waiting for the backend.
+        // The blob URL must never be sent to the Kaggle API.
+        let uploadedPreviewUrl = "";
         let pendingUploadFile = null;
         window.lucide?.createIcons({
             attrs: {
@@ -3245,10 +3248,59 @@
         document.getElementById("btn-upload-image")?.addEventListener("click", openImagePicker);
         document.getElementById("btn-rail-upload-image")?.addEventListener("click", openImagePicker);
 
+        function activeUploadedImageUrl() {
+            return uploadedImageUrl || uploadedPreviewUrl;
+        }
+
+        function refreshUploadedImageNodes(imageUrl = activeUploadedImageUrl()) {
+            const imageNodes = [
+                ...(graph.findNodesByType("datn/image_input") || []),
+                ...(graph.findNodesByType("datn/sdxl_gen") || []),
+            ];
+            imageNodes.forEach((imageNode) => {
+                imageNode.properties.imageUrl = imageUrl || "";
+                imageNode.properties.objectImages = [];
+                imageNode._imageObj = null;
+                imageNode.setOutputData(0, imageUrl || null);
+                imageNode.setDirtyCanvas(true, true);
+            });
+            // A new input must invalidate the previous segmentation preview.
+            (graph.findNodesByType("datn/grounded_sam2") || []).forEach((samNode) => {
+                samNode.properties.crops = [];
+                samNode._lastSegmentationKey = "";
+                samNode._inputImageObj = null;
+                samNode._cropImages = [];
+                samNode.setDirtyCanvas(true, true);
+            });
+            canvas.draw(true, true);
+        }
+
+        function setLocalImagePreview(file) {
+            if (uploadedPreviewUrl.startsWith("blob:")) {
+                URL.revokeObjectURL(uploadedPreviewUrl);
+            }
+            uploadedPreviewUrl = URL.createObjectURL(file);
+            refreshUploadedImageNodes();
+        }
+
+        function clearLocalImagePreview() {
+            if (uploadedPreviewUrl.startsWith("blob:")) {
+                URL.revokeObjectURL(uploadedPreviewUrl);
+            }
+            uploadedPreviewUrl = "";
+        }
+
         async function uploadImageFile(file) {
             if (!file) return;
+            if (!file.type.startsWith("image/")) {
+                writeLog("Chỉ hỗ trợ file ảnh PNG, JPG hoặc WebP.", "error");
+                return;
+            }
+
+            // Show the selected file immediately, even before Connect/upload.
+            pendingUploadFile = file;
+            setLocalImagePreview(file);
             if (!isConnected) {
-                pendingUploadFile = file;
                 writeLog(`Đã chọn ảnh ${file.name}. Hãy Connect GPU để bắt đầu tải ảnh lên.`, "warning");
                 return;
             }
@@ -3256,10 +3308,6 @@
             pendingUploadFile = null;
             const uploadButton = document.getElementById("btn-upload-image");
             const originalUploadButton = uploadButton?.innerHTML;
-            if (!file.type.startsWith("image/")) {
-                writeLog("Chỉ hỗ trợ file ảnh PNG, JPG hoặc WebP.", "error");
-                return;
-            }
 
             const formData = new FormData();
             formData.append("file", file);
@@ -3281,24 +3329,15 @@
                 const data = await response.json();
                 uploadedImageUrl = `${backendUrl}${data.image_url}`;
                 uploadedImageName = file.name;
-                const imageNodes = [
-                    ...(graph.findNodesByType("datn/image_input") || []),
-                    ...(graph.findNodesByType("datn/sdxl_gen") || []),
-                ];
-                imageNodes.forEach((imageNode) => {
-                    imageNode.properties.imageUrl = uploadedImageUrl;
-                    imageNode.properties.objectImages = [];
-                    imageNode._imageObj = null;
-                    imageNode.setOutputData(0, uploadedImageUrl);
-                    imageNode.setDirtyCanvas(true, true);
-                });
+                clearLocalImagePreview();
+                refreshUploadedImageNodes(uploadedImageUrl);
                 writeLog(
                     `✅ Đã nhập ảnh ${file.name}. Bước SD3.5 sẽ được bỏ qua; ảnh sẽ đi thẳng vào Grounded-SAM2.`,
                     "success",
                 );
             } catch (error) {
                 uploadedImageUrl = "";
-                uploadedImageName = "";
+                refreshUploadedImageNodes();
                 writeLog(`❌ Không thể nhập ảnh: ${error.message}`, "error");
             } finally {
                 if (uploadButton) {
@@ -3390,7 +3429,10 @@
         NodeImageInput.title_color = "#72d3be";
         NodeImageInput.prototype.onExecute = function () {
             const imageUrl = uploadedImageUrl || this.properties.imageUrl;
-            if (!imageUrl) {
+            if (!imageUrl || imageUrl.startsWith("blob:")) {
+                if (uploadedPreviewUrl && !uploadedImageUrl) {
+                    throw new Error("Ảnh đã chọn nhưng chưa upload xong lên backend");
+                }
                 writeLog("❌ Input Image: Hãy chọn một ảnh trước.", "error");
                 throw new Error("Chưa chọn ảnh đầu vào");
             }
@@ -3399,7 +3441,7 @@
             this.setDirtyCanvas(true, true);
         };
         NodeImageInput.prototype.onDrawBackground = function (ctx) {
-            const imageUrl = uploadedImageUrl || this.properties.imageUrl;
+            const imageUrl = activeUploadedImageUrl() || this.properties.imageUrl;
             ctx.fillStyle = "#111820";
             ctx.fillRect(15, 72, 330, 215);
             ctx.strokeStyle = "#334353";
@@ -4126,7 +4168,10 @@
             const imageUrl = uploadedImageUrl || this.getInputData(0);
             const inputLayout = this.getInputData(1);
             const userPrompt = this.getInputData(2) || "";
-            if (!imageUrl) {
+            if (!imageUrl || imageUrl.startsWith("blob:")) {
+                if (uploadedPreviewUrl && !uploadedImageUrl) {
+                    throw new Error("Ảnh đã chọn nhưng chưa upload xong lên backend");
+                }
                 writeLog("❌ Grounded-SAM2 Segment: Thiếu dữ liệu hình ảnh image_url!", "error");
                 throw new Error("Thiếu dữ liệu hình ảnh image_url");
             }
@@ -4212,7 +4257,7 @@
             }
         };
         NodeGroundedSAM2.prototype.onDrawBackground = function (ctx) {
-            const imageUrl = uploadedImageUrl || this.getInputData(0);
+            const imageUrl = activeUploadedImageUrl() || this.getInputData(0);
             if (!imageUrl) {
                 ctx.fillStyle = "#52525b";
                 ctx.font = "italic 13px 'Outfit'";
@@ -4808,7 +4853,7 @@
             if (inputMode === "image") {
                 const nodeImage = LiteGraph.createNode("datn/image_input");
                 nodeImage.pos = [70, 220];
-                nodeImage.properties.imageUrl = uploadedImageUrl || "";
+                nodeImage.properties.imageUrl = activeUploadedImageUrl();
                 graph.add(nodeImage);
 
                 const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
@@ -5076,6 +5121,7 @@
                 uploadedImageUrl = "";
                 uploadedImageName = "";
                 pendingUploadFile = null;
+                clearLocalImagePreview();
             }
             setupGraphForMode(mode);
         }
