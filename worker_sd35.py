@@ -27,6 +27,9 @@ from src.generator_2d import OBJECT_MANIFEST, build_object_jobs
 
 
 SD35_CACHE_DIR = "/kaggle/working/sd35_medium_cache_v1"
+SD35_NUM_INFERENCE_STEPS = int(os.environ.get("SD35_NUM_INFERENCE_STEPS", "24"))
+SD35_IMAGE_SIZE = int(os.environ.get("SD35_IMAGE_SIZE", "704"))
+SD35_GUIDANCE_SCALE = float(os.environ.get("SD35_GUIDANCE_SCALE", "4.5"))
 
 app = FastAPI(title="DATN SD3.5 Worker", version="1.0.0")
 pipeline = None
@@ -165,22 +168,22 @@ def generate(payload: GenerateRequest) -> dict:
     with inference_lock:
         try:
             _move_pipeline("cuda")
-            for job in jobs:
-                print(
-                    f"Generating isolated object: {job['name']} {job['label']}",
-                    flush=True,
-                )
-                image = pipeline(
-                    prompt=job["prompt"],
-                    negative_prompt=job["negative_prompt"],
-                    num_inference_steps=35,
-                    guidance_scale=4.5,
-                    generator=torch.Generator("cuda").manual_seed(job["seed"]),
-                    width=768,
-                    height=768,
-                ).images[0]
-                image.save(job["image_path"])
-                _safe_cuda_cleanup()
+            with torch.inference_mode():
+                for job in jobs:
+                    print(
+                        f"Generating isolated object: {job['name']} {job['label']}",
+                        flush=True,
+                    )
+                    image = pipeline(
+                        prompt=job["prompt"],
+                        negative_prompt=job["negative_prompt"],
+                        num_inference_steps=SD35_NUM_INFERENCE_STEPS,
+                        guidance_scale=SD35_GUIDANCE_SCALE,
+                        generator=torch.Generator("cuda").manual_seed(job["seed"]),
+                        width=SD35_IMAGE_SIZE,
+                        height=SD35_IMAGE_SIZE,
+                    ).images[0]
+                    image.save(job["image_path"])
 
             with open(OBJECT_MANIFEST, "w", encoding="utf-8") as file:
                 json.dump(jobs, file, ensure_ascii=False, indent=2)

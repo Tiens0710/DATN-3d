@@ -91,15 +91,13 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
     descriptor = _object_descriptor(label, scene_prompt)
     positive = (
         f"Exactly one complete standalone {descriptor}, centered and fully visible. "
-        "This is an isolated single-object product photo. Render only this object, "
-        "with no spatial scene, no companion furniture, no duplicate parts, generous "
-        "margins, correct structure, realistic proportions, clean white studio "
-        "background, soft even lighting, sharp focus, realistic materials, suitable "
-        "for single-image 3D reconstruction."
+        "Isolated product photo, no scene, no extra furniture, no duplicate parts, "
+        "generous margins, correct structure, realistic proportions, clean white "
+        "studio background, soft even lighting, sharp focus, realistic materials."
     )
     negative = (
         f"multiple objects, second {label}, duplicate object, extra furniture, {excluded}, "
-        "room scene, spatial relationship, cropped, close-up, "
+        "room scene, cropped, close-up, "
         "fused parts, intersecting parts, missing parts, duplicate legs, floating parts, "
         "deformed, blurry, low quality, room, people, text, watermark"
     )

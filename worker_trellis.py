@@ -32,6 +32,10 @@ pipeline = None
 postprocessing_utils = None
 load_error = None
 inference_lock = threading.Lock()
+TRELLIS_SPARSE_STEPS = int(os.environ.get("TRELLIS_SPARSE_STEPS", "8"))
+TRELLIS_SLAT_STEPS = int(os.environ.get("TRELLIS_SLAT_STEPS", "8"))
+TRELLIS_TEXTURE_SIZE = int(os.environ.get("TRELLIS_TEXTURE_SIZE", "768"))
+TRELLIS_SIMPLIFY = float(os.environ.get("TRELLIS_SIMPLIFY", "0.90"))
 
 
 class GenerateRequest(BaseModel):
@@ -142,20 +146,21 @@ def generate(payload: GenerateRequest) -> dict:
             image = pipeline.preprocess_image(image)
 
             _log(f"{name}: running sparse structure + SLAT diffusion")
-            outputs = pipeline.run(
-                image,
-                seed=42,
-                formats=["gaussian", "mesh"],
-                preprocess_image=False,
-                sparse_structure_sampler_params={
-                    "steps": 12,
-                    "cfg_strength": 7.5,
-                },
-                slat_sampler_params={
-                    "steps": 12,
-                    "cfg_strength": 3.0,
-                },
-            )
+            with torch.inference_mode():
+                outputs = pipeline.run(
+                    image,
+                    seed=42,
+                    formats=["gaussian", "mesh"],
+                    preprocess_image=False,
+                    sparse_structure_sampler_params={
+                        "steps": TRELLIS_SPARSE_STEPS,
+                        "cfg_strength": 7.5,
+                    },
+                    slat_sampler_params={
+                        "steps": TRELLIS_SLAT_STEPS,
+                        "cfg_strength": 3.0,
+                    },
+                )
             torch.cuda.synchronize()
             _log(
                 f"{name}: diffusion completed in "
@@ -163,13 +168,14 @@ def generate(payload: GenerateRequest) -> dict:
             )
 
             _log(f"{name}: converting Gaussian + mesh output to textured GLB")
-            glb = postprocessing_utils.to_glb(
-                outputs["gaussian"][0],
-                outputs["mesh"][0],
-                simplify=0.95,
-                texture_size=1024,
-                verbose=False,
-            )
+            with torch.inference_mode():
+                glb = postprocessing_utils.to_glb(
+                    outputs["gaussian"][0],
+                    outputs["mesh"][0],
+                    simplify=TRELLIS_SIMPLIFY,
+                    texture_size=TRELLIS_TEXTURE_SIZE,
+                    verbose=False,
+                )
             glb.export(str(output_path))
             if not output_path.is_file():
                 raise RuntimeError("GLB export finished but no file was written")
