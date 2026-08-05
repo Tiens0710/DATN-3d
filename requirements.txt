@@ -35,6 +35,7 @@ scipy
 
 # API Web Server & Local Tunnel
 fastapi
+pydantic
 python-multipart
 uvicorn
 pyngrok

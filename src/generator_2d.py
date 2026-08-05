@@ -1,15 +1,18 @@
 import json
 import os
 import re
-import shutil
-import subprocess
 from pathlib import Path
 
+import requests
 
-PY_PATH = "/opt/venv310/bin/python"
+
 OBJECT_IMAGE_DIR = "/kaggle/working/object_images"
 OBJECT_MANIFEST = "/kaggle/working/object_images_manifest.json"
-SD35_CACHE_DIR = "/kaggle/working/sd35_medium_cache_v1"
+SD35_WORKER_URL = os.environ.get(
+    "SD35_WORKER_URL",
+    "http://127.0.0.1:8001",
+).rstrip("/")
+SD35_WORKER_TIMEOUT = float(os.environ.get("SD35_WORKER_TIMEOUT", "1500"))
 
 
 _OBJECT_ALIASES = {
@@ -103,15 +106,10 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
     return positive, negative
 
 
-def generate_object_images(scene_prompt: str, objects: list[dict], lora_scale: float = 0.0) -> list[dict]:
-    """Generate one isolated SD3.5 image per requested object in one GPU process."""
-    del lora_scale
+def build_object_jobs(scene_prompt: str, objects: list[dict]) -> list[dict]:
+    """Build the deterministic per-object prompts shared with the SD3.5 worker."""
     if not objects:
         raise ValueError("The object-wise generator received no objects")
-
-    hf_token = os.environ.get("HF_TOKEN", "").strip()
-    if not hf_token:
-        raise RuntimeError("HF_TOKEN is not configured")
 
     Path(OBJECT_IMAGE_DIR).mkdir(parents=True, exist_ok=True)
     all_labels = [str(item.get("label", "furniture")).lower() for item in objects]
@@ -128,83 +126,62 @@ def generate_object_images(scene_prompt: str, objects: list[dict], lora_scale: f
             "image_path": os.path.join(OBJECT_IMAGE_DIR, f"{object_id}.png"),
             "seed": 42 + index * 101,
         })
+    return jobs
 
-    jobs_path = "/kaggle/working/object_generation_jobs.json"
-    with open(jobs_path, "w", encoding="utf-8") as file:
-        json.dump(jobs, file, ensure_ascii=False, indent=2)
 
-    script = f"""
-import json
-import os
-import shutil
-import sys
-sys.path.insert(0, '/opt/venv310/lib/python3.10/site-packages')
-sys.modules['triton'] = None
+def _check_worker_ready() -> None:
+    try:
+        response = requests.get(f"{SD35_WORKER_URL}/health", timeout=5)
+        response.raise_for_status()
+        health = response.json()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"SD3.5 worker is unavailable at {SD35_WORKER_URL}. "
+            "Start worker_sd35.py first."
+        ) from exc
 
-import torch
-import diffusers
-from packaging.version import Version
-from diffusers import StableDiffusion3Pipeline
+    if not health.get("ready"):
+        detail = health.get("error") or "model is still loading"
+        raise RuntimeError(f"SD3.5 worker is not ready: {detail}")
 
-if Version(diffusers.__version__) < Version('0.32.0'):
-    raise RuntimeError(
-        'SD3.5 Medium requires Diffusers >= 0.32.0. Found ' + diffusers.__version__ +
-        '. Run the API notebook dependency cell, then restart FastAPI.'
-    )
 
-print('Diffusers version:', diffusers.__version__)
+def generate_object_images(
+    scene_prompt: str,
+    objects: list[dict],
+    lora_scale: float = 0.0,
+) -> list[dict]:
+    """Generate isolated object images through the resident SD3.5 worker."""
+    if not objects:
+        raise ValueError("The object-wise generator received no objects")
 
-with open({jobs_path!r}, encoding='utf-8') as file:
-    jobs = json.load(file)
-
-pipe = StableDiffusion3Pipeline.from_pretrained(
-    'stabilityai/stable-diffusion-3.5-medium',
-    text_encoder_3=None,
-    tokenizer_3=None,
-    torch_dtype=torch.float16,
-    token={hf_token!r},
-    cache_dir={SD35_CACHE_DIR!r},
-).to('cuda')
-
-for job in jobs:
-    print('Generating isolated object:', job['name'], job['label'])
-    image = pipe(
-        prompt=job['prompt'],
-        negative_prompt=job['negative_prompt'],
-        num_inference_steps=35,
-        guidance_scale=4.5,
-        generator=torch.Generator('cuda').manual_seed(job['seed']),
-        width=768,
-        height=768,
-    ).images[0]
-    image.save(job['image_path'])
-    torch.cuda.empty_cache()
-"""
-    result = subprocess.run([PY_PATH, "-c", script], capture_output=True, text=True, timeout=900)
-    cache_mismatch = (
-        "expected shape tensor" in result.stderr
-        or "size mismatch" in result.stderr
-    )
-    if result.returncode != 0 and cache_mismatch:
-        # A partly downloaded snapshot can pair a new config with old weights.
-        # Repair only this model's dedicated cache, then retry once.
-        shutil.rmtree(SD35_CACHE_DIR, ignore_errors=True)
-        retry_script = script.replace(
-            f"cache_dir={SD35_CACHE_DIR!r},",
-            f"cache_dir={SD35_CACHE_DIR!r}, force_download=True,",
+    _check_worker_ready()
+    try:
+        response = requests.post(
+            f"{SD35_WORKER_URL}/generate",
+            json={
+                "scene_prompt": scene_prompt,
+                "objects": objects,
+                "lora_scale": lora_scale,
+            },
+            timeout=SD35_WORKER_TIMEOUT,
         )
-        result = subprocess.run(
-            [PY_PATH, "-c", retry_script],
-            capture_output=True,
-            text=True,
-            timeout=1500,
-        )
-    if result.returncode != 0:
-        raise RuntimeError("SD3.5 object-wise generation failed:\n" + result.stderr + "\n" + result.stdout)
+        response.raise_for_status()
+        jobs = response.json().get("jobs", [])
+    except requests.RequestException as exc:
+        detail = getattr(exc.response, "text", "") if exc.response else ""
+        raise RuntimeError(
+            f"SD3.5 worker generation failed: {detail or exc}"
+        ) from exc
 
+    if len(jobs) != len(objects):
+        raise RuntimeError(
+            f"SD3.5 worker returned {len(jobs)} jobs for {len(objects)} objects"
+        )
     for job in jobs:
-        if not os.path.isfile(job["image_path"]):
-            raise FileNotFoundError(job["image_path"])
+        image_path = job.get("image_path")
+        if not image_path or not os.path.isfile(image_path):
+            raise FileNotFoundError(image_path or "Missing SD3.5 image path")
+
     with open(OBJECT_MANIFEST, "w", encoding="utf-8") as file:
         json.dump(jobs, file, ensure_ascii=False, indent=2)
     return jobs

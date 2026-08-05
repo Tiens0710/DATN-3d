@@ -71,10 +71,10 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
         models.append(
             {
                 "name": name,
-                "label": crop["label"],
+                "label": crop.get("label", name),
                 "model_url": f"/multi_object_glb/{name}.glb",
                 "model_path": model_path,
-                "final_box": crop["final_box"],
+                "final_box": crop.get("final_box", [0, 0, 0, 0]),
             }
         )
 

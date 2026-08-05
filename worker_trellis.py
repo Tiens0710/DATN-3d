@@ -1,39 +1,34 @@
-"""Resident TRELLIS image-to-3D worker.
-
-The worker is started once per Kaggle session and keeps the TRELLIS pipeline
-on the GPU.  The main FastAPI process talks to it over localhost so a request
-does not have to create a new Python process or reload the model.
-"""
+"""Resident TRELLIS image-to-3D worker for the Kaggle GPU session."""
 
 import argparse
 import os
 import sys
 import threading
+import traceback
 from pathlib import Path
 
 
-TRELLIS_ROOT = "/kaggle/working/TRELLIS"
-
-# These must be set before importing the CUDA-heavy libraries.
+# Keep the original environment workarounds before importing torch/TRELLIS.
 os.environ.setdefault("SPCONV_ALGO", "native")
 os.environ.setdefault("ATTN_BACKEND", "xformers")
 os.environ.setdefault("SPARSE_ATTN", "xformers")
 os.environ.setdefault("MPLBACKEND", "agg")
-
-sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
-sys.path.insert(0, TRELLIS_ROOT)
 sys.modules["triton"] = None
 
+TRELLIS_ROOT = "/kaggle/working/TRELLIS"
+sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
+sys.path.insert(0, TRELLIS_ROOT)
+
 import torch
+import uvicorn
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from trellis.pipelines import TrellisImageTo3DPipeline
-from trellis.utils import postprocessing_utils
 from PIL import Image
+from pydantic import BaseModel
 
 
-app = FastAPI(title="DATN TRELLIS Worker", version="1.0.0")
+app = FastAPI(title="DATN TRELLIS Worker", version="1.1.0")
 pipeline = None
+postprocessing_utils = None
 load_error = None
 inference_lock = threading.Lock()
 
@@ -44,49 +39,67 @@ class GenerateRequest(BaseModel):
     output_dir: str
 
 
-@app.on_event("startup")
-def load_model() -> None:
-    """Load TRELLIS exactly once when this worker process starts."""
-    global pipeline, load_error
+def _load_pipeline() -> None:
+    """Load once and keep failures observable through /health."""
+    global pipeline, postprocessing_utils, load_error
 
     try:
-        pipeline = TrellisImageTo3DPipeline.from_pretrained(
+        if not os.path.isdir(os.path.join(TRELLIS_ROOT, "trellis")):
+            raise RuntimeError(
+                "TRELLIS source is missing. Run the notebook setup cells first."
+            )
+
+        import nvdiffrast.torch  # noqa: F401
+        import spconv  # noqa: F401
+        import utils3d  # noqa: F401
+        import xformers  # noqa: F401
+        from diff_gaussian_rasterization import _C  # noqa: F401
+        from trellis.pipelines import TrellisImageTo3DPipeline
+        from trellis.utils import postprocessing_utils as loaded_postprocessing
+
+        print("Loading TRELLIS-image-large...", flush=True)
+        loaded_pipeline = TrellisImageTo3DPipeline.from_pretrained(
             "JeffreyXiang/TRELLIS-image-large"
         )
-        pipeline.to("cuda")
+        loaded_pipeline.to("cuda")
+        pipeline = loaded_pipeline
+        postprocessing_utils = loaded_postprocessing
+        load_error = None
+        print("TRELLIS worker ready.", flush=True)
     except Exception as exc:
-        load_error = str(exc)
-        raise
+        load_error = f"{exc}\n{traceback.format_exc()}"
+        print(f"TRELLIS worker failed to load:\n{load_error}", flush=True)
+
+
+@app.on_event("startup")
+def startup_event() -> None:
+    _load_pipeline()
 
 
 @app.get("/health")
 def health() -> dict:
-    return {
-        "ready": pipeline is not None,
-        "error": load_error,
-        "cuda": torch.cuda.is_available(),
-    }
+    return {"ready": pipeline is not None, "error": load_error}
 
 
 @app.post("/generate")
-def generate(request: GenerateRequest) -> dict:
+def generate(payload: GenerateRequest) -> dict:
     if pipeline is None:
-        raise HTTPException(status_code=503, detail=load_error or "Worker is not ready")
+        raise HTTPException(
+            status_code=503,
+            detail=load_error or "TRELLIS model is still loading",
+        )
 
-    crop_path = Path(request.crop_path)
+    crop_path = Path(payload.crop_path)
     if not crop_path.is_file():
         raise HTTPException(status_code=404, detail=f"Crop not found: {crop_path}")
 
-    output_dir = Path(request.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    name = Path(request.name).name
+    name = Path(payload.name).name
     if not name or name in {".", ".."}:
         raise HTTPException(status_code=400, detail="Invalid model name")
-
+    output_dir = Path(payload.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{name}.glb"
 
-    # The main API already queues jobs, but keep the worker safe if it is
-    # called directly by more than one client.
     with inference_lock:
         try:
             print(f"Generating TRELLIS model for {name}...", flush=True)
@@ -115,18 +128,21 @@ def generate(request: GenerateRequest) -> dict:
                 verbose=False,
             )
             glb.export(str(output_path))
-            torch.cuda.empty_cache()
+            if not output_path.is_file():
+                raise RuntimeError("GLB export finished but no file was written")
             print(f"Saved: {output_path}", flush=True)
         except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"TRELLIS generation failed for {name}: {exc}",
+            ) from exc
+        finally:
             torch.cuda.empty_cache()
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {"model_path": str(output_path)}
 
 
 if __name__ == "__main__":
-    import uvicorn
-
     parser = argparse.ArgumentParser(description="Resident TRELLIS worker")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8002)
