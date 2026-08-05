@@ -36,6 +36,17 @@ TRELLIS_SPARSE_STEPS = int(os.environ.get("TRELLIS_SPARSE_STEPS", "8"))
 TRELLIS_SLAT_STEPS = int(os.environ.get("TRELLIS_SLAT_STEPS", "8"))
 TRELLIS_TEXTURE_SIZE = int(os.environ.get("TRELLIS_TEXTURE_SIZE", "768"))
 TRELLIS_SIMPLIFY = float(os.environ.get("TRELLIS_SIMPLIFY", "0.90"))
+TRELLIS_TEXTURE_MODE = os.environ.get("TRELLIS_TEXTURE_MODE", "fast").lower()
+TRELLIS_TEXTURE_VIEWS = int(os.environ.get("TRELLIS_TEXTURE_VIEWS", "48"))
+TRELLIS_BAKE_RESOLUTION = int(
+    os.environ.get("TRELLIS_BAKE_RESOLUTION", "512")
+)
+TRELLIS_FILL_HOLES = os.environ.get("TRELLIS_FILL_HOLES", "0").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 class GenerateRequest(BaseModel):
@@ -91,6 +102,36 @@ def _load_pipeline() -> None:
         from trellis.pipelines import TrellisImageTo3DPipeline
         from trellis.utils import postprocessing_utils as loaded_postprocessing
 
+        if TRELLIS_TEXTURE_MODE not in {"fast", "opt"}:
+            raise ValueError(
+                "TRELLIS_TEXTURE_MODE must be either 'fast' or 'opt'"
+            )
+
+        # TRELLIS' stock GLB exporter always requests the expensive texture
+        # path (2,500 optimization iterations, 100 views at 1024px).  Keep the
+        # official exporter but configure its module-level helpers so the
+        # resident worker can use the much cheaper built-in fast baker.
+        original_bake_texture = loaded_postprocessing.bake_texture
+        original_render_multiview = loaded_postprocessing.render_multiview
+
+        def configured_bake_texture(*args, **kwargs):
+            kwargs["mode"] = TRELLIS_TEXTURE_MODE
+            return original_bake_texture(*args, **kwargs)
+
+        def configured_render_multiview(*args, **kwargs):
+            kwargs["resolution"] = min(
+                int(kwargs.get("resolution", TRELLIS_BAKE_RESOLUTION)),
+                TRELLIS_BAKE_RESOLUTION,
+            )
+            kwargs["nviews"] = min(
+                int(kwargs.get("nviews", TRELLIS_TEXTURE_VIEWS)),
+                TRELLIS_TEXTURE_VIEWS,
+            )
+            return original_render_multiview(*args, **kwargs)
+
+        loaded_postprocessing.bake_texture = configured_bake_texture
+        loaded_postprocessing.render_multiview = configured_render_multiview
+
         _log("Loading TRELLIS-image-large...")
         loaded_pipeline = TrellisImageTo3DPipeline.from_pretrained(
             "JeffreyXiang/TRELLIS-image-large"
@@ -99,7 +140,13 @@ def _load_pipeline() -> None:
         pipeline = loaded_pipeline
         postprocessing_utils = loaded_postprocessing
         load_error = None
-        _log(f"Worker ready; {_cuda_memory()}")
+        _log(
+            "Worker ready; "
+            f"steps={TRELLIS_SPARSE_STEPS}+{TRELLIS_SLAT_STEPS}, "
+            f"texture={TRELLIS_TEXTURE_SIZE}px/{TRELLIS_TEXTURE_MODE}, "
+            f"views={TRELLIS_TEXTURE_VIEWS}@{TRELLIS_BAKE_RESOLUTION}px, "
+            f"fill_holes={TRELLIS_FILL_HOLES}; {_cuda_memory()}"
+        )
     except Exception as exc:
         load_error = f"{exc}\n{traceback.format_exc()}"
         _log(f"Worker failed to load:\n{load_error}")
@@ -112,7 +159,19 @@ def startup_event() -> None:
 
 @app.get("/health")
 def health() -> dict:
-    return {"ready": pipeline is not None, "error": load_error}
+    return {
+        "ready": pipeline is not None,
+        "error": load_error,
+        "profile": {
+            "sparse_steps": TRELLIS_SPARSE_STEPS,
+            "slat_steps": TRELLIS_SLAT_STEPS,
+            "texture_size": TRELLIS_TEXTURE_SIZE,
+            "texture_mode": TRELLIS_TEXTURE_MODE,
+            "texture_views": TRELLIS_TEXTURE_VIEWS,
+            "bake_resolution": TRELLIS_BAKE_RESOLUTION,
+            "fill_holes": TRELLIS_FILL_HOLES,
+        },
+    }
 
 
 @app.post("/generate")
@@ -173,6 +232,7 @@ def generate(payload: GenerateRequest) -> dict:
                     outputs["gaussian"][0],
                     outputs["mesh"][0],
                     simplify=TRELLIS_SIMPLIFY,
+                    fill_holes=TRELLIS_FILL_HOLES,
                     texture_size=TRELLIS_TEXTURE_SIZE,
                     verbose=False,
                 )
