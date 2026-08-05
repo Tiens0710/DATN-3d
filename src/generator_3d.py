@@ -1,122 +1,73 @@
-import json
 import os
-import subprocess
+from pathlib import Path
+
+import requests
 
 
-PY_PATH = "/opt/venv310/bin/python"
-TRELLIS_ROOT = "/kaggle/working/TRELLIS"
+TRELLIS_WORKER_URL = os.environ.get(
+    "TRELLIS_WORKER_URL",
+    "http://127.0.0.1:8002",
+).rstrip("/")
+TRELLIS_WORKER_TIMEOUT = float(
+    os.environ.get("TRELLIS_WORKER_TIMEOUT", "1200")
+)
+
+
+def _check_worker_ready() -> None:
+    try:
+        response = requests.get(f"{TRELLIS_WORKER_URL}/health", timeout=5)
+        response.raise_for_status()
+        health = response.json()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            "TRELLIS worker is unavailable at "
+            f"{TRELLIS_WORKER_URL}. Start worker_trellis.py first."
+        ) from exc
+
+    if not health.get("ready"):
+        detail = health.get("error") or "model is still loading"
+        raise RuntimeError(f"TRELLIS worker is not ready: {detail}")
 
 
 def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
-    """Generate one GLB per transparent SAM2 crop with TRELLIS."""
+    """Generate one GLB per transparent SAM2 crop through the resident worker."""
     if not crops:
         raise ValueError("No SAM2 crops were provided to TRELLIS")
 
-    if not os.path.isdir(os.path.join(TRELLIS_ROOT, "trellis")):
-        raise RuntimeError(
-            "TRELLIS source is missing. Run the backend notebook setup cells."
-        )
-
     os.makedirs(multi_glb_dir, exist_ok=True)
-    meta_json_path = "/kaggle/working/objects_meta_api.json"
-    objects_dict = {crop["name"]: crop for crop in crops}
-    with open(meta_json_path, "w", encoding="utf-8") as file:
-        json.dump(objects_dict, file, ensure_ascii=False, indent=2)
-
-    script = f"""
-import json
-import os
-import sys
-
-sys.path.insert(0, "/opt/venv310/lib/python3.10/site-packages")
-sys.path.insert(0, {TRELLIS_ROOT!r})
-sys.modules["triton"] = None
-
-os.environ["SPCONV_ALGO"] = "native"
-os.environ["ATTN_BACKEND"] = "xformers"
-os.environ["SPARSE_ATTN"] = "xformers"
-os.environ["MPLBACKEND"] = "agg"
-
-import torch
-import nvdiffrast.torch
-import spconv
-import utils3d
-import xformers
-from diff_gaussian_rasterization import _C
-from PIL import Image
-from trellis.pipelines import TrellisImageTo3DPipeline
-from trellis.utils import postprocessing_utils
-
-with open({meta_json_path!r}, encoding="utf-8") as file:
-    objects = json.load(file)
-
-print("Loading TRELLIS-image-large...")
-pipeline = TrellisImageTo3DPipeline.from_pretrained(
-    "JeffreyXiang/TRELLIS-image-large"
-)
-pipeline.to("cuda")
-
-for name, info in objects.items():
-    crop_path = info["crop_path"]
-    if not os.path.isfile(crop_path):
-        raise FileNotFoundError(crop_path)
-
-    print(f"Generating TRELLIS model for {{name}}...")
-    image = Image.open(crop_path).convert("RGB")
-    image = pipeline.preprocess_image(image)
-    outputs = pipeline.run(
-        image,
-        seed=42,
-        formats=["gaussian", "mesh"],
-        preprocess_image=False,
-        sparse_structure_sampler_params={{
-            "steps": 12,
-            "cfg_strength": 7.5,
-        }},
-        slat_sampler_params={{
-            "steps": 12,
-            "cfg_strength": 3.0,
-        }},
-    )
-
-    glb = postprocessing_utils.to_glb(
-        outputs["gaussian"][0],
-        outputs["mesh"][0],
-        simplify=0.95,
-        texture_size=1024,
-        verbose=False,
-    )
-    output_path = os.path.join({multi_glb_dir!r}, f"{{name}}.glb")
-    glb.export(output_path)
-    print("Saved:", output_path)
-    torch.cuda.empty_cache()
-"""
-
-    environment = os.environ.copy()
-    environment.setdefault("SPCONV_ALGO", "native")
-    environment.setdefault("ATTN_BACKEND", "xformers")
-    environment.setdefault("SPARSE_ATTN", "xformers")
-    environment.setdefault("MPLBACKEND", "agg")
-
-    result = subprocess.run(
-        [PY_PATH, "-c", script],
-        capture_output=True,
-        text=True,
-        timeout=1200,
-        env=environment,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            "TRELLIS failed. Run the notebook preflight cell before starting "
-            f"the server.\nSTDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}"
-        )
+    _check_worker_ready()
 
     models = []
     for crop in crops:
-        name = crop["name"]
-        model_path = os.path.join(multi_glb_dir, f"{name}.glb")
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(model_path)
+        name = str(crop.get("name", "")).strip()
+        crop_path = str(crop.get("crop_path", "")).strip()
+        if not name or not crop_path:
+            raise ValueError("Each crop must include name and crop_path")
+
+        try:
+            response = requests.post(
+                f"{TRELLIS_WORKER_URL}/generate",
+                json={
+                    "crop_path": crop_path,
+                    "name": name,
+                    "output_dir": multi_glb_dir,
+                },
+                timeout=TRELLIS_WORKER_TIMEOUT,
+            )
+            response.raise_for_status()
+            result = response.json()
+        except requests.RequestException as exc:
+            detail = getattr(exc.response, "text", "") if exc.response else ""
+            raise RuntimeError(
+                f"TRELLIS worker failed for {name}: {detail or exc}"
+            ) from exc
+
+        model_path = result.get("model_path")
+        if not model_path or not Path(model_path).is_file():
+            raise FileNotFoundError(
+                f"TRELLIS worker returned a missing model for {name}: {model_path}"
+            )
+
         models.append(
             {
                 "name": name,
@@ -126,4 +77,5 @@ for name, info in objects.items():
                 "final_box": crop["final_box"],
             }
         )
+
     return models
