@@ -13,6 +13,19 @@ TRELLIS_WORKER_TIMEOUT = float(
 )
 
 
+def _response_error_detail(response) -> str:
+    if response is None:
+        return ""
+    try:
+        payload = response.json()
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        if detail:
+            return str(detail)
+    except ValueError:
+        pass
+    return response.text.strip()
+
+
 def _check_worker_ready() -> None:
     try:
         response = requests.get(f"{TRELLIS_WORKER_URL}/health", timeout=5)
@@ -57,7 +70,7 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
             response.raise_for_status()
             result = response.json()
         except requests.RequestException as exc:
-            detail = getattr(exc.response, "text", "") if exc.response else ""
+            detail = _response_error_detail(exc.response)
             raise RuntimeError(
                 f"TRELLIS worker failed for {name}: {detail or exc}"
             ) from exc

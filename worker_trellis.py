@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 
@@ -39,6 +40,35 @@ class GenerateRequest(BaseModel):
     output_dir: str
 
 
+def _cuda_memory() -> str:
+    try:
+        if not torch.cuda.is_available():
+            return "CUDA unavailable"
+        gib = 1024 ** 3
+        free_bytes, total_bytes = torch.cuda.mem_get_info()
+        return (
+            f"allocated={torch.cuda.memory_allocated() / gib:.2f} GiB, "
+            f"reserved={torch.cuda.memory_reserved() / gib:.2f} GiB, "
+            f"free={free_bytes / gib:.2f}/{total_bytes / gib:.2f} GiB"
+        )
+    except Exception as exc:
+        return f"CUDA memory query failed: {type(exc).__name__}: {exc}"
+
+
+def _log(message: str) -> None:
+    print(f"[TRELLIS] {message}", flush=True)
+
+
+def _safe_empty_cache(name: str) -> None:
+    try:
+        torch.cuda.empty_cache()
+    except Exception as exc:
+        _log(
+            f"{name}: CUDA cleanup failed but original result/error is preserved: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+
 def _load_pipeline() -> None:
     """Load once and keep failures observable through /health."""
     global pipeline, postprocessing_utils, load_error
@@ -57,7 +87,7 @@ def _load_pipeline() -> None:
         from trellis.pipelines import TrellisImageTo3DPipeline
         from trellis.utils import postprocessing_utils as loaded_postprocessing
 
-        print("Loading TRELLIS-image-large...", flush=True)
+        _log("Loading TRELLIS-image-large...")
         loaded_pipeline = TrellisImageTo3DPipeline.from_pretrained(
             "JeffreyXiang/TRELLIS-image-large"
         )
@@ -65,10 +95,10 @@ def _load_pipeline() -> None:
         pipeline = loaded_pipeline
         postprocessing_utils = loaded_postprocessing
         load_error = None
-        print("TRELLIS worker ready.", flush=True)
+        _log(f"Worker ready; {_cuda_memory()}")
     except Exception as exc:
         load_error = f"{exc}\n{traceback.format_exc()}"
-        print(f"TRELLIS worker failed to load:\n{load_error}", flush=True)
+        _log(f"Worker failed to load:\n{load_error}")
 
 
 @app.on_event("startup")
@@ -101,10 +131,17 @@ def generate(payload: GenerateRequest) -> dict:
     output_path = output_dir / f"{name}.glb"
 
     with inference_lock:
+        started_at = time.perf_counter()
         try:
-            print(f"Generating TRELLIS model for {name}...", flush=True)
+            if torch.cuda.is_available():
+                torch.cuda.reset_peak_memory_stats()
+            _log(f"Request {name}: crop={crop_path}; {_cuda_memory()}")
+
             image = Image.open(crop_path).convert("RGB")
+            _log(f"{name}: preprocessing image ({image.width}x{image.height})")
             image = pipeline.preprocess_image(image)
+
+            _log(f"{name}: running sparse structure + SLAT diffusion")
             outputs = pipeline.run(
                 image,
                 seed=42,
@@ -119,7 +156,13 @@ def generate(payload: GenerateRequest) -> dict:
                     "cfg_strength": 3.0,
                 },
             )
+            torch.cuda.synchronize()
+            _log(
+                f"{name}: diffusion completed in "
+                f"{time.perf_counter() - started_at:.1f}s; {_cuda_memory()}"
+            )
 
+            _log(f"{name}: converting Gaussian + mesh output to textured GLB")
             glb = postprocessing_utils.to_glb(
                 outputs["gaussian"][0],
                 outputs["mesh"][0],
@@ -130,14 +173,32 @@ def generate(payload: GenerateRequest) -> dict:
             glb.export(str(output_path))
             if not output_path.is_file():
                 raise RuntimeError("GLB export finished but no file was written")
-            print(f"Saved: {output_path}", flush=True)
+            torch.cuda.synchronize()
+            peak_gib = torch.cuda.max_memory_allocated() / (1024 ** 3)
+            _log(
+                f"{name}: saved {output_path} in "
+                f"{time.perf_counter() - started_at:.1f}s; "
+                f"peak_allocated={peak_gib:.2f} GiB"
+            )
         except Exception as exc:
+            error_trace = traceback.format_exc()
+            _log(
+                f"{name}: FAILED after {time.perf_counter() - started_at:.1f}s; "
+                f"{_cuda_memory()}\n{error_trace}"
+            )
+            detail = f"{type(exc).__name__}: {exc}"
+            if "out of memory" in str(exc).lower():
+                detail += (
+                    ". GPU out of memory while all resident workers are loaded; "
+                    "inspect trellis_worker.log and nvidia-smi in section 11."
+                )
             raise HTTPException(
                 status_code=500,
-                detail=f"TRELLIS generation failed for {name}: {exc}",
+                detail=f"TRELLIS generation failed for {name}: {detail}",
             ) from exc
         finally:
-            torch.cuda.empty_cache()
+            _safe_empty_cache(name)
+            _log(f"{name}: request cleanup; {_cuda_memory()}")
 
     return {"model_path": str(output_path)}
 
