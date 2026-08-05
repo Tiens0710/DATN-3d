@@ -1877,8 +1877,8 @@
             margin: 0;
             border-radius: 0;
             background:
-                radial-gradient(circle at 50% 38%, rgba(58, 70, 83, 0.55), rgba(16, 22, 29, 0.96) 55%),
-                #10161d;
+                radial-gradient(circle at 50% 34%, rgba(82, 86, 91, 0.32), transparent 50%),
+                linear-gradient(180deg, #383838 0%, #303030 52%, #252525 100%);
             box-shadow: none;
         }
 
@@ -1886,22 +1886,26 @@
             content: "";
             position: absolute;
             z-index: 0;
-            right: -15%;
-            bottom: -34%;
-            left: -15%;
-            height: 68%;
-            opacity: 0.48;
+            top: 34%;
+            right: -18%;
+            bottom: -42%;
+            left: -18%;
+            opacity: 0.72;
             background:
-                linear-gradient(rgba(103, 120, 139, 0.22) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(103, 120, 139, 0.22) 1px, transparent 1px);
-            background-size: 38px 38px;
-            transform: perspective(420px) rotateX(64deg);
+                linear-gradient(rgba(196, 196, 196, 0.13) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(196, 196, 196, 0.13) 1px, transparent 1px),
+                linear-gradient(rgba(205, 205, 205, 0.07) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(205, 205, 205, 0.07) 1px, transparent 1px),
+                linear-gradient(90deg, transparent 49.72%, rgba(211, 78, 78, 0.92) 49.72%, rgba(211, 78, 78, 0.92) 50.28%, transparent 50.28%),
+                linear-gradient(0deg, transparent 49.72%, rgba(84, 177, 112, 0.82) 49.72%, rgba(84, 177, 112, 0.82) 50.28%, transparent 50.28%);
+            background-size: 42px 42px, 42px 42px, 8.4px 8.4px, 8.4px 8.4px, 100% 100%, 100% 100%;
+            transform: perspective(560px) rotateX(58deg);
             transform-origin: center bottom;
         }
 
         .viewport-stage::after {
             height: 28%;
-            background: linear-gradient(transparent, rgba(6, 9, 13, 0.72));
+            background: linear-gradient(transparent, rgba(18, 18, 18, 0.42));
         }
 
         .viewport-empty {
