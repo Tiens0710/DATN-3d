@@ -311,6 +311,7 @@
         model-viewer {
             width: 100%;
             height: 100%;
+            background: transparent !important;
             --poster-color: transparent;
         }
 
@@ -318,7 +319,36 @@
             position: relative;
             width: 100%;
             height: 100%;
-            background: #0b0b0e;
+            overflow: hidden;
+            isolation: isolate;
+            background:
+                radial-gradient(circle at 50% 30%, rgba(83, 88, 95, .28), transparent 46%),
+                linear-gradient(180deg, #3a3d41 0%, #34373b 46%, #292c30 100%);
+        }
+
+        .viewer-stage::before {
+            content: "";
+            position: absolute;
+            top: 42%;
+            right: -22%;
+            bottom: -48%;
+            left: -22%;
+            z-index: 0;
+            pointer-events: none;
+            opacity: .72;
+            background:
+                linear-gradient(rgba(206, 211, 216, .14) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(206, 211, 216, .14) 1px, transparent 1px),
+                linear-gradient(rgba(206, 211, 216, .05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(206, 211, 216, .05) 1px, transparent 1px);
+            background-size: 48px 48px, 48px 48px, 12px 12px, 12px 12px;
+            transform: perspective(520px) rotateX(59deg);
+            transform-origin: center top;
+        }
+
+        .viewer-stage model-viewer {
+            position: relative;
+            z-index: 1;
         }
 
         /* Grid pattern behind canvas */
@@ -331,6 +361,7 @@
         /* Liquid Glass Controls Overlay */
         .viewer-controls {
             position: absolute;
+            z-index: 5;
             bottom: 12px;
             left: 50%;
             transform: translateX(-50%);
@@ -1218,34 +1249,101 @@
             overflow: hidden;
             border-radius: 8px;
             background:
-                radial-gradient(circle at 50% 42%, rgba(226, 230, 235, .94), rgba(151, 158, 168, .86) 48%, rgba(48, 53, 61, .96)),
-                #686f78;
+                radial-gradient(circle at 50% 30%, rgba(83, 88, 95, .28), transparent 46%),
+                linear-gradient(180deg, #3a3d41 0%, #34373b 46%, #292c30 100%);
             box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+            isolation: isolate;
+        }
+
+        .viewport-stage::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.04) 48%, rgba(0,0,0,.18) 100%);
         }
 
         .viewport-stage::after {
             content: "";
             position: absolute;
-            inset: auto 0 0;
-            height: 34%;
+            inset: 42% 0 0;
+            z-index: 0;
             pointer-events: none;
-            background: linear-gradient(transparent, rgba(0,0,0,.25));
+            background: linear-gradient(180deg, rgba(255,255,255,.025), transparent 24%);
+        }
+
+        /* Blender-like perspective floor: major cells plus smaller subdivisions. */
+        .viewport-grid {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .viewport-grid-plane {
+            position: absolute;
+            top: 42%;
+            right: -22%;
+            bottom: -48%;
+            left: -22%;
+            opacity: .82;
+            background:
+                linear-gradient(rgba(206, 211, 216, .15) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(206, 211, 216, .15) 1px, transparent 1px),
+                linear-gradient(rgba(206, 211, 216, .055) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(206, 211, 216, .055) 1px, transparent 1px);
+            background-size: 56px 56px, 56px 56px, 14px 14px, 14px 14px;
+            transform: perspective(620px) rotateX(59deg);
+            transform-origin: center top;
+        }
+
+        .viewport-grid-horizon {
+            position: absolute;
+            top: 42%;
+            right: 0;
+            left: 0;
+            height: 1px;
+            background: rgba(211, 216, 221, .2);
+            box-shadow: 0 1px 0 rgba(0, 0, 0, .16);
+        }
+
+        .viewport-grid-axis {
+            position: absolute;
+            top: 42%;
+            left: 50%;
+            width: 70%;
+            height: 2px;
+            border-radius: 999px;
+            transform-origin: 0 50%;
+            opacity: .86;
+        }
+
+        .viewport-grid-axis-x {
+            background: linear-gradient(90deg, rgba(214, 74, 80, .8), rgba(214, 74, 80, .06));
+            transform: rotate(9deg) scaleY(.7);
+        }
+
+        .viewport-grid-axis-y {
+            background: linear-gradient(90deg, rgba(75, 169, 108, .8), rgba(75, 169, 108, .06));
+            transform: rotate(171deg) scaleY(.7);
         }
 
         #spatial-global-viewer {
             position: absolute;
             inset: 0;
-            z-index: 2;
+            z-index: 3;
             width: 100%;
             height: 100%;
-            background: transparent;
+            background: transparent !important;
             --poster-color: transparent;
         }
 
         .viewport-empty {
             position: absolute;
             inset: 0;
-            z-index: 1;
+            z-index: 2;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -2153,6 +2251,37 @@
             box-shadow: 0 0 0 2px rgba(132, 116, 232, .18), 0 12px 30px rgba(0, 0, 0, .2);
         }
 
+        /* Final viewport layering: keep the Blender-like grid behind the GLB. */
+        .viewport-stage {
+            isolation: isolate;
+            background:
+                radial-gradient(circle at 50% 30%, rgba(83, 88, 95, .28), transparent 46%),
+                linear-gradient(180deg, #3a3d41 0%, #34373b 46%, #292c30 100%);
+        }
+
+        .viewport-stage::before {
+            inset: 0;
+            z-index: 0;
+            background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.04) 48%, rgba(0,0,0,.18) 100%);
+            transform: none;
+        }
+
+        .viewport-stage::after {
+            inset: 42% 0 0;
+            z-index: 0;
+            height: auto;
+            background: linear-gradient(180deg, rgba(255,255,255,.025), transparent 24%);
+        }
+
+        #spatial-global-viewer {
+            z-index: 3;
+            background: transparent !important;
+        }
+
+        .viewport-empty {
+            z-index: 2;
+        }
+
         .panel-bar {
             height: 44px;
             min-height: 44px;
@@ -2642,6 +2771,12 @@
                 </div>
 
                 <div class="viewport-stage">
+                    <div class="viewport-grid" aria-hidden="true">
+                        <div class="viewport-grid-plane"></div>
+                        <div class="viewport-grid-horizon"></div>
+                        <div class="viewport-grid-axis viewport-grid-axis-x"></div>
+                        <div class="viewport-grid-axis viewport-grid-axis-y"></div>
+                    </div>
                     <div class="viewport-empty" id="spatial-viewport-empty">
                         <div class="viewport-empty-mark"><i data-lucide="box"></i></div>
                         <strong>Scene preview</strong>
@@ -4625,7 +4760,7 @@
             if (this._lastGLBUrl !== this.properties.sceneUrl) {
                 this._lastGLBUrl = this.properties.sceneUrl;
                 
-                viewer.innerHTML = `<div style="color: #a1a1aa; font-family: 'Outfit'; display: flex; align-items: center; justify-content: center; height: 100%; background: #0b0b0e;">⏳ Đang nạp mô hình 3D...</div>`;
+                viewer.innerHTML = `<div style="color: #d1d5db; font-family: 'Outfit'; display: flex; align-items: center; justify-content: center; height: 100%; background: #34373b;">⏳ Đang nạp mô hình 3D...</div>`;
                 
                 fetch(this.properties.sceneUrl, {
                     headers: { "ngrok-skip-browser-warning": "69420" }
@@ -4650,7 +4785,7 @@
                         alt="DATN Interactive 3D Scene Combined Output"
                         shadow-intensity="1.5"
                         exposure="1.0"
-                        style="background-color: #0b0b0e; width: 100%; height: 100%;">
+                        style="background-color: transparent; width: 100%; height: 100%;">
                         </model-viewer>
                         <div class="viewer-controls">
                             <button class="viewer-btn" id="btn-spin-${this.id}">Stop Spin</button>
@@ -4738,7 +4873,7 @@
                 .catch(err => {
                     writeLog(`❌ Lỗi nạp mô hình 3D: ${err.message}`, "error");
                     setSpatialViewportError("Preview failed");
-                    viewer.innerHTML = `<div style="color: #f44336; font-family: 'Outfit'; display: flex; align-items: center; justify-content: center; height: 100%; background: #0b0b0e; padding: 10px; text-align: center;">❌ Lỗi nạp mô hình 3D: ${err.message}</div>`;
+                    viewer.innerHTML = `<div style="color: #f09a9f; font-family: 'Outfit'; display: flex; align-items: center; justify-content: center; height: 100%; background: #34373b; padding: 10px; text-align: center;">❌ Lỗi nạp mô hình 3D: ${err.message}</div>`;
                 });
             }
             this.position3DViewer();
