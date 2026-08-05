@@ -1,6 +1,7 @@
 """Resident Stable Diffusion 3.5 worker for per-object image generation."""
 
 import argparse
+import gc
 import json
 import os
 import shutil
@@ -29,6 +30,7 @@ SD35_CACHE_DIR = "/kaggle/working/sd35_medium_cache_v1"
 
 app = FastAPI(title="DATN SD3.5 Worker", version="1.0.0")
 pipeline = None
+pipeline_device = None
 load_error = None
 inference_lock = threading.Lock()
 
@@ -61,8 +63,32 @@ def _create_pipeline(*, force_download: bool = False):
     ).to("cuda")
 
 
+def _safe_cuda_cleanup() -> None:
+    gc.collect()
+    try:
+        torch.cuda.empty_cache()
+    except Exception as exc:  # CUDA context may already be in an error state.
+        print(f"CUDA cache cleanup skipped: {exc}", flush=True)
+
+
+def _move_pipeline(device: str) -> None:
+    global pipeline_device
+
+    if pipeline is None:
+        raise RuntimeError("SD3.5 pipeline is not loaded")
+    if pipeline_device == device:
+        return
+
+    print(f"Moving SD3.5 pipeline to {device}...", flush=True)
+    pipeline.to(device)
+    pipeline_device = device
+    if device == "cpu":
+        _safe_cuda_cleanup()
+    print(f"SD3.5 pipeline is now on {device}.", flush=True)
+
+
 def _load_pipeline() -> None:
-    global pipeline, load_error
+    global pipeline, pipeline_device, load_error
 
     try:
         print(f"Diffusers version: {diffusers.__version__}", flush=True)
@@ -80,6 +106,7 @@ def _load_pipeline() -> None:
             loaded = _create_pipeline(force_download=True)
 
         pipeline = loaded
+        pipeline_device = "cuda"
         load_error = None
         print("SD3.5 worker ready.", flush=True)
     except Exception as exc:
@@ -94,7 +121,30 @@ def startup_event() -> None:
 
 @app.get("/health")
 def health() -> dict:
-    return {"ready": pipeline is not None, "error": load_error}
+    return {
+        "ready": pipeline is not None,
+        "error": load_error,
+        "device": pipeline_device,
+    }
+
+
+@app.post("/offload")
+def offload() -> dict:
+    if pipeline is None:
+        raise HTTPException(
+            status_code=503,
+            detail=load_error or "SD3.5 model is still loading",
+        )
+
+    with inference_lock:
+        try:
+            _move_pipeline("cpu")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to offload SD3.5 pipeline: {exc}",
+            ) from exc
+    return {"ready": True, "device": pipeline_device}
 
 
 @app.post("/generate")
@@ -114,6 +164,7 @@ def generate(payload: GenerateRequest) -> dict:
 
     with inference_lock:
         try:
+            _move_pipeline("cuda")
             for job in jobs:
                 print(
                     f"Generating isolated object: {job['name']} {job['label']}",
@@ -129,7 +180,7 @@ def generate(payload: GenerateRequest) -> dict:
                     height=768,
                 ).images[0]
                 image.save(job["image_path"])
-                torch.cuda.empty_cache()
+                _safe_cuda_cleanup()
 
             with open(OBJECT_MANIFEST, "w", encoding="utf-8") as file:
                 json.dump(jobs, file, ensure_ascii=False, indent=2)
@@ -139,7 +190,15 @@ def generate(payload: GenerateRequest) -> dict:
                 detail=f"SD3.5 object generation failed: {exc}",
             ) from exc
         finally:
-            torch.cuda.empty_cache()
+            try:
+                _move_pipeline("cpu")
+            except Exception as cleanup_exc:
+                print(
+                    f"Failed to offload SD3.5 pipeline after generation: "
+                    f"{cleanup_exc}",
+                    flush=True,
+                )
+                _safe_cuda_cleanup()
 
     return {"jobs": jobs}
 
