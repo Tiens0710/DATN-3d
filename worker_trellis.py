@@ -32,14 +32,14 @@ pipeline = None
 postprocessing_utils = None
 load_error = None
 inference_lock = threading.Lock()
-TRELLIS_SPARSE_STEPS = int(os.environ.get("TRELLIS_SPARSE_STEPS", "8"))
-TRELLIS_SLAT_STEPS = int(os.environ.get("TRELLIS_SLAT_STEPS", "8"))
-TRELLIS_TEXTURE_SIZE = int(os.environ.get("TRELLIS_TEXTURE_SIZE", "768"))
-TRELLIS_SIMPLIFY = float(os.environ.get("TRELLIS_SIMPLIFY", "0.90"))
-TRELLIS_TEXTURE_MODE = os.environ.get("TRELLIS_TEXTURE_MODE", "fast").lower()
-TRELLIS_TEXTURE_VIEWS = int(os.environ.get("TRELLIS_TEXTURE_VIEWS", "48"))
+TRELLIS_SPARSE_STEPS = int(os.environ.get("TRELLIS_SPARSE_STEPS", "16"))
+TRELLIS_SLAT_STEPS = int(os.environ.get("TRELLIS_SLAT_STEPS", "16"))
+TRELLIS_TEXTURE_SIZE = int(os.environ.get("TRELLIS_TEXTURE_SIZE", "1024"))
+TRELLIS_SIMPLIFY = float(os.environ.get("TRELLIS_SIMPLIFY", "0.98"))
+TRELLIS_TEXTURE_MODE = os.environ.get("TRELLIS_TEXTURE_MODE", "opt").lower()
+TRELLIS_TEXTURE_VIEWS = int(os.environ.get("TRELLIS_TEXTURE_VIEWS", "64"))
 TRELLIS_BAKE_RESOLUTION = int(
-    os.environ.get("TRELLIS_BAKE_RESOLUTION", "512")
+    os.environ.get("TRELLIS_BAKE_RESOLUTION", "768")
 )
 TRELLIS_FILL_HOLES = os.environ.get("TRELLIS_FILL_HOLES", "0").lower() in {
     "1",
