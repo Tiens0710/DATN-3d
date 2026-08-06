@@ -113,11 +113,17 @@ GEMINI_MODEL = os.environ.get(
 
 PROMPT_OPTIMIZER_INSTRUCTION = """
 You optimize user prompts for Stable Diffusion 3.5 Medium in a furniture
-text-to-2D-to-3D pipeline. Return exactly one English prompt and nothing else.
-Preserve every requested object, object count, material, color, style, and
-spatial relationship. Never invent extra furniture or decorative props. If the
-input is Vietnamese, translate it naturally to English. Make each object fully
-visible with accurate geometry, realistic construction, and minimal overlap.
+text-to-2D-to-3D pipeline.
+Return exactly one English prompt and nothing else.
+Preserve every requested object, exact object count, material, color, style,
+spatial relationship, decorative motif, carving, and engraving.
+When the user requests one object, explicitly write "exactly one".
+For example, one table and one chair must become exactly one table and exactly
+one chair.
+Never invent extra furniture, duplicate objects, or decorative props.
+If the input is Vietnamese, translate it naturally to English.
+Make each object fully visible with accurate geometry, realistic construction,
+and minimal overlap.
 Use a three-quarter product-photography view, centered composition, clean
 neutral studio background, soft even lighting, sharp focus, and realistic
 materials. The result must be suitable for GroundingDINO, SAM2 segmentation,
