@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SpatialFlow - Furniture 3D Studio</title>
+    <title>DATN - Furniture 3D Studio</title>
     <!-- Google Fonts - Outfit -->
     <link
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
@@ -610,8 +610,7 @@
             flex-direction: column;
         }
 
-        .sidebar-tabs,
-        .right-tabs {
+        .sidebar-tabs {
             height: 36px;
             flex: 0 0 36px;
             display: flex;
@@ -620,8 +619,7 @@
             background: #1b1c1e;
         }
 
-        .sidebar-tab,
-        .right-tab {
+        .sidebar-tab {
             height: 100%;
             padding: 0 12px;
             border: 0;
@@ -631,15 +629,13 @@
             font-size: 11px;
         }
 
-        .sidebar-tab.active,
-        .right-tab.active {
+        .sidebar-tab.active {
             color: var(--comfy-text);
             background: var(--comfy-panel);
             box-shadow: inset 0 -2px 0 var(--comfy-accent);
         }
 
-        .sidebar-tab:disabled,
-        .right-tab:disabled {
+        .sidebar-tab:disabled {
             opacity: 0.38;
             cursor: default;
         }
@@ -764,53 +760,6 @@
             font-family: "Fira Code", monospace;
             font-size: 9px;
             pointer-events: none;
-        }
-
-        .queue-card {
-            padding: 12px;
-            border-bottom: 1px solid var(--comfy-border);
-        }
-
-        .queue-card-title {
-            display: flex;
-            justify-content: space-between;
-            color: var(--comfy-muted);
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .queue-state {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-top: 10px;
-            padding: 9px;
-            background: #18191b;
-            border: 1px solid var(--comfy-border-soft);
-            border-radius: 4px;
-            font-size: 11px;
-        }
-
-        .queue-state-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: #73767c;
-        }
-
-        .queue-state.running .queue-state-dot {
-            background: #f0b429;
-            box-shadow: 0 0 8px rgba(240, 180, 41, 0.6);
-        }
-
-        .queue-state.success .queue-state-dot {
-            background: var(--comfy-green);
-        }
-
-        .queue-state.error .queue-state-dot {
-            background: #f05d5e;
-            box-shadow: 0 0 8px rgba(240, 93, 94, 0.55);
         }
 
         #log-panel {
@@ -1377,42 +1326,7 @@
             color: #4e5661;
         }
 
-        .orientation-widget {
-            position: absolute;
-            z-index: 5;
-            top: 18px;
-            right: 18px;
-            width: 74px;
-            height: 74px;
-            border-radius: 50%;
-            border: 1px solid rgba(255,255,255,.42);
-            background: rgba(20, 24, 31, .24);
-            backdrop-filter: blur(9px);
-            color: rgba(255,255,255,.9);
-            display: grid;
-            place-items: center;
-            font-size: 10px;
-        }
-
-        .orientation-widget::before,
-        .orientation-widget::after {
-            content: "";
-            position: absolute;
-            background: rgba(139, 123, 255, .85);
-        }
-
-        .orientation-widget::before {
-            width: 1px;
-            height: 88px;
-        }
-
-        .orientation-widget::after {
-            width: 88px;
-            height: 1px;
-        }
-
-        .viewport-controls,
-        .render-controls {
+        .viewport-controls {
             position: absolute;
             z-index: 6;
             padding: 10px;
@@ -1428,12 +1342,6 @@
             top: 112px;
             right: 18px;
             width: 104px;
-        }
-
-        .render-controls {
-            right: 18px;
-            bottom: 62px;
-            width: 208px;
         }
 
         .control-title {
@@ -1459,33 +1367,6 @@
         .view-control-btn:hover {
             background: rgba(255,255,255,.08);
             color: #fff;
-        }
-
-        .render-segments {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            padding: 3px;
-            border: 1px solid rgba(255,255,255,.14);
-            border-radius: 7px;
-            background: rgba(0,0,0,.18);
-        }
-
-        .render-segment {
-            min-height: 28px;
-            padding: 4px;
-            justify-content: center;
-            border: 0;
-            border-radius: 5px;
-            background: transparent;
-            color: #c5cad2;
-            box-shadow: none;
-            font-size: 10px;
-            font-weight: 400;
-        }
-
-        .render-segment.active {
-            color: #fff;
-            background: rgba(255,255,255,.12);
         }
 
         .viewport-download {
@@ -2034,7 +1915,6 @@
         }
 
         .viewport-controls,
-        .render-controls,
         .scene-telemetry {
             border-radius: 7px;
             border-color: rgba(104, 118, 135, 0.42);
@@ -2049,10 +1929,6 @@
 
         .view-control-btn {
             gap: 7px;
-        }
-
-        .render-controls {
-            bottom: 68px;
         }
 
         .scene-telemetry {
@@ -2093,12 +1969,6 @@
             min-width: 164px;
             border-radius: 7px;
             background: #171d25;
-        }
-
-        .orientation-widget {
-            width: 62px;
-            height: 62px;
-            background: rgba(12, 17, 23, 0.72);
         }
 
         .left-sidebar,
@@ -2213,11 +2083,6 @@
                 right: 10px;
             }
 
-            .render-controls {
-                right: 10px;
-                bottom: 62px;
-                width: 190px;
-            }
         }
 
         /* ================================================================
@@ -2428,8 +2293,7 @@
             background: rgba(17, 23, 31, .985);
         }
 
-        .sidebar-content,
-        .queue-card {
+        .sidebar-content {
             scrollbar-color: #3c4857 transparent;
         }
 
@@ -2583,8 +2447,7 @@
             color: #fff;
         }
 
-        .viewport-controls.is-hidden,
-        .render-controls.is-hidden {
+        .viewport-controls.is-hidden {
             display: none;
         }
 
@@ -2620,6 +2483,379 @@
             }
         }
 
+        /* Blender-inspired viewport finish: neutral studio background,
+           perspective floor grid, horizon and readable world axes. */
+        .viewport-stage {
+            isolation: isolate;
+            background:
+                radial-gradient(ellipse at 50% 24%, rgba(255, 255, 255, .075) 0%, rgba(255, 255, 255, 0) 44%),
+                linear-gradient(180deg, #464646 0%, #3c3c3c 42%, #303030 100%);
+        }
+
+        .viewport-stage::before {
+            inset: 0;
+            z-index: 0;
+            background: linear-gradient(180deg, rgba(255, 255, 255, .025), transparent 35%, rgba(0, 0, 0, .14) 100%);
+            transform: none;
+        }
+
+        .viewport-stage::after {
+            top: 40%;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            height: auto;
+            z-index: 0;
+            background: linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(0, 0, 0, .14) 72%, rgba(0, 0, 0, .24));
+        }
+
+        .viewport-grid {
+            z-index: 1;
+        }
+
+        .viewport-grid-plane {
+            top: 40%;
+            right: -30%;
+            bottom: -58%;
+            left: -30%;
+            opacity: .9;
+            background:
+                linear-gradient(rgba(202, 202, 202, .16) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(202, 202, 202, .16) 1px, transparent 1px),
+                linear-gradient(rgba(202, 202, 202, .06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(202, 202, 202, .06) 1px, transparent 1px);
+            background-size: 64px 64px, 64px 64px, 16px 16px, 16px 16px;
+            transform: perspective(720px) rotateX(61deg);
+            transform-origin: center top;
+            mask-image: linear-gradient(180deg, transparent 0%, #000 10%, #000 78%, transparent 100%);
+            -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 10%, #000 78%, transparent 100%);
+        }
+
+        .viewport-grid-horizon {
+            top: 40%;
+            height: 1px;
+            background: rgba(220, 220, 220, .22);
+            box-shadow: 0 1px 0 rgba(0, 0, 0, .28), 0 0 12px rgba(255, 255, 255, .06);
+        }
+
+        .viewport-grid-axis {
+            display: none;
+            top: 40%;
+            height: 2px;
+            opacity: .95;
+            filter: drop-shadow(0 0 2px rgba(0, 0, 0, .35));
+        }
+
+        .viewport-grid-axis-x {
+            background: linear-gradient(90deg, rgba(215, 67, 73, .12), rgba(215, 67, 73, .96) 18%, rgba(215, 67, 73, .22));
+            transform: rotate(8deg) scaleY(.72);
+        }
+
+        .viewport-grid-axis-y {
+            background: linear-gradient(90deg, rgba(73, 171, 107, .12), rgba(73, 171, 107, .96) 18%, rgba(73, 171, 107, .22));
+            transform: rotate(172deg) scaleY(.72);
+        }
+
+        #spatial-global-viewer {
+            z-index: 3;
+            background: transparent !important;
+            --poster-color: transparent;
+        }
+
+        /* Resizable Scene Viewport: drag the left edge to give the graph more room. */
+        .viewport-panel {
+            position: relative;
+        }
+
+        .viewport-resizer {
+            position: absolute;
+            z-index: 20;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 12px;
+            cursor: col-resize;
+            touch-action: none;
+        }
+
+        .viewport-resizer::before {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 2px;
+            height: 132px;
+            border-radius: 2px;
+            background: repeating-linear-gradient(
+                to bottom,
+                rgba(180, 188, 198, .56) 0 2px,
+                transparent 2px 11px
+            );
+            opacity: .48;
+            transform: translate(-50%, -50%);
+            transition: opacity .16s ease, background .16s ease;
+        }
+
+        .viewport-resizer::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 1px;
+            background: rgba(126, 139, 153, .26);
+            transition: background .16s ease, box-shadow .16s ease;
+        }
+
+        .viewport-resizer:hover::before,
+        .viewport-resizer:focus-visible::before {
+            opacity: .95;
+            background: repeating-linear-gradient(
+                to bottom,
+                rgba(224, 230, 237, .9) 0 2px,
+                transparent 2px 10px
+            );
+        }
+
+        .viewport-resizer:hover::after,
+        .viewport-resizer:focus-visible::after {
+            background: var(--sf-purple-2);
+            box-shadow: 0 0 10px rgba(132, 116, 232, .42);
+        }
+
+        .workspace-shell.spatial-workspace {
+            --viewport-width: minmax(390px, .92fr);
+        }
+
+        @media (min-width: 861px) {
+            .workspace-shell.spatial-workspace {
+                grid-template-columns: 176px minmax(0, 1fr) var(--viewport-width);
+            }
+        }
+
+        @media (min-width: 861px) and (max-width: 1180px) {
+            .workspace-shell.spatial-workspace {
+                grid-template-columns: 160px minmax(0, 1fr) var(--viewport-width);
+            }
+        }
+
+        .is-resizing-viewport,
+        .is-resizing-viewport * {
+            cursor: col-resize !important;
+            user-select: none !important;
+        }
+
+        @media (max-width: 860px) {
+            .viewport-resizer {
+                display: none;
+            }
+        }
+
+        /* Readable execution log panel. */
+        .right-sidebar {
+            width: min(520px, calc(100vw - 40px));
+            height: 380px;
+        }
+
+        #log-panel {
+            margin: 10px;
+            padding: 0;
+            border: 1px solid #2d3948;
+            background: #0c1118;
+        }
+
+        #log-panel h3 {
+            padding: 12px 15px;
+            color: #f2f5f8;
+            font-size: 12px;
+            letter-spacing: .55px;
+        }
+
+        #log-content {
+            padding: 14px 15px;
+            color: #e5e7eb;
+            font-size: 13px;
+            line-height: 1.7;
+            letter-spacing: 0;
+        }
+
+        #log-content > div {
+            margin-bottom: 6px !important;
+        }
+
+        .log-actions {
+            gap: 14px;
+        }
+
+        #btn-copy-logs,
+        #btn-clear-logs {
+            font-size: 11px;
+        }
+
+        @media (max-width: 860px) {
+            .right-sidebar {
+                right: 12px;
+                bottom: 12px;
+                width: calc(100vw - 24px);
+                height: min(380px, 58vh);
+            }
+        }
+
+        /* Compact Blender-style 360° orientation gizmo. */
+        .orientation-widget {
+            position: absolute;
+            z-index: 5;
+            top: 16px;
+            right: 18px;
+            width: 78px;
+            height: 78px;
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(218, 225, 234, .38);
+            border-radius: 50%;
+            background:
+                radial-gradient(circle at 35% 28%, rgba(255, 255, 255, .12), transparent 35%),
+                rgba(14, 19, 27, .78);
+            box-shadow:
+                inset 0 0 0 1px rgba(255, 255, 255, .045),
+                0 10px 24px rgba(0, 0, 0, .28),
+                0 0 18px rgba(132, 116, 232, .08);
+            color: #f1f4f8;
+            pointer-events: none;
+        }
+
+        .orientation-widget::before {
+            content: "";
+            position: absolute;
+            inset: 8px;
+            border: 1px solid rgba(191, 201, 214, .18);
+            border-radius: 50%;
+        }
+
+        .orientation-widget::after {
+            content: "";
+            position: absolute;
+            inset: 17px;
+            border: 1px dashed rgba(168, 179, 193, .18);
+            border-radius: 50%;
+        }
+
+        .orientation-ring {
+            position: absolute;
+            inset: 5px;
+            border: 2px solid transparent;
+            border-top-color: rgba(151, 137, 255, .95);
+            border-right-color: rgba(151, 137, 255, .42);
+            border-radius: 50%;
+            transform: rotate(-28deg);
+        }
+
+        .orientation-widget strong {
+            position: relative;
+            z-index: 1;
+            font-family: "Fira Code", monospace;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: -.35px;
+            text-shadow: 0 1px 5px rgba(0, 0, 0, .55);
+        }
+
+        .orientation-tick,
+        .orientation-dot {
+            position: absolute;
+            z-index: 1;
+            display: block;
+        }
+
+        .orientation-tick {
+            background: rgba(218, 225, 234, .58);
+            border-radius: 999px;
+        }
+
+        .orientation-tick-top,
+        .orientation-tick-bottom {
+            left: 50%;
+            width: 1px;
+            height: 6px;
+            transform: translateX(-50%);
+        }
+
+        .orientation-tick-top { top: 5px; }
+        .orientation-tick-bottom { bottom: 5px; }
+
+        .orientation-tick-left,
+        .orientation-tick-right {
+            top: 50%;
+            width: 6px;
+            height: 1px;
+            transform: translateY(-50%);
+        }
+
+        .orientation-tick-left { left: 5px; }
+        .orientation-tick-right { right: 5px; }
+
+        .orientation-dot {
+            width: 4px;
+            height: 4px;
+            border: 1px solid rgba(255, 255, 255, .42);
+            border-radius: 50%;
+            background: #687482;
+        }
+
+        .orientation-dot-top {
+            top: 15px;
+            left: 50%;
+            background: #7d9ee8;
+            transform: translateX(-50%);
+        }
+
+        .orientation-dot-right {
+            top: 50%;
+            right: 15px;
+            background: #8b79e8;
+            transform: translateY(-50%);
+        }
+
+        .orientation-dot-bottom {
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .orientation-dot-left {
+            top: 50%;
+            left: 15px;
+            transform: translateY(-50%);
+        }
+
+        @media (max-width: 860px) {
+            .orientation-widget {
+                top: 12px;
+                right: 12px;
+                width: 66px;
+                height: 66px;
+            }
+
+            .orientation-widget::after { inset: 15px; }
+            .orientation-widget strong { font-size: 10px; }
+        }
+
+        .viewport-download {
+            right: 18px;
+            bottom: 18px;
+            left: auto;
+            min-width: 164px;
+            transform: none;
+        }
+
+        @media (max-width: 860px) {
+            .viewport-download {
+                right: 12px;
+                bottom: 14px;
+                min-width: 150px;
+            }
+        }
+
     </style>
 </head>
 
@@ -2630,8 +2866,8 @@
         <header class="spatial-header">
             <div class="spatial-header-left">
                 <div class="spatial-brand">
-                    <div class="brand-mark">S</div>
-                    <div class="brand-name">SpatialFlow</div>
+                    <div class="brand-mark" aria-label="DATN logo">D</div>
+                    <div class="brand-name">DATN</div>
                 </div>
                 <div class="project-context">
                     <div class="project-name">Furniture 3D Studio</div>
@@ -2645,9 +2881,6 @@
                         <button type="button" id="btn-load-workflow">Load workflow</button>
                     </div>
                 </div>
-                <button type="button" id="btn-menu-edit">Edit</button>
-                <button type="button" id="btn-menu-view">View</button>
-                <button type="button" id="btn-menu-help">Help</button>
                 </nav>
             </div>
 
@@ -2703,13 +2936,6 @@
                 <button class="rail-item" id="btn-toggle-logs" type="button">
                     <span class="rail-icon"><i data-lucide="list-tree"></i></span><span>Logs</span>
                 </button>
-                <div class="rail-spacer"></div>
-                <button class="rail-item" id="btn-rail-help" type="button">
-                    <span class="rail-icon"><i data-lucide="circle-help"></i></span><span>Help</span>
-                </button>
-                <button class="rail-item" id="btn-rail-settings" type="button">
-                    <span class="rail-icon"><i data-lucide="settings"></i></span><span>Settings</span>
-                </button>
             </aside>
 
             <section class="graph-panel">
@@ -2724,7 +2950,6 @@
                     <div class="panel-actions">
                         <button class="panel-icon-btn" id="btn-panel-library" type="button" title="Node library"><i data-lucide="panel-left-open"></i></button>
                         <button class="panel-icon-btn" id="btn-panel-logs" type="button" title="Execution logs"><i data-lucide="terminal-square"></i></button>
-                        <button class="panel-icon-btn" id="btn-panel-more" type="button" title="Workflow actions"><i data-lucide="ellipsis"></i></button>
                     </div>
                 </div>
 
@@ -2747,6 +2972,17 @@
             </section>
 
             <section class="viewport-panel">
+                <div
+                    class="viewport-resizer"
+                    id="viewport-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize Scene Viewport"
+                    aria-valuemin="280"
+                    aria-valuemax="900"
+                    tabindex="0">
+                    <span class="viewport-resizer-grip" aria-hidden="true"></span>
+                </div>
                 <div class="panel-bar">
                     <div class="panel-heading">
                         <div class="panel-heading-copy">
@@ -2793,7 +3029,18 @@
                         hidden>
                     </model-viewer>
 
-                    <div class="orientation-widget">360°</div>
+                    <div class="orientation-widget" aria-label="Viewport 360 degree orientation">
+                        <span class="orientation-ring" aria-hidden="true"></span>
+                        <span class="orientation-tick orientation-tick-top" aria-hidden="true"></span>
+                        <span class="orientation-tick orientation-tick-right" aria-hidden="true"></span>
+                        <span class="orientation-tick orientation-tick-bottom" aria-hidden="true"></span>
+                        <span class="orientation-tick orientation-tick-left" aria-hidden="true"></span>
+                        <span class="orientation-dot orientation-dot-top" aria-hidden="true"></span>
+                        <span class="orientation-dot orientation-dot-right" aria-hidden="true"></span>
+                        <span class="orientation-dot orientation-dot-bottom" aria-hidden="true"></span>
+                        <span class="orientation-dot orientation-dot-left" aria-hidden="true"></span>
+                        <strong>360°</strong>
+                    </div>
 
                     <div class="viewport-controls">
                         <div class="control-title">View Controls</div>
@@ -2801,15 +3048,6 @@
                         <button class="view-control-btn" id="btn-view-front" type="button"><i data-lucide="move-horizontal"></i>Front</button>
                         <button class="view-control-btn" id="btn-view-top" type="button"><i data-lucide="arrow-down-to-line"></i>Top</button>
                         <button class="view-control-btn" id="btn-view-side" type="button"><i data-lucide="panel-right"></i>Side</button>
-                    </div>
-
-                    <div class="render-controls">
-                        <div class="control-title">Render Mode</div>
-                        <div class="render-segments">
-                            <button class="render-segment" type="button">Shaded</button>
-                            <button class="render-segment" type="button">Wireframe</button>
-                            <button class="render-segment active" type="button">Textured</button>
-                        </div>
                     </div>
 
                     <div class="scene-telemetry" aria-label="Scene telemetry">
@@ -2873,20 +3111,6 @@
         </aside>
 
         <aside class="right-sidebar" id="execution-drawer">
-            <div class="right-tabs">
-                <button class="right-tab active">Execution</button>
-                <button class="right-tab" disabled>History</button>
-            </div>
-            <div class="queue-card">
-                <div class="queue-card-title">
-                    <span>Current execution</span>
-                    <span id="queue-count">0 running</span>
-                </div>
-                <div id="queue-state" class="queue-state">
-                    <span class="queue-state-dot"></span>
-                    <span id="queue-state-label">Idle — ready to run</span>
-                </div>
-            </div>
             <div id="log-panel">
                 <h3>Execution Log
                     <div class="log-actions">
@@ -3013,6 +3237,75 @@
         document.getElementById("btn-panel-logs")?.addEventListener("click", () => toggleDrawer(executionDrawer));
 
         const spatialViewer = document.getElementById("spatial-global-viewer");
+        const spatialWorkspace = document.querySelector(".workspace-shell.spatial-workspace");
+        const viewportPanel = document.querySelector(".viewport-panel");
+        const viewportResizer = document.getElementById("viewport-resizer");
+        const viewportResizeMin = 280;
+        const viewportResizeMax = 900;
+        let viewportResizeState = null;
+
+        function getViewportResizeBounds() {
+            const workspaceWidth = spatialWorkspace?.getBoundingClientRect().width || viewportResizeMax;
+            const maxAvailable = Math.max(viewportResizeMin, Math.floor(workspaceWidth * .68));
+            return {
+                min: viewportResizeMin,
+                max: Math.min(viewportResizeMax, maxAvailable)
+            };
+        }
+
+        function setViewportWidth(width, persist = true) {
+            if (!spatialWorkspace) return;
+            const bounds = getViewportResizeBounds();
+            const nextWidth = Math.round(Math.max(bounds.min, Math.min(bounds.max, width)));
+            spatialWorkspace.style.setProperty("--viewport-width", `${nextWidth}px`);
+            viewportResizer?.setAttribute("aria-valuenow", String(nextWidth));
+            viewportResizer?.setAttribute("aria-valuemax", String(bounds.max));
+            if (persist) localStorage.setItem("datn-viewport-width", String(nextWidth));
+        }
+
+        const savedViewportWidth = Number.parseInt(localStorage.getItem("datn-viewport-width"), 10);
+        if (Number.isFinite(savedViewportWidth)) setViewportWidth(savedViewportWidth, false);
+
+        viewportResizer?.addEventListener("pointerdown", (event) => {
+            if (window.innerWidth <= 860 || !viewportPanel) return;
+            event.preventDefault();
+            viewportResizeState = {
+                pointerId: event.pointerId,
+                rightEdge: viewportPanel.getBoundingClientRect().right
+            };
+            viewportResizer.setPointerCapture?.(event.pointerId);
+            document.body.classList.add("is-resizing-viewport");
+        });
+
+        viewportResizer?.addEventListener("pointermove", (event) => {
+            if (!viewportResizeState || event.pointerId !== viewportResizeState.pointerId) return;
+            setViewportWidth(viewportResizeState.rightEdge - event.clientX);
+        });
+
+        function finishViewportResize() {
+            if (!viewportResizeState) return;
+            viewportResizeState = null;
+            document.body.classList.remove("is-resizing-viewport");
+        }
+
+        viewportResizer?.addEventListener("pointerup", finishViewportResize);
+        viewportResizer?.addEventListener("pointercancel", finishViewportResize);
+        viewportResizer?.addEventListener("lostpointercapture", finishViewportResize);
+        window.addEventListener("blur", finishViewportResize);
+
+        viewportResizer?.addEventListener("keydown", (event) => {
+            if (!viewportPanel || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+            event.preventDefault();
+            const currentWidth = viewportPanel.getBoundingClientRect().width;
+            setViewportWidth(currentWidth + (event.key === "ArrowLeft" ? 24 : -24));
+        });
+
+        window.addEventListener("resize", () => {
+            if (window.innerWidth <= 860 || !viewportPanel) return;
+            const currentWidth = viewportPanel.getBoundingClientRect().width;
+            setViewportWidth(currentWidth, false);
+        });
+
         document.getElementById("btn-view-spin")?.addEventListener("click", (event) => {
             if (!spatialViewer) return;
             if (spatialViewer.hasAttribute("auto-rotate")) {
@@ -3050,22 +3343,8 @@
             }
         });
 
-        document.querySelectorAll(".render-segment").forEach((button) => {
-            button.addEventListener("click", () => {
-                document.querySelectorAll(".render-segment").forEach((item) => item.classList.remove("active"));
-                button.classList.add("active");
-                if (button.textContent.trim() === "Wireframe") {
-                    writeLog("Model Viewer không hỗ trợ wireframe thật; đang giữ chế độ textured.", "info");
-                }
-            });
-        });
-
-        document.getElementById("btn-panel-more")?.addEventListener("click", () => {
-            saveWorkflowFile();
-        });
         document.getElementById("btn-viewport-options")?.addEventListener("click", () => {
             document.querySelector(".viewport-controls")?.classList.toggle("is-hidden");
-            document.querySelector(".render-controls")?.classList.toggle("is-hidden");
         });
 
 
@@ -3175,15 +3454,6 @@
         workflowFileInput.addEventListener("change", async () => {
             await loadWorkflowFile(workflowFileInput.files?.[0]);
             workflowFileInput.value = "";
-        });
-        document.getElementById("btn-menu-edit")?.addEventListener("click", () => {
-            document.getElementById("btn-reset-workflow")?.click();
-        });
-        document.getElementById("btn-menu-view")?.addEventListener("click", () => {
-            document.getElementById("btn-fit-view")?.click();
-        });
-        document.getElementById("btn-menu-help")?.addEventListener("click", () => {
-            document.getElementById("kaggle-modal").style.display = "flex";
         });
         document.addEventListener("click", (event) => {
             if (!event.target.closest(".header-menu-wrap")) closeHeaderMenus();
@@ -3300,7 +3570,7 @@
             const maxY = Math.max(...nodes.map((node) => node.pos[1] + node.size[1]));
             const graphWidth = Math.max(maxX - minX, 1);
             const graphHeight = Math.max(maxY - minY, 1);
-            const scale = Math.max(.28, Math.min(.62,
+            const scale = Math.max(.24, Math.min(.62,
                 (width - padding * 2) / graphWidth,
                 (height - padding * 2) / graphHeight
             ));
@@ -3504,9 +3774,9 @@
         LiteGraph.NODE_TITLE_COLOR = "#f2f2f2";
         LiteGraph.NODE_SELECTED_TITLE_COLOR = "#ffffff";
         LiteGraph.NODE_DEFAULT_SHAPE = "box";
-        LiteGraph.LINK_COLOR = "#8e959e";
-        LiteGraph.CONNECTING_LINK_COLOR = "#ffffff";
-        LiteGraph.DEFAULT_LINK_TYPE_WIDTH = 2;
+        LiteGraph.LINK_COLOR = "#687482";
+        LiteGraph.CONNECTING_LINK_COLOR = "#c6ced8";
+        LiteGraph.DEFAULT_LINK_TYPE_WIDTH = 1.5;
         LiteGraph.CANVAS_GRID_SIZE = 24;
         LiteGraph.NODE_TITLE_HEIGHT = 26;
         LiteGraph.NODE_SLOT_HEIGHT = 20;
@@ -3520,15 +3790,15 @@
 
         // ComfyUI wire colors by slot type
         LGraphCanvas.link_type_colors = {
-            "string": "#7ecb72",
-            "object": "#64a8e8",
-            "number": "#d8a95d",
-            "boolean": "#d981b5"
+            "string": "#789775",
+            "object": "#718aa3",
+            "number": "#ad946b",
+            "boolean": "#a47c91"
         };
 
         // ComfyUI-style smooth curved links
         canvas.render_connections_border = false;
-        canvas.connections_width = 2;
+        canvas.connections_width = 1.5;
         canvas.render_curved_connections = true;
         canvas.render_connection_arrows = false;
         canvas.highquality_render = true;
@@ -5026,39 +5296,39 @@
                 requestAnimationFrame(() => fitGraphToView(72));
                 writeLog("Flow hình ảnh đã được nạp: Upload → SAM2 → TRELLIS → Scene.", "info");
             } else {
-                // Prompt -> Gemini -> SD3.5
-                //    |        |          |
-                // Scene Graph -> Layout -> SAM2 -> TRELLIS -> Combiner
+                // Keep the text workflow as a readable left-to-right DAG.
+                // The upper branch creates the image; the lower branch builds
+                // the scene layout. Both meet at SAM2 before the 3D stages.
                 const nodePrompt = LiteGraph.createNode("datn/input_prompt");
-                nodePrompt.pos = [60, 80];
+                nodePrompt.pos = [60, 250];
                 graph.add(nodePrompt);
 
                 const nodeOptimizer = LiteGraph.createNode("datn/prompt_optimizer");
-                nodeOptimizer.pos = [450, 60];
+                nodeOptimizer.pos = [430, 140];
                 graph.add(nodeOptimizer);
 
                 const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
-                nodeSDXL.pos = [900, 40];
+                nodeSDXL.pos = [850, 100];
                 graph.add(nodeSDXL);
 
                 const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
-                nodeSceneGraph.pos = [60, 390];
+                nodeSceneGraph.pos = [430, 650];
                 graph.add(nodeSceneGraph);
 
                 const nodeLayout = LiteGraph.createNode("datn/layout_2d");
-                nodeLayout.pos = [450, 360];
+                nodeLayout.pos = [850, 620];
                 graph.add(nodeLayout);
 
                 const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
-                nodeSAM2.pos = [900, 450];
+                nodeSAM2.pos = [1360, 100];
                 graph.add(nodeSAM2);
 
                 const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
-                nodeTrellis.pos = [450, 900];
+                nodeTrellis.pos = [1860, 220];
                 graph.add(nodeTrellis);
 
                 const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
-                nodeCombiner.pos = [900, 850];
+                nodeCombiner.pos = [1860, 560];
                 graph.add(nodeCombiner);
 
                 nodePrompt.connect(0, nodeOptimizer, 0);
@@ -5068,7 +5338,8 @@
                 nodeLayout.connect(0, nodeSDXL, 1);
                 nodeSDXL.connect(0, nodeSAM2, 0);
                 nodeLayout.connect(0, nodeSAM2, 1);
-                nodePrompt.connect(0, nodeSAM2, 2);
+                // The layout already carries the detected object labels;
+                // avoid a redundant long Prompt -> SAM2 wire.
                 nodeSAM2.connect(0, nodeTrellis, 0);
                 nodeTrellis.connect(0, nodeCombiner, 0);
                 nodeLayout.connect(0, nodeCombiner, 1);
@@ -5097,13 +5368,6 @@
             isExecuting = true;
             const btnRun = document.getElementById("btn-run");
             const originalHTML = btnRun.innerHTML;
-            const queueState = document.getElementById("queue-state");
-            const queueStateLabel = document.getElementById("queue-state-label");
-            const queueCount = document.getElementById("queue-count");
-
-            queueState.className = "queue-state running";
-            queueStateLabel.innerText = "Running workflow...";
-            queueCount.innerText = "1 running";
             resetPipelineProgress();
             document.getElementById("scene-meta-status").innerText = "RUNNING";
             btnRun.disabled = true;
@@ -5171,17 +5435,12 @@
                     await runNode(combinerNode, "3D Scene Combiner", "scene");
                 }
                 writeLog("🎉 Thực thi toàn bộ quy trình pipeline THÀNH CÔNG!", "success");
-                queueState.className = "queue-state success";
-                queueStateLabel.innerText = "Completed successfully";
                 document.getElementById("scene-meta-status").innerText = "READY";
             } catch (err) {
                 writeLog("❌ Quy trình dừng lại do lỗi: " + err.message, "error");
-                queueState.className = "queue-state error";
-                queueStateLabel.innerText = "Execution failed";
                 document.getElementById("scene-meta-status").innerText = "ERROR";
             } finally {
                 isExecuting = false;
-                queueCount.innerText = "0 running";
                 btnRun.disabled = false;
                 btnRun.style.opacity = "1";
                 btnRun.style.cursor = "pointer";
@@ -5219,14 +5478,8 @@
 
             isExecuting = true;
             const btnRun = document.getElementById("btn-run");
-            const queueState = document.getElementById("queue-state");
-            const queueStateLabel = document.getElementById("queue-state-label");
-            const queueCount = document.getElementById("queue-count");
             const originalHTML = btnRun.innerHTML;
 
-            queueState.className = "queue-state running";
-            queueStateLabel.innerText = "Running to selected node...";
-            queueCount.innerText = "1 running";
             btnRun.disabled = true;
             btnRun.innerHTML = "⏳ Running...";
 
@@ -5242,16 +5495,11 @@
                     canvas.draw(true, true);
                 }
 
-                queueState.className = "queue-state success";
-                queueStateLabel.innerText = `Đã dừng tại: ${nodes[endIndex][1]}`;
                 writeLog(`✅ Hoàn tất đến node: ${nodes[endIndex][1]}.`, "success");
             } catch (error) {
-                queueState.className = "queue-state error";
-                queueStateLabel.innerText = "Execution failed";
                 writeLog(`❌ Quy trình dừng lại do lỗi: ${error.message}`, "error");
             } finally {
                 isExecuting = false;
-                queueCount.innerText = "0 running";
                 btnRun.disabled = false;
                 btnRun.innerHTML = originalHTML;
                 canvas.draw(true, true);
@@ -5355,15 +5603,6 @@
             viewport?.scrollIntoView({ behavior: "smooth", block: "nearest" });
             viewport?.classList.add("focus-flash");
             setTimeout(() => viewport?.classList.remove("focus-flash"), 650);
-        });
-
-        document.getElementById("btn-rail-help")?.addEventListener("click", () => {
-            const modal = document.getElementById("kaggle-modal");
-            if (modal) modal.style.display = "flex";
-        });
-
-        document.getElementById("btn-rail-settings")?.addEventListener("click", () => {
-            ngrokInput?.focus();
         });
 
         window.addEventListener("keydown", (event) => {
