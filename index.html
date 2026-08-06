@@ -3622,7 +3622,7 @@
         function NodePrompt() {
             this.addOutput("prompt", "string");
             this.properties = {
-                prompt: "a wooden dining chair next to a small wooden side table, product photography, plain dark background, studio lighting"
+      prompt: "a detailed vintage red bicycle, isolated product photography, plain dark background, soft studio lighting"
             };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
@@ -4272,7 +4272,9 @@
 
             this.properties = { 
                 crops: [],
-                labels: "chair, table"
+                // Upload mode defaults to automatic multi-object detection.
+                // Users can enter comma-separated labels to constrain it.
+                labels: "auto"
             };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
@@ -4294,7 +4296,7 @@
                     writeLog(`Lỗi tải crop SAM2: ${error.message}`, "error");
                 }
             });
-            this.addWidget("text", "Labels to Segment", this.properties.labels, (v) => {
+            this.addWidget("text", "Labels / auto-detect", this.properties.labels, (v) => {
                 this.properties.labels = v;
             });
             this.size = [450, 420];
@@ -4321,6 +4323,7 @@
 
             // Build layout object based on layout input or labels input widget
             let finalLayout = { layout: {} };
+            let autoDetectUpload = false;
             if (inputLayout && inputLayout.layout && Object.keys(inputLayout.layout).length > 0) {
                 finalLayout = inputLayout;
                 // Extract active labels from layout keys
@@ -4330,17 +4333,24 @@
                 this.properties.labels = activeLabels.join(", ");
                 // Update widget text if visible
                 if (this.widgets) {
-                    const textWidget = this.widgets.find(w => w.name === "Labels to Segment");
+                    const textWidget = this.widgets.find(w => w.name === "Labels / auto-detect");
                     if (textWidget) textWidget.value = this.properties.labels;
                 }
             } else {
                 const labelsArray = this.properties.labels.split(",").map(s => s.trim()).filter(Boolean);
-                finalLayout.objects = labelsArray.map((label, idx) => ({
+                autoDetectUpload = Boolean(
+                    uploadedImageUrl && (
+                        labelsArray.length === 0 ||
+                        labelsArray.every((label) => ["auto", "automatic", "auto-detect"].includes(label.toLowerCase()))
+                    )
+                );
+                const effectiveLabels = autoDetectUpload ? ["auto"] : labelsArray;
+                finalLayout.objects = effectiveLabels.map((label, idx) => ({
                     id: `${label}_${idx}`,
                     label,
                     description: label,
                 }));
-                labelsArray.forEach((lbl, idx) => {
+                effectiveLabels.forEach((lbl, idx) => {
                     finalLayout.layout[`${lbl}_${idx}`] = { x: 0, y: 0, w: 0, h: 0 };
                 });
             }
@@ -4351,6 +4361,7 @@
                 layout: finalLayout,
                 labels: this.properties.labels,
                 mode: uploadedImageUrl ? "uploaded" : "objectwise",
+                autoDetect: autoDetectUpload,
             });
 
             if (
@@ -4376,6 +4387,7 @@
                         layout: finalLayout,
                         prompt: userPrompt,
                         mode: uploadedImageUrl ? "uploaded" : "objectwise",
+                        auto_detect: autoDetectUpload,
                     })
                 });
                 if (res.ok) {

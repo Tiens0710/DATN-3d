@@ -36,6 +36,7 @@ def _worker_segment(
     objects: list[dict],
     crops_dir: str,
     source_mode: str,
+    auto_detect: bool = False,
 ) -> list:
     _check_worker_ready()
     try:
@@ -46,6 +47,7 @@ def _worker_segment(
                 "objects": objects,
                 "crops_dir": crops_dir,
                 "source_mode": source_mode,
+                "auto_detect": auto_detect,
             },
             timeout=SAM2_DINO_WORKER_TIMEOUT,
         )
@@ -57,7 +59,7 @@ def _worker_segment(
             f"SAM2 + GroundingDINO worker failed: {detail or exc}"
         ) from exc
 
-    if len(results) != len(objects):
+    if not auto_detect and len(results) != len(objects):
         raise RuntimeError(
             f"Segmentation worker returned {len(results)} results "
             f"for {len(objects)} objects"
@@ -73,6 +75,7 @@ def _run_uploaded_grounded_sam2(
     input_image_path: str,
     layout: dict,
     crops_dir: str,
+    auto_detect: bool = False,
 ) -> list:
     """Detect uploaded-image objects with resident DINO, then mask with SAM2."""
     objects = list(layout.get("objects", []))
@@ -83,6 +86,7 @@ def _run_uploaded_grounded_sam2(
         objects,
         crops_dir,
         source_mode="uploaded",
+        auto_detect=auto_detect,
     )
 
 
@@ -91,6 +95,7 @@ def run_grounded_sam2(
     layout: dict,
     crops_dir: str,
     source_mode: str = "objectwise",
+    auto_detect: bool = False,
 ) -> list:
     """Segment generated object images or an uploaded scene via the worker."""
     if source_mode == "uploaded":
@@ -98,6 +103,7 @@ def run_grounded_sam2(
             input_image_path,
             layout,
             crops_dir,
+            auto_detect=auto_detect,
         )
 
     if not os.path.isfile(OBJECT_MANIFEST):

@@ -86,6 +86,7 @@ class Sam2Request(BaseModel):
     layout: Dict[str, Any]
     prompt: str = ""
     mode: str = "objectwise"
+    auto_detect: bool = False
 
 
 class TrellisRequest(BaseModel):
@@ -481,6 +482,7 @@ def api_run_sam2(request: Sam2Request):
             effective_layout,
             CROPS_DIR,
             source_mode=source_mode,
+            auto_detect=request.auto_detect,
         )
         return {
             "status": "success",

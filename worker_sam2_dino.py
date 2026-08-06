@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 import traceback
@@ -29,6 +30,16 @@ DINO_CHECKPOINT = (
 )
 SAM2_CHECKPOINT = "/kaggle/working/sam2_ckpt/sam2_hiera_small.pt"
 
+# Used only when the upload workflow is in automatic mode. GroundingDINO is
+# open-vocabulary, but it still needs a text prompt; this broad furniture
+# vocabulary lets it discover one or many objects without hard-coded labels
+# such as "chair, table" in the UI.
+AUTO_DETECTION_CAPTION = (
+    "chair. table. sofa. couch. bed. desk. cabinet. wardrobe. shelf. "
+    "bookcase. stool. bench. ottoman. lamp. dresser. nightstand. "
+    "coffee table. dining table. furniture."
+)
+
 app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.0")
 dino_model = None
 sam_predictor = None
@@ -43,6 +54,7 @@ class SegmentRequest(BaseModel):
     objects: list[dict]
     crops_dir: str
     source_mode: str = "objectwise"
+    auto_detect: bool = False
 
 
 def _load_models() -> None:
@@ -179,6 +191,7 @@ def _segment_uploaded(
     image_path: str,
     objects: list[dict],
     crops_dir: str,
+    auto_detect: bool = False,
 ) -> list[dict]:
     if not os.path.isfile(image_path):
         raise FileNotFoundError(image_path)
@@ -187,6 +200,112 @@ def _segment_uploaded(
     height, width = image_source.shape[:2]
     source_image = Image.open(image_path).convert("RGB")
     sam_predictor.set_image(np.asarray(source_image))
+
+    if auto_detect:
+        boxes, logits, phrases = dino_predict(
+            model=dino_model,
+            image=image_tensor,
+            caption=AUTO_DETECTION_CAPTION,
+            box_threshold=0.22,
+            text_threshold=0.16,
+        )
+
+        box_array = boxes.detach().cpu().numpy()
+        logit_array = logits.detach().cpu().numpy()
+        if logit_array.ndim > 1:
+            score_array = logit_array.max(axis=1)
+        else:
+            score_array = logit_array
+
+        candidates = []
+        for index, normalized_box in enumerate(box_array):
+            center_x, center_y, box_width, box_height = normalized_box.tolist()
+            x1 = max(0, int((center_x - box_width / 2) * width))
+            y1 = max(0, int((center_y - box_height / 2) * height))
+            x2 = min(width, int((center_x + box_width / 2) * width))
+            y2 = min(height, int((center_y + box_height / 2) * height))
+            if x2 <= x1 or y2 <= y1 or (x2 - x1) * (y2 - y1) < 256:
+                continue
+
+            label = str(phrases[index]).strip() if index < len(phrases) else "object"
+            candidates.append(
+                {
+                    "box": [x1, y1, x2, y2],
+                    "label": label or "object",
+                    "confidence": float(score_array[index]),
+                }
+            )
+
+        # GroundingDINO can return overlapping boxes for the same object when
+        # the caption contains related labels (e.g. sofa/couch). Keep the
+        # strongest box and remove near-duplicates before invoking SAM2.
+        candidates.sort(key=lambda item: item["confidence"], reverse=True)
+        kept = []
+        for candidate in candidates:
+            x1, y1, x2, y2 = candidate["box"]
+            area = max(1, (x2 - x1) * (y2 - y1))
+            duplicate = False
+            for previous in kept:
+                px1, py1, px2, py2 = previous["box"]
+                intersection = max(0, min(x2, px2) - max(x1, px1)) * max(
+                    0, min(y2, py2) - max(y1, py1)
+                )
+                previous_area = max(1, (px2 - px1) * (py2 - py1))
+                union = area + previous_area - intersection
+                if intersection / union >= 0.55:
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept.append(candidate)
+
+        # If DINO cannot find a furniture phrase, preserve the one-object
+        # behavior with a full-image fallback instead of returning zero crops.
+        if not kept:
+            kept = [
+                {
+                    "box": [0, 0, width, height],
+                    "label": "object",
+                    "confidence": 0.0,
+                    "detector_fallback": True,
+                }
+            ]
+
+        results = []
+        previews = []
+        for index, candidate in enumerate(kept, start=1):
+            x1, y1, x2, y2 = candidate["box"]
+            masks, scores, _ = sam_predictor.predict(
+                box=np.array([x1, y1, x2, y2], dtype=np.float32),
+                multimask_output=True,
+            )
+            alpha, best_mask = _mask_alpha(masks, scores)
+            rgba = source_image.convert("RGBA")
+            rgba.putalpha(Image.fromarray(alpha))
+            safe_label = re.sub(r"[^a-z0-9]+", "_", candidate["label"].lower()).strip("_")
+            name = f"{safe_label or 'object'}_{index}"
+            crop_path = os.path.join(crops_dir, f"{name}.png")
+            rgba.save(crop_path)
+            previews.append(
+                Image.alpha_composite(Image.new("RGBA", rgba.size, "white"), rgba)
+                .convert("RGB")
+            )
+            results.append(
+                {
+                    "name": name,
+                    "label": candidate["label"],
+                    "confidence": candidate["confidence"],
+                    "mask_score": float(scores[best_mask]),
+                    "box": [x1, y1, x2, y2],
+                    "final_box": [x1, y1, x2, y2],
+                    "crop_path": crop_path,
+                    "crop_url": f"/crops/{name}.png",
+                    "source_mode": "uploaded_grounded_sam2_auto",
+                    "detector_fallback": bool(candidate.get("detector_fallback", False)),
+                }
+            )
+
+        _save_preview(previews, crops_dir)
+        return results
 
     results = []
     previews = []
@@ -270,6 +389,7 @@ def segment(payload: SegmentRequest) -> dict:
                     payload.input_image_path,
                     payload.objects,
                     crops_dir,
+                    auto_detect=payload.auto_detect,
                 )
             elif source_mode == "objectwise":
                 results = _segment_objectwise(payload.objects, crops_dir)
