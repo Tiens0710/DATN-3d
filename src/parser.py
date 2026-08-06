@@ -32,6 +32,26 @@ def _normalized(text: str) -> str:
     return re.sub(r"\s+", " ", without_marks).strip()
 
 
+def _generic_label(prompt: str) -> str | None:
+    """Keep a non-furniture object instead of collapsing it to 'furniture'."""
+    text = _normalized(prompt)
+    first_clause = re.split(
+        r"\s*(?:,|;|\band\b|\bnext to\b|\bbeside\b|\balongside\b|\bnear\b)\s*",
+        text,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    words = re.findall(r"[a-z0-9]+", first_clause)
+    stopwords = {
+        "a", "an", "one", "the", "exactly", "detailed", "realistic",
+        "vintage", "modern", "wooden", "metal", "red", "blue", "green",
+        "black", "white", "small", "large", "product", "photography",
+        "isolated", "studio", "photo", "image", "object",
+    }
+    candidates = [word for word in words if word not in stopwords]
+    return candidates[-1] if candidates else None
+
+
 def _extract_labels(prompt: str) -> list[str]:
     text = _normalized(prompt)
     matches = []
@@ -53,7 +73,13 @@ def _extract_labels(prompt: str) -> list[str]:
         labels.append(label)
 
     # Keep repeated objects. The downstream generator gives each one a unique id.
-    return labels or ["furniture"]
+    if labels:
+        return labels
+
+    # The pipeline also supports arbitrary image-to-3D objects. Do not
+    # silently relabel a bicycle, toy, vehicle, etc. as generic furniture.
+    generic = _generic_label(prompt)
+    return [generic or "object"]
 
 
 def _relation(prompt: str) -> str:
@@ -74,7 +100,7 @@ def _relation(prompt: str) -> str:
 
 
 def parse_scene_graph(prompt: str) -> dict:
-    """Create a deterministic furniture-only plan for the object-wise pipeline."""
+    """Create a deterministic object-wise plan for the pipeline."""
     clean_prompt = " ".join(str(prompt).split()).strip()
     if not clean_prompt:
         raise ValueError("Prompt must not be empty")
