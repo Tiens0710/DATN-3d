@@ -227,15 +227,29 @@ def generate(payload: GenerateRequest) -> dict:
             )
 
             _log(f"{name}: converting Gaussian + mesh output to textured GLB")
-            with torch.inference_mode():
-                glb = postprocessing_utils.to_glb(
-                    outputs["gaussian"][0],
-                    outputs["mesh"][0],
-                    simplify=TRELLIS_SIMPLIFY,
-                    fill_holes=TRELLIS_FILL_HOLES,
-                    texture_size=TRELLIS_TEXTURE_SIZE,
-                    verbose=False,
-                )
+            # The optimized texture baker performs gradient-based updates.
+            # Running it inside inference_mode() produces tensors without a
+            # grad_fn and fails with "does not require grad".
+            if TRELLIS_TEXTURE_MODE == "opt":
+                with torch.enable_grad():
+                    glb = postprocessing_utils.to_glb(
+                        outputs["gaussian"][0],
+                        outputs["mesh"][0],
+                        simplify=TRELLIS_SIMPLIFY,
+                        fill_holes=TRELLIS_FILL_HOLES,
+                        texture_size=TRELLIS_TEXTURE_SIZE,
+                        verbose=False,
+                    )
+            else:
+                with torch.inference_mode():
+                    glb = postprocessing_utils.to_glb(
+                        outputs["gaussian"][0],
+                        outputs["mesh"][0],
+                        simplify=TRELLIS_SIMPLIFY,
+                        fill_holes=TRELLIS_FILL_HOLES,
+                        texture_size=TRELLIS_TEXTURE_SIZE,
+                        verbose=False,
+                    )
             glb.export(str(output_path))
             if not output_path.is_file():
                 raise RuntimeError("GLB export finished but no file was written")
