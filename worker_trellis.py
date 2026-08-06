@@ -205,7 +205,12 @@ def generate(payload: GenerateRequest) -> dict:
             image = pipeline.preprocess_image(image)
 
             _log(f"{name}: running sparse structure + SLAT diffusion")
-            with torch.inference_mode():
+            run_context = (
+                torch.no_grad()
+                if TRELLIS_TEXTURE_MODE == "opt"
+                else torch.inference_mode()
+            )
+            with run_context:
                 outputs = pipeline.run(
                     image,
                     seed=42,
