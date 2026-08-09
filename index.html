@@ -3606,7 +3606,15 @@
             const container = document.getElementById("canvas-container");
             const canvasElement = canvas.canvas;
             if (!container || !canvasElement) return [0, 0];
-            const canvasPoint = canvas.convertOffsetToCanvas(point);
+            // `point` is already in LiteGraph canvas coordinates. Convert it
+            // to screen/offset coordinates; the inverse conversion places
+            // DOM overlays outside the node after zooming.
+            const canvasPoint = typeof canvas.convertCanvasToOffset === "function"
+                ? canvas.convertCanvasToOffset(point)
+                : [
+                    point[0] * canvas.ds.scale + canvas.ds.offset[0],
+                    point[1] * canvas.ds.scale + canvas.ds.offset[1],
+                ];
             const canvasRect = canvasElement.getBoundingClientRect();
             const containerRect = container.getBoundingClientRect();
             return [
@@ -3655,18 +3663,14 @@
             canvas.draw(true, true);
         }
 
-        // Keep dense node previews readable at a distance. This mirrors the
-        // overview behavior of ComfyUI: far zoom shows compact title cards,
-        // close zoom restores widgets and previews.
+        // Never permanently collapse nodes just because the user zoomed out.
+        // LiteGraph's collapsed state hides the actual node content and used
+        // to make zooming back in look like the cards had disappeared.
         const GRAPH_COMPACT_SCALE = 0.34;
         function syncGraphZoomDensity() {
-            const compact = canvas.ds.scale < GRAPH_COMPACT_SCALE;
             (graph._nodes || []).forEach((node) => {
-                node.flags = node.flags || {};
-                if (compact && !node.flags.collapsed) {
-                    node.flags.collapsed = true;
-                    node._spatialAutoCollapsed = true;
-                } else if (!compact && node._spatialAutoCollapsed) {
+                if (node._spatialAutoCollapsed) {
+                    node.flags = node.flags || {};
                     node.flags.collapsed = false;
                     node._spatialAutoCollapsed = false;
                 }
