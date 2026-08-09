@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from src.parser import parse_scene_graph
+from src.parser import parse_scene_graph, parse_scene_graph_from_objects
 from src.layout import compute_layout
 from src.generator_2d import create_object_contact_sheet, generate_object_images
 from src.segmenter import run_grounded_sam2
@@ -130,6 +130,28 @@ materials. The result must be suitable for GroundingDINO, SAM2 segmentation,
 and single-image 3D reconstruction. Keep the prompt under 90 words.
 """.strip()
 
+SCENE_GRAPH_INSTRUCTION = """
+Extract the exact object plan from the user's prompt for an image-to-3D
+pipeline. Return JSON only, with this schema:
+{"objects":[{"label":"singular concrete object name in English", "count":1,
+"description":"short description of this object"}],
+"relation":"single|next_to|on_top_of|under|in_front_of|behind|left_of|right_of",
+"relations":[{"subject":0,"relation":"next_to","object":1}]}
+
+Rules:
+- Recognize ANY concrete object, not only furniture. Keep labels such as
+  bicycle, house, toy, car, lamp, plant, cup, or any other object requested.
+- Preserve the exact requested quantity. "two chairs" means count 2; do not
+  count a reference such as "the table" after "beside the table" again.
+- Do not turn parts, materials, colors, or decorative motifs into objects.
+  For example, bicycle wheels and table legs are parts, not separate objects.
+- Use one object entry per object category and put repeated quantity in count.
+- Keep the user's material, color, style, and distinguishing details in
+  description. Do not invent props or objects.
+- Relations use zero-based indexes into objects. Use an empty relations list
+  for a single object.
+""".strip()
+
 
 def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
     clean_prompt = " ".join(prompt.split()).strip()
@@ -151,7 +173,6 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
             "warning": "GEMINI_API_KEY is not configured",
             "model": GEMINI_MODEL,
         }
-
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{GEMINI_MODEL}:generateContent"
@@ -217,6 +238,87 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
             "warning": f"Gemini optimization failed: {exc}",
             "model": GEMINI_MODEL,
         }
+
+
+def _gemini_scene_graph(prompt: str) -> dict | None:
+    """Ask Gemini for arbitrary object extraction; return None on fallback."""
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent"
+    )
+    payload = {
+        "systemInstruction": {"parts": [{"text": SCENE_GRAPH_INSTRUCTION}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 400},
+    }
+    http_request = urllib_request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        },
+        method="POST",
+    )
+    with urllib_request.urlopen(http_request, timeout=45) as response:
+        response_data = json.loads(response.read().decode("utf-8"))
+    parts = (
+        response_data.get("candidates", [{}])[0]
+        .get("content", {})
+        .get("parts", [])
+    )
+    text = " ".join(
+        part.get("text", "").strip()
+        for part in parts
+        if part.get("text")
+    ).strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+    data = json.loads(text)
+    objects = data.get("objects")
+    if not isinstance(objects, list) or not objects or len(objects) > 12:
+        raise ValueError("Gemini returned an invalid object list")
+    clean_objects = []
+    for item in objects:
+        if not isinstance(item, dict):
+            continue
+        label = " ".join(str(item.get("label", "")).split()).strip(" ,.;:")
+        if not label:
+            continue
+        clean_objects.append({
+            "label": label.lower(),
+            "count": item.get("count", 1),
+            "description": " ".join(
+                str(item.get("description", label)).split()
+            ).strip(),
+        })
+    if not clean_objects:
+        raise ValueError("Gemini returned no usable objects")
+    return parse_scene_graph_from_objects(
+        prompt,
+        clean_objects,
+        relation=data.get("relation"),
+        relations=data.get("relations", []),
+        parser_source="gemini_structured",
+    )
+
+
+def parse_scene_graph_for_request(prompt: str) -> dict:
+    """Use Gemini for open-vocabulary parsing, then deterministic fallback."""
+    clean_prompt = " ".join(str(prompt).split()).strip()
+    try:
+        graph = _gemini_scene_graph(clean_prompt)
+        if graph:
+            return graph
+    except Exception as exc:
+        fallback = parse_scene_graph(clean_prompt)
+        fallback["parser_warning"] = f"Gemini scene parsing failed: {exc}"
+        return fallback
+    return parse_scene_graph(clean_prompt)
 
 
 def backend_readiness() -> Dict[str, Any]:
@@ -413,7 +515,7 @@ async def api_upload_image(file: UploadFile = File(...)):
 @app.post("/api/parse_scene_graph")
 def api_parse_scene_graph(request: TextPrompt):
     try:
-        return parse_scene_graph(request.text)
+        return parse_scene_graph_for_request(request.text)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -432,7 +534,7 @@ def api_generate_image(request: ImageGenRequest):
         layout = dict(request.layout or {})
         objects = list(layout.get("objects", []))
         if not objects:
-            scene_graph = parse_scene_graph(request.prompt)
+            scene_graph = parse_scene_graph_for_request(request.prompt)
             layout = compute_layout(scene_graph)
             objects = layout["objects"]
 
@@ -480,7 +582,7 @@ def api_run_sam2(request: Sam2Request):
             not effective_layout.get("layout")
             and request.prompt.strip()
         ):
-            scene_graph = parse_scene_graph(request.prompt.strip())
+            scene_graph = parse_scene_graph_for_request(request.prompt.strip())
             effective_layout = compute_layout(scene_graph)
 
         crops = run_grounded_sam2(

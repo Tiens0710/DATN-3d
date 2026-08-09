@@ -110,6 +110,114 @@ def _extract_labels(prompt: str) -> list[str]:
     return [generic or "object"]
 
 
+def _safe_node_id(label: str, index: int) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+    return f"{slug or 'object'}_{index}"
+
+
+def _coerce_count(value: object) -> int:
+    if isinstance(value, str):
+        words = {
+            "one": 1, "two": 2, "three": 3, "four": 4,
+            "five": 5, "six": 6, "seven": 7, "eight": 8,
+            "mot": 1, "hai": 2, "ba": 3, "bon": 4,
+        }
+        normalized = _normalized(value)
+        if normalized in words:
+            return words[normalized]
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 1
+
+
+def parse_scene_graph_from_objects(
+    prompt: str,
+    objects: list[dict],
+    relation: str | None = None,
+    relations: list[dict] | None = None,
+    parser_source: str = "structured",
+) -> dict:
+    """Build the common graph format from arbitrary object specifications.
+
+    ``objects`` may contain labels outside the furniture alias list. ``count``
+    is expanded into individual nodes because each node becomes one image,
+    segmentation crop, and TRELLIS mesh.
+    """
+    clean_prompt = " ".join(str(prompt).split()).strip()
+    if not clean_prompt:
+        raise ValueError("Prompt must not be empty")
+    if not objects:
+        raise ValueError("At least one object is required")
+
+    nodes = []
+    groups = []
+    for spec in objects:
+        label = re.sub(r"\s+", " ", str(spec.get("label", "object"))).strip()
+        label = label.strip(" ,.;:").lower() or "object"
+        description = " ".join(
+            str(spec.get("description", "")).split()
+        ).strip() or f"one {label} requested by the user"
+        count = max(1, min(_coerce_count(spec.get("count", 1)), 8))
+
+        group = []
+        for _ in range(count):
+            node_index = len(nodes) + 1
+            node = {
+                "id": _safe_node_id(label, node_index),
+                "label": label,
+                "full": description,
+                "description": description,
+            }
+            nodes.append(node)
+            group.append(node["id"])
+        groups.append(group)
+
+    valid_relations = {
+        "single", "next_to", "on_top_of", "under", "in_front_of",
+        "behind", "left_of", "right_of",
+    }
+    graph_relation = relation if relation in valid_relations else None
+    edges = []
+
+    # Gemini relations refer to object-group indexes, not expanded node ids.
+    for edge in relations or []:
+        try:
+            subject_group = groups[int(edge["subject"])]
+            object_group = groups[int(edge["object"])]
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        edge_relation = str(edge.get("relation", "next_to"))
+        if edge_relation not in valid_relations:
+            edge_relation = "next_to"
+        edges.append({
+            "subject": subject_group[0],
+            "relation": edge_relation,
+            "object": object_group[0],
+        })
+
+    if not edges and len(nodes) >= 2:
+        graph_relation = graph_relation or "next_to"
+        edges.append({
+            "subject": nodes[0]["id"],
+            "relation": graph_relation,
+            "object": nodes[1]["id"],
+        })
+    elif len(nodes) == 1:
+        graph_relation = "single"
+    else:
+        graph_relation = graph_relation or "next_to"
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "relation": graph_relation,
+        "raw": clean_prompt,
+        "mode": "objectwise",
+        "parser_source": parser_source,
+    }
+
+
 def _relation(prompt: str) -> str:
     text = f" {_normalized(prompt)} "
     patterns = (
@@ -134,32 +242,16 @@ def parse_scene_graph(prompt: str) -> dict:
         raise ValueError("Prompt must not be empty")
 
     labels = _extract_labels(clean_prompt)
-    nodes = []
-    for index, label in enumerate(labels, start=1):
-        nodes.append(
+    return parse_scene_graph_from_objects(
+        clean_prompt,
+        [
             {
-                "id": f"{label}_{index}",
                 "label": label,
-                "full": f"one {label} requested by the user",
-                "description": clean_prompt,
+                "count": 1,
+                "description": f"one {label} requested by the user",
             }
-        )
-
-    relation = _relation(clean_prompt)
-    edges = []
-    if len(nodes) >= 2:
-        edges.append(
-            {
-                "subject": nodes[0]["id"],
-                "relation": relation,
-                "object": nodes[1]["id"],
-            }
-        )
-
-    return {
-        "nodes": nodes,
-        "edges": edges,
-        "relation": relation,
-        "raw": clean_prompt,
-        "mode": "objectwise",
-    }
+            for label in labels
+        ],
+        relation=_relation(clean_prompt),
+        parser_source="deterministic_fallback",
+    )
