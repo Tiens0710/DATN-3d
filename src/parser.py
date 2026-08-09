@@ -27,7 +27,8 @@ FURNITURE_ALIASES = {
 # the table". It must not become a second table node.
 _RELATION_REFERENCE_RE = re.compile(
     r"(?:next to|beside|alongside|near|to the left of|to the right of|"
-    r"left of|right of|ke ben|ben canh|ben trai|ben phai)\s*$",
+    r"left of|right of|ke ben|ben canh|ben trai|ben phai)\s+"
+    r"(?:(?:the|this|that|it|cai|chiec|do|vat)\s+)?$",
     flags=re.IGNORECASE,
 )
 _EXPLICIT_OBJECT_RE = re.compile(
