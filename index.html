@@ -2627,6 +2627,16 @@
             --viewport-width: minmax(390px, .92fr);
         }
 
+        /* The graph should reclaim the viewport column when Scene View is hidden. */
+        .workspace-shell.spatial-workspace.viewport-hidden .graph-panel {
+            grid-column: 2 / -1;
+        }
+
+        .workspace-shell.spatial-workspace.viewport-hidden .viewport-panel,
+        .workspace-shell.spatial-workspace.viewport-hidden .viewport-resizer {
+            display: none !important;
+        }
+
         @media (min-width: 861px) {
             .workspace-shell.spatial-workspace {
                 grid-template-columns: 176px minmax(0, 1fr) var(--viewport-width);
@@ -2993,6 +3003,7 @@
                     </div>
                     <div class="panel-actions">
                         <button class="panel-icon-btn" id="btn-view-reset" type="button" title="Reset camera"><i data-lucide="focus"></i></button>
+                        <button class="panel-icon-btn" id="btn-toggle-viewport" type="button" title="Ẩn Scene viewport" aria-label="Ẩn Scene viewport" aria-pressed="false"><i data-lucide="panel-right-close"></i></button>
                         <button class="panel-icon-btn" id="btn-viewport-options" type="button" title="Viewport options"><i data-lucide="sliders-horizontal"></i></button>
                     </div>
                 </div>
@@ -3240,9 +3251,38 @@
         const spatialWorkspace = document.querySelector(".workspace-shell.spatial-workspace");
         const viewportPanel = document.querySelector(".viewport-panel");
         const viewportResizer = document.getElementById("viewport-resizer");
+        const viewportToggleButton = document.getElementById("btn-toggle-viewport");
+        const viewportRailButton = document.getElementById("btn-rail-viewport");
         const viewportResizeMin = 280;
         const viewportResizeMax = 900;
         let viewportResizeState = null;
+
+        function setViewportVisibility(hidden, persist = true) {
+            if (!spatialWorkspace) return;
+            spatialWorkspace.classList.toggle("viewport-hidden", hidden);
+
+            if (viewportToggleButton) {
+                viewportToggleButton.setAttribute("aria-pressed", String(hidden));
+                viewportToggleButton.setAttribute("title", hidden ? "Hiện Scene viewport" : "Ẩn Scene viewport");
+                viewportToggleButton.setAttribute("aria-label", hidden ? "Hiện Scene viewport" : "Ẩn Scene viewport");
+                viewportToggleButton.innerHTML = `<i data-lucide="${hidden ? "panel-right-open" : "panel-right-close"}"></i>`;
+            }
+            if (viewportRailButton) {
+                viewportRailButton.classList.toggle("active", !hidden);
+                viewportRailButton.setAttribute("aria-pressed", String(!hidden));
+                viewportRailButton.setAttribute("title", hidden ? "Hiện Scene viewport" : "Ẩn Scene viewport");
+            }
+            window.lucide?.createIcons();
+            if (persist) localStorage.setItem("datn-viewport-hidden", hidden ? "1" : "0");
+
+            requestAnimationFrame(() => {
+                resizeCanvas();
+                canvas.draw(true, true);
+            });
+        }
+
+        const savedViewportHidden = localStorage.getItem("datn-viewport-hidden") === "1";
+        setViewportVisibility(savedViewportHidden, false);
 
         function getViewportResizeBounds() {
             const workspaceWidth = spatialWorkspace?.getBoundingClientRect().width || viewportResizeMax;
@@ -3345,6 +3385,9 @@
 
         document.getElementById("btn-viewport-options")?.addEventListener("click", () => {
             document.querySelector(".viewport-controls")?.classList.toggle("is-hidden");
+        });
+        viewportToggleButton?.addEventListener("click", () => {
+            setViewportVisibility(!spatialWorkspace?.classList.contains("viewport-hidden"));
         });
 
 
@@ -3556,6 +3599,21 @@
         const canvas = new LGraphCanvas("#graphcanvas", graph);
         canvas.show_stats = false; // Hide default performance statistics
         canvas.background_image = null; // Background handled by CSS grid pattern
+
+        // Keep custom DOM overlays aligned with LiteGraph after zooming,
+        // resizing, and browser scaling.
+        function graphToContainerPosition(point) {
+            const container = document.getElementById("canvas-container");
+            const canvasElement = canvas.canvas;
+            if (!container || !canvasElement) return [0, 0];
+            const canvasPoint = canvas.convertOffsetToCanvas(point);
+            const canvasRect = canvasElement.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            return [
+                canvasRect.left - containerRect.left + canvasPoint[0],
+                canvasRect.top - containerRect.top + canvasPoint[1],
+            ];
+        }
 
         function fitGraphToView(padding = 72) {
             const parent = document.getElementById("canvas-container");
@@ -3850,6 +3908,7 @@
             this.setDirtyCanvas(true, true);
         };
         NodeImageInput.prototype.onDrawBackground = function (ctx) {
+            if (this.flags?.collapsed) return;
             const imageUrl = activeUploadedImageUrl() || this.properties.imageUrl;
             ctx.fillStyle = "#111820";
             ctx.fillRect(15, 72, 330, 215);
@@ -3931,7 +3990,7 @@
             }
 
             const scale = canvas.ds.scale;
-            const screenPos = canvas.convertOffsetToCanvas([this.pos[0] + 15, this.pos[1] + 45]);
+            const screenPos = graphToContainerPosition([this.pos[0] + 15, this.pos[1] + 45]);
             const x = screenPos[0];
             const y = screenPos[1];
             const w = (this.size[0] - 30) * scale;
@@ -3945,7 +4004,7 @@
             textarea.style.padding = `${Math.max(3, 9 * scale)}px`;
             textarea.style.lineHeight = "1.35";
 
-            if (scale < 0.45) {
+            if (this.flags?.collapsed || scale < 0.45) {
                 textarea.style.display = "none";
             } else {
                 textarea.style.display = "block";
@@ -4501,6 +4560,7 @@
         };
 
         NodeSDXLGen.prototype.onDrawBackground = function (ctx) {
+            if (this.flags?.collapsed) return;
             if (!this.properties.imageUrl) {
                 ctx.fillStyle = "#52525b";
                 ctx.font = "italic 13px 'Outfit'";
@@ -4678,6 +4738,7 @@
             }
         };
         NodeGroundedSAM2.prototype.onDrawBackground = function (ctx) {
+            if (this.flags?.collapsed) return;
             const imageUrl = activeUploadedImageUrl() || this.getInputData(0);
             if (!imageUrl) {
                 ctx.fillStyle = "#52525b";
@@ -5171,7 +5232,7 @@
             const nodeHeight = this.size[1];
 
             // Calculate screen bounding boxes mapping LiteGraph coords to DOM layout
-            const screenPos = canvas.convertOffsetToCanvas([this.pos[0] + 15, this.pos[1] + 95]);
+            const screenPos = graphToContainerPosition([this.pos[0] + 15, this.pos[1] + 95]);
             const x = screenPos[0];
             const y = screenPos[1];
             const w = (nodeWidth - 30) * scale;
@@ -5183,7 +5244,7 @@
             viewer.style.height = `${h}px`;
 
             // Prevent rendering when zoomed out excessively to optimize drawing performance
-            if (scale < GRAPH_COMPACT_SCALE) {
+            if (this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE) {
                 viewer.style.display = "none";
             } else {
                 viewer.style.display = "block";
@@ -5599,10 +5660,14 @@
         document.getElementById("btn-rail-viewport")?.addEventListener("click", () => {
             nodeLibraryDrawer?.classList.remove("open");
             executionDrawer?.classList.remove("open");
-            const viewport = document.querySelector(".viewport-panel");
-            viewport?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-            viewport?.classList.add("focus-flash");
-            setTimeout(() => viewport?.classList.remove("focus-flash"), 650);
+            const hidden = spatialWorkspace?.classList.contains("viewport-hidden");
+            setViewportVisibility(!hidden);
+            if (hidden) {
+                const viewport = document.querySelector(".viewport-panel");
+                viewport?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                viewport?.classList.add("focus-flash");
+                setTimeout(() => viewport?.classList.remove("focus-flash"), 650);
+            }
         });
 
         window.addEventListener("keydown", (event) => {

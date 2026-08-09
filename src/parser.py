@@ -22,6 +22,21 @@ FURNITURE_ALIASES = {
 }
 
 
+# A noun after a spatial relation is often only a reference to an object
+# already introduced earlier, for example: "one table and one chair beside
+# the table". It must not become a second table node.
+_RELATION_REFERENCE_RE = re.compile(
+    r"(?:next to|beside|alongside|near|to the left of|to the right of|"
+    r"left of|right of|ke ben|ben canh|ben trai|ben phai)\s*$",
+    flags=re.IGNORECASE,
+)
+_EXPLICIT_OBJECT_RE = re.compile(
+    r"(?:\b(?:a|an|one|another|two|three|four|exactly\s+one|"
+    r"mot|hai|ba|bon)\b\s+)(?:\w+\s+){0,3}$",
+    flags=re.IGNORECASE,
+)
+
+
 def _normalized(text: str) -> str:
     decomposed = unicodedata.normalize("NFD", str(text).lower())
     without_marks = "".join(
@@ -69,6 +84,19 @@ def _extract_labels(prompt: str) -> list[str]:
     for start, end, _, label in matches:
         if any(not (end <= old_start or start >= old_end) for old_start, old_end in occupied):
             continue
+
+        # Do not count a relational reference as a new object when that
+        # object has already been explicitly introduced. Keep it when the
+        # relation target is the only mention, or when it has its own
+        # determiner ("beside another table").
+        prefix = text[max(0, start - 80):start]
+        if (
+            label in labels
+            and _RELATION_REFERENCE_RE.search(prefix)
+            and not _EXPLICIT_OBJECT_RE.search(prefix)
+        ):
+            continue
+
         occupied.append((start, end))
         labels.append(label)
 
