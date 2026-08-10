@@ -57,6 +57,10 @@ class SegmentRequest(BaseModel):
     auto_detect: bool = False
 
 
+class SanitizeRequest(BaseModel):
+    objects: list[dict]
+
+
 def _load_models() -> None:
     global dino_model, sam_predictor, dino_load_image, dino_predict, load_error
 
@@ -119,6 +123,162 @@ def _mask_alpha(masks, scores) -> tuple[np.ndarray, int]:
     return np.clip(alpha, 0, 255).astype(np.uint8), best
 
 
+def _box_iou(first: list[int], second: list[int]) -> float:
+    x1, y1, x2, y2 = first
+    px1, py1, px2, py2 = second
+    intersection = max(0, min(x2, px2) - max(x1, px1)) * max(
+        0, min(y2, py2) - max(y1, py1)
+    )
+    first_area = max(1, (x2 - x1) * (y2 - y1))
+    second_area = max(1, (px2 - px1) * (py2 - py1))
+    return intersection / max(1, first_area + second_area - intersection)
+
+
+def _detect_label_instances(
+    image_path: str,
+    label: str,
+    box_threshold: float = 0.22,
+) -> tuple[Image.Image, list[dict]]:
+    image_source, image_tensor = dino_load_image(image_path)
+    height, width = image_source.shape[:2]
+    source_image = Image.open(image_path).convert("RGB")
+    boxes, logits, _ = dino_predict(
+        model=dino_model,
+        image=image_tensor,
+        caption=label.strip().lower() + ".",
+        box_threshold=box_threshold,
+        text_threshold=0.18,
+    )
+
+    candidates = []
+    for index, normalized_box in enumerate(boxes.detach().cpu().numpy()):
+        center_x, center_y, box_width, box_height = normalized_box.tolist()
+        x1 = max(0, int((center_x - box_width / 2) * width))
+        y1 = max(0, int((center_y - box_height / 2) * height))
+        x2 = min(width, int((center_x + box_width / 2) * width))
+        y2 = min(height, int((center_y + box_height / 2) * height))
+        if x2 <= x1 or y2 <= y1 or (x2 - x1) * (y2 - y1) < 256:
+            continue
+        score_tensor = logits[index]
+        confidence = float(
+            score_tensor.max().item()
+            if getattr(score_tensor, "ndim", 0)
+            else score_tensor.item()
+        )
+        candidates.append(
+            {"box": [x1, y1, x2, y2], "confidence": confidence}
+        )
+
+    # DINO sometimes returns near-identical boxes for one physical instance.
+    # Suppress those boxes while retaining genuinely separate duplicate objects.
+    candidates.sort(key=lambda item: item["confidence"], reverse=True)
+    kept = []
+    for candidate in candidates:
+        if any(_box_iou(candidate["box"], item["box"]) >= 0.55 for item in kept):
+            continue
+        kept.append(candidate)
+
+    # A detector may emit one large group box around two nearby chairs plus
+    # one box for each chair. Remove group boxes that substantially contain
+    # a smaller valid instance, then rank the remaining individual boxes.
+    individual_boxes = []
+    for candidate in kept:
+        x1, y1, x2, y2 = candidate["box"]
+        area = max(1, (x2 - x1) * (y2 - y1))
+        contains_smaller = False
+        for other in kept:
+            if other is candidate:
+                continue
+            ox1, oy1, ox2, oy2 = other["box"]
+            other_area = max(1, (ox2 - ox1) * (oy2 - oy1))
+            intersection = max(0, min(x2, ox2) - max(x1, ox1)) * max(
+                0, min(y2, oy2) - max(y1, oy1)
+            )
+            if area >= other_area * 1.35 and intersection / other_area >= 0.88:
+                contains_smaller = True
+                break
+        if not contains_smaller:
+            individual_boxes.append(candidate)
+    if individual_boxes:
+        kept = individual_boxes
+    kept.sort(key=lambda item: item["confidence"], reverse=True)
+    return source_image, kept
+
+
+def _sanitize_object_images(objects: list[dict]) -> list[dict]:
+    sanitized_jobs = []
+    for item in objects:
+        job = dict(item)
+        image_path = str(job.get("image_path", ""))
+        label = str(job.get("label", "object")).strip().lower() or "object"
+        if not os.path.isfile(image_path):
+            raise FileNotFoundError(image_path or "Missing generated object image")
+
+        source_image, candidates = _detect_label_instances(image_path, label)
+        job["detected_instances"] = len(candidates)
+        job["count_validation"] = "detected" if candidates else "undetected"
+
+        if not candidates:
+            # Preserve uncommon open-vocabulary objects that DINO cannot name;
+            # the later segmentation stage can still process the original image.
+            job["sanitized"] = False
+            sanitized_jobs.append(job)
+            continue
+
+        selected = candidates[0]
+        width, height = source_image.size
+        x1, y1, x2, y2 = selected["box"]
+        padding = max(4, int(min(width, height) * 0.015))
+        sam_box = np.array(
+            [
+                max(0, x1 - padding),
+                max(0, y1 - padding),
+                min(width, x2 + padding),
+                min(height, y2 + padding),
+            ],
+            dtype=np.float32,
+        )
+
+        sam_predictor.set_image(np.asarray(source_image))
+        masks, scores, _ = sam_predictor.predict(
+            box=sam_box,
+            multimask_output=True,
+        )
+        alpha, best_mask = _mask_alpha(masks, scores)
+
+        # Hard-limit the alpha to the selected detection so a neighboring
+        # duplicate cannot leak into the final isolated object.
+        allowed = np.zeros_like(alpha)
+        sx1, sy1, sx2, sy2 = [int(value) for value in sam_box]
+        allowed[sy1:sy2, sx1:sx2] = 255
+        alpha = np.minimum(alpha, allowed)
+        alpha_image = Image.fromarray(alpha)
+        content_box = alpha_image.getbbox() or (sx1, sy1, sx2, sy2)
+
+        rgba = source_image.convert("RGBA")
+        rgba.putalpha(alpha_image)
+        isolated = rgba.crop(content_box)
+        max_object_size = (int(width * 0.82), int(height * 0.82))
+        isolated.thumbnail(max_object_size, Image.Resampling.LANCZOS)
+
+        clean_image = Image.new("RGB", (width, height), "white")
+        paste_x = (width - isolated.width) // 2
+        paste_y = (height - isolated.height) // 2
+        clean_image.paste(isolated, (paste_x, paste_y), isolated)
+        clean_image.save(image_path)
+
+        job.update(
+            {
+                "sanitized": True,
+                "kept_box": selected["box"],
+                "kept_confidence": selected["confidence"],
+                "mask_score": float(scores[best_mask]),
+            }
+        )
+        sanitized_jobs.append(job)
+    return sanitized_jobs
+
+
 def _save_preview(previews: list, crops_dir: str) -> None:
     if not previews:
         return
@@ -144,16 +304,20 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
         if not os.path.isfile(image_path):
             raise FileNotFoundError(image_path or "Missing object image path")
 
-        image = Image.open(image_path).convert("RGB")
+        label = str(item.get("label", "object")).strip().lower() or "object"
+        image, candidates = _detect_label_instances(image_path, label)
         rgb = np.asarray(image)
         height, width = rgb.shape[:2]
         sam_predictor.set_image(rgb)
 
-        margin = max(18, int(min(width, height) * 0.04))
-        box = np.array(
-            [margin, margin, width - margin, height - margin],
-            dtype=np.float32,
-        )
+        if candidates:
+            box_values = candidates[0]["box"]
+            confidence = candidates[0]["confidence"]
+        else:
+            margin = max(18, int(min(width, height) * 0.04))
+            box_values = [margin, margin, width - margin, height - margin]
+            confidence = 0.0
+        box = np.array(box_values, dtype=np.float32)
         masks, scores, _ = sam_predictor.predict(
             box=box,
             multimask_output=True,
@@ -172,10 +336,11 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
         results.append(
             {
                 "name": name,
-                "label": item.get("label", name),
-                "confidence": 1.0,
+                "label": label,
+                "confidence": confidence,
+                "detected_instances": len(candidates),
                 "mask_score": float(scores[best]),
-                "box": [margin, margin, width - margin, height - margin],
+                "box": box_values,
                 "final_box": [0, 0, width, height],
                 "crop_path": crop_path,
                 "crop_url": f"/crops/{name}.png",
@@ -185,6 +350,27 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
 
     _save_preview(previews, crops_dir)
     return results
+
+
+@app.post("/sanitize")
+def sanitize(payload: SanitizeRequest) -> dict:
+    if dino_model is None or sam_predictor is None:
+        raise HTTPException(
+            status_code=503,
+            detail=load_error or "Segmentation models are still loading",
+        )
+    if not payload.objects:
+        raise HTTPException(status_code=400, detail="No objects were provided")
+
+    with inference_lock:
+        try:
+            jobs = _sanitize_object_images(payload.objects)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Generated-object sanitization failed: {exc}",
+            ) from exc
+    return {"jobs": jobs}
 
 
 def _segment_uploaded(

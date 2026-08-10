@@ -4560,6 +4560,16 @@
             this.properties.objectImages = data.images || [];
             this._imageObj = null;
             this.setOutputData(0, this.properties.imageUrl);
+            const correctedImages = this.properties.objectImages.filter(
+                (item) => Number(item.detected_instances || 0) > 1 && item.sanitized
+            );
+            if (correctedImages.length) {
+                const labels = correctedImages.map((item) => item.label).join(", ");
+                writeLog(
+                    `Đã phát hiện vật thể bị lặp và giữ lại đúng một instance: ${labels}.`,
+                    "success"
+                );
+            }
             writeLog("✅ Đã sinh ảnh 2D thành công.", "success");
             this.setDirtyCanvas(true, true);
         };

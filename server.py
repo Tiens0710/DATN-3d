@@ -551,6 +551,9 @@ def api_generate_image(request: ImageGenRequest):
                 "name": item["name"],
                 "label": item["label"],
                 "image_url": f"/object_images/{item['name']}.png",
+                "detected_instances": item.get("detected_instances"),
+                "sanitized": bool(item.get("sanitized", False)),
+                "count_validation": item.get("count_validation", "unknown"),
             }
             for item in generated
         ]
