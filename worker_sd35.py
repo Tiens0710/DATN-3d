@@ -2,12 +2,14 @@
 
 import argparse
 import gc
+import inspect
 import json
 import os
 import shutil
 import sys
 import threading
 import traceback
+from pathlib import Path
 
 
 os.environ.setdefault("MPLBACKEND", "agg")
@@ -30,11 +32,18 @@ SD35_CACHE_DIR = "/kaggle/working/sd35_medium_cache_v1"
 SD35_NUM_INFERENCE_STEPS = int(os.environ.get("SD35_NUM_INFERENCE_STEPS", "24"))
 SD35_IMAGE_SIZE = int(os.environ.get("SD35_IMAGE_SIZE", "704"))
 SD35_GUIDANCE_SCALE = float(os.environ.get("SD35_GUIDANCE_SCALE", "4.5"))
+SD35_LORA_PATH = os.environ.get(
+    "SD35_LORA_PATH",
+    "/kaggle/working/lora_sd35_fast_safe/best",
+).strip()
+SD35_LORA_SCALE = float(os.environ.get("SD35_LORA_SCALE", "0.2"))
 
 app = FastAPI(title="DATN SD3.5 Worker", version="1.0.0")
 pipeline = None
 pipeline_device = None
 load_error = None
+lora_loaded = False
+lora_error = None
 inference_lock = threading.Lock()
 
 
@@ -63,7 +72,124 @@ def _create_pipeline(*, force_download: bool = False):
         token=hf_token,
         cache_dir=SD35_CACHE_DIR,
         force_download=force_download,
-    ).to("cuda")
+    )
+
+
+def _compatible_lora_directory(source: str) -> str:
+    """Copy only the adapter metadata/weights and remove unknown config keys."""
+    source_path = Path(source)
+    compat_path = Path("/kaggle/working/sd35_lora_compat")
+    compat_path.mkdir(parents=True, exist_ok=True)
+
+    with (source_path / "adapter_config.json").open(
+        "r", encoding="utf-8"
+    ) as file:
+        config = json.load(file)
+
+    from peft import LoraConfig
+
+    allowed = set(inspect.signature(LoraConfig.__init__).parameters)
+    config = {
+        key: value
+        for key, value in config.items()
+        if key in allowed or key in {"peft_type", "task_type"}
+    }
+
+    shutil.copy2(
+        source_path / "adapter_model.safetensors",
+        compat_path / "adapter_model.safetensors",
+    )
+    with (compat_path / "adapter_config.json").open(
+        "w", encoding="utf-8"
+    ) as file:
+        json.dump(config, file, indent=2)
+    return str(compat_path)
+
+
+def _load_lora_adapter(loaded_pipeline):
+    """Load and merge the optional adapter at the configured multiplier."""
+    global lora_loaded, lora_error
+
+    lora_loaded = False
+    lora_error = None
+    source_path = Path(SD35_LORA_PATH)
+    required = (
+        source_path / "adapter_config.json",
+        source_path / "adapter_model.safetensors",
+    )
+    if not SD35_LORA_PATH or not all(path.is_file() for path in required):
+        print(
+            "SD35 LoRA checkpoint not found; using base model. "
+            f"Expected: {SD35_LORA_PATH}",
+            flush=True,
+        )
+        return loaded_pipeline
+
+    try:
+        import peft.import_utils as peft_import_utils
+        import peft.tuners.lora.torchao as peft_torchao
+
+        peft_import_utils.is_torchao_available = lambda: False
+        peft_torchao.is_torchao_available = lambda: False
+    except Exception as exc:
+        print(f"TorchAO patch skipped: {exc}", flush=True)
+
+    from peft import PeftModel
+
+    print(
+        f"Loading SD35 LoRA: {SD35_LORA_PATH} "
+        f"(scale={SD35_LORA_SCALE})",
+        flush=True,
+    )
+    try:
+        try:
+            peft_transformer = PeftModel.from_pretrained(
+                loaded_pipeline.transformer,
+                SD35_LORA_PATH,
+                is_trainable=False,
+            )
+        except TypeError as exc:
+            if "unexpected keyword argument" not in str(exc):
+                raise
+            compat_path = _compatible_lora_directory(SD35_LORA_PATH)
+            print(
+                f"Retrying with compatible LoRA config: {compat_path}",
+                flush=True,
+            )
+            peft_transformer = PeftModel.from_pretrained(
+                loaded_pipeline.transformer,
+                compat_path,
+                is_trainable=False,
+            )
+
+        scaled_branches = 0
+        for module in peft_transformer.modules():
+            scaling = getattr(module, "scaling", None)
+            if isinstance(scaling, dict):
+                for adapter_name in list(scaling):
+                    scaling[adapter_name] = SD35_LORA_SCALE
+                    scaled_branches += 1
+        if scaled_branches == 0:
+            raise RuntimeError("No LoRA scaling branches were found")
+
+        loaded_pipeline.transformer = peft_transformer.merge_and_unload(
+            safe_merge=True
+        )
+        del peft_transformer
+        gc.collect()
+        lora_loaded = True
+        print(
+            f"SD35 LoRA merged successfully: scale={SD35_LORA_SCALE}, "
+            f"branches={scaled_branches}",
+            flush=True,
+        )
+        return loaded_pipeline
+    except Exception as exc:
+        lora_error = f"{type(exc).__name__}: {exc}"
+        raise RuntimeError(
+            f"SD35 LoRA checkpoint could not be loaded from {SD35_LORA_PATH}: "
+            f"{lora_error}"
+        ) from exc
 
 
 def _safe_cuda_cleanup() -> None:
@@ -109,6 +235,8 @@ def _load_pipeline() -> None:
             loaded = _create_pipeline(force_download=True)
 
         pipeline = loaded
+        pipeline = _load_lora_adapter(pipeline)
+        pipeline = pipeline.to("cuda")
         pipeline_device = "cuda"
         load_error = None
         print("SD3.5 worker ready.", flush=True)
@@ -128,6 +256,10 @@ def health() -> dict:
         "ready": pipeline is not None,
         "error": load_error,
         "device": pipeline_device,
+        "lora_loaded": lora_loaded,
+        "lora_path": SD35_LORA_PATH,
+        "lora_scale": SD35_LORA_SCALE,
+        "lora_error": lora_error,
     }
 
 
@@ -160,9 +292,12 @@ def generate(payload: GenerateRequest) -> dict:
     if not payload.objects:
         raise HTTPException(status_code=400, detail="No objects were provided")
 
-    # The current pipeline accepts lora_scale for API compatibility, but the
-    # SD3.5 implementation does not load a LoRA adapter yet.
-    _ = payload.lora_scale
+    if abs(float(payload.lora_scale) - SD35_LORA_SCALE) > 1e-6:
+        print(
+            "Request lora_scale differs from resident worker scale; "
+            f"using resident scale={SD35_LORA_SCALE}",
+            flush=True,
+        )
     jobs = build_object_jobs(payload.scene_prompt, payload.objects)
 
     with inference_lock:
