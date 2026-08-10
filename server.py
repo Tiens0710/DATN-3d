@@ -117,21 +117,23 @@ text-to-2D-to-3D pipeline.
 Return exactly one English prompt and nothing else.
 Preserve every requested object, exact object count, material, color, style,
 spatial relationship, decorative motif, carving, and engraving.
-When a furniture style is not specified, enrich the requested furniture with
-subtle, physically plausible craftsmanship details such as visible wood grain,
-beveled edges, a framed panel, a restrained carved border, or a small inlay.
-These details belong to the object; they must never become extra objects.
-Do not force ornate decoration when the user asks for a plain or minimalist
-design.
+Do not invent a style, shape, ornament, color, material, room, or prop that the
+user did not request. Keep an unspecified furniture design simple and
+conventional so it can be segmented and reconstructed reliably. Only preserve
+carving, patterns, inlays, engravings, or other decoration when the user
+explicitly requests it; those details belong to the object and must never
+become extra objects.
 When the user requests one object, explicitly write "exactly one".
 For example, one table and one chair must become exactly one table and exactly
 one chair.
 Never invent extra furniture, duplicate objects, or decorative props.
 If the input is Vietnamese, translate it naturally to English.
 Make each object fully visible with accurate geometry, realistic construction,
-and minimal overlap. For a table, explicitly show the horizontal tabletop,
-apron or support, and all connected legs or the complete pedestal down to the
-floor; for a chair, show the complete seat, backrest, supports, and feet.
+and minimal overlap. For a dining table, use a conventional horizontal
+rectangular tabletop and four clearly connected straight legs at the corners
+unless the user explicitly requests another shape or a pedestal. Show the
+apron/support and every foot down to the floor. For a chair, show the complete
+seat, backrest, supports, and feet.
 Never use an overhead, top-down, detail close-up, or cropped view of furniture.
 Use an eye-level three-quarter product-photography view, centered composition, clean
 neutral studio background, soft even lighting, sharp focus, and realistic
@@ -166,7 +168,7 @@ Rules:
 
 
 def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
-    """Keep Gemini output decorative without changing object identity/count."""
+    """Keep Gemini output geometrically stable without inventing decoration."""
     source = source_prompt.lower()
     furniture_terms = (
         "table", "chair", "sofa", "couch", "bed", "desk", "cabinet",
@@ -179,10 +181,21 @@ def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
     geometry_guard = ""
     if "table" in source or "bÃ n" in source or "ban" in source:
         geometry_guard = (
-            ", show the complete table from the horizontal tabletop to the floor in an "
-            "eye-level front three-quarter view, with all legs or the complete pedestal visible; "
-            "keep decoration restrained to the tabletop edge, apron, or legs, never a large central "
-            "top-down motif"
+            ", show the complete table from a horizontal tabletop to the floor in an eye-level "
+            "front three-quarter view, with four clearly connected straight legs at the corners "
+            "unless the user explicitly requested a pedestal or another shape; keep any requested "
+            "decoration restrained to the tabletop edge or apron, never a large central top-down motif"
+        )
+
+    elif any(term in source for term in ("chair", "gháº¿", "ghe")):
+        geometry_guard = (
+            ", show the complete chair from the top of the backrest to the floor in an eye-level "
+            "front three-quarter view, with one seat, one backrest, connected supports, and all feet visible"
+        )
+    elif any(term in source for term in ("sofa", "couch")):
+        geometry_guard = (
+            ", show the complete sofa from the backrest to the floor in an eye-level front three-quarter view, "
+            "including the full seat, arms, base, and feet"
         )
 
     # Respect an explicit plain/minimal request from the user.
@@ -195,7 +208,8 @@ def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
         "cham", "hoa van", "van go",
     )
     optimized_lower = optimized_prompt.lower()
-    if any(marker in optimized_lower for marker in detail_markers):
+    source_requests_details = any(marker in source for marker in detail_markers)
+    if source_requests_details:
         if "clearly visible" in optimized_lower or "clearly shown" in optimized_lower:
             return optimized_prompt.rstrip(" .") + geometry_guard + "."
         return (
@@ -206,13 +220,7 @@ def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
             + "."
         )
 
-    return (
-        optimized_prompt.rstrip(" .")
-        + ", visible wood grain, softly beveled edges, subtle carved border or inlay "
-        "clearly visible on the main surface, not plain or blank."
-        + geometry_guard
-        + "."
-    )
+    return optimized_prompt.rstrip(" .") + geometry_guard + "."
 
 
 def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
@@ -224,8 +232,8 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
     if not api_key:
         return {
             "optimized_prompt": (
-                f"{clean_prompt}, photorealistic furniture product photography, "
-                "full objects visible from top to floor, accurate proportions and construction, "
+                f"{clean_prompt}, photorealistic product photography, "
+                "full objects visible from top to floor, conventional accurate proportions and construction, "
                 "eye-level three-quarter view, never overhead or top-down, centered composition, clean neutral studio "
                 "background, soft even lighting, sharp focus, realistic materials, "
                 "minimal overlap, no people, no text, no watermark, no extra objects, "
@@ -290,10 +298,8 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
     except Exception as exc:
         return {
             "optimized_prompt": (
-                f"{clean_prompt}, photorealistic furniture product photography, "
-                "full objects visible from top to floor, accurate proportions and construction, "
-                "visible material texture, tasteful woodworking details, subtle "
-                "carved border or inlay, "
+                f"{clean_prompt}, photorealistic product photography, "
+                "full objects visible from top to floor, conventional accurate proportions and construction, "
                 "eye-level three-quarter view, never overhead or top-down, centered composition, clean neutral studio "
                 "background, soft even lighting, sharp focus, realistic materials, "
                 "minimal overlap, no people, no text, no watermark, no extra objects, "

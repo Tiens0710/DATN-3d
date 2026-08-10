@@ -124,12 +124,32 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
     else:
         detail_instruction = ""
 
+    source_lower = f"{scene_prompt} {descriptor}".lower()
+    explicit_shape = any(
+        term in source_lower
+        for term in ("round", "circular", "oval", "square", "rectangular", "curved")
+    )
+    explicit_pedestal = any(
+        term in source_lower for term in ("pedestal", "trestle", "central base")
+    )
+    table_shape_instruction = (
+        "Use a conventional rectangular tabletop "
+        if not explicit_shape
+        else "Preserve the explicitly requested tabletop shape "
+    )
+    table_base_instruction = (
+        "with four straight vertical legs at the four corners"
+        if not explicit_pedestal
+        else "with the explicitly requested pedestal or base"
+    )
+
     geometry_instructions = {
         "table": (
             "Use an eye-level front three-quarter camera, never an overhead or top-down view. "
-            "Show the complete table from the tabletop to the floor: a horizontal tabletop, "
-            "the apron or support, and four connected legs or one complete pedestal base, "
-            "with every foot visible. The tabletop must never appear as a separate flat slab. "
+            "Show the complete table from the tabletop to the floor: "
+            f"{table_shape_instruction}"
+            f"{table_base_instruction}, an attached apron or support, and every foot visible. "
+            "The tabletop must never appear as a separate flat slab. "
         ),
         "chair": (
             "Use an eye-level front three-quarter camera and show the complete chair from the "
@@ -160,7 +180,7 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
     negative = (
         f"two {label}s, pair of {label}s, {label} set, multiple objects, second {label}, "
         f"duplicate object, repeated subject, extra furniture, {excluded}, "
-        "plain blank surface, featureless smooth wood, missing decoration, "
+        "featureless malformed furniture, missing structure, "
         "overhead view, top-down view, bird's-eye view, extreme low angle, close-up, "
         "cropped object, tabletop only, table surface only, shield-shaped tabletop, "
         "flat slab, floating tabletop, missing legs, cropped legs, incomplete furniture, "
@@ -168,6 +188,10 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
         "floating parts, "
         "deformed, blurry, low quality, room, people, text, watermark"
     )
+    if label == "table" and not explicit_shape:
+        negative += ", round tabletop, circular tabletop, oval tabletop"
+    if label == "table" and not explicit_pedestal:
+        negative += ", pedestal table, single central leg, three-legged table, cabriole legs"
     return positive, negative
 
 
