@@ -5030,7 +5030,11 @@
 
             this.properties = {
                 sceneUrl: "",
-                scaleFactor: 0.01
+                zipUrl: "",
+                scaleFactor: 0.01,
+                status: "Waiting for models...",
+                modelCount: 0,
+                error: ""
             };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
@@ -5050,10 +5054,12 @@
             const modelsData = this.getInputData(0);
             const relationLayout = this.getInputData(1) || {};
             if (!modelsData) {
+                this.properties.status = "Missing models_data";
                 writeLog("❌ 3D Scene Combiner: Thiếu dữ liệu mô hình models_data!", "error");
                 throw new Error("Thiếu dữ liệu mô hình models_data");
             }
             if (!isConnected) {
+                this.properties.status = "GPU is not connected";
                 writeLog("❌ 3D Scene Combiner: Chưa kết nối GPU Kaggle!", "error");
                 throw new Error("Chưa kết nối GPU Kaggle");
             }
@@ -5064,6 +5070,9 @@
             }
 
             this._lastModels = modelsData;
+            this.properties.modelCount = Array.isArray(modelsData) ? modelsData.length : 0;
+            this.properties.status = "Combining scene...";
+            this.properties.error = "";
             writeLog("Trimesh đang căn chỉnh tọa độ và đóng gói file Scene 3D...", "system");
 
             try {
@@ -5083,22 +5092,54 @@
                     const data = await res.json();
                     this.properties.sceneUrl = `${backendUrl}${data.scene_url}`;
                     this.properties.zipUrl = `${backendUrl}${data.zip_url}`;
+                    this.properties.status = "Scene GLB ready";
                     this.setOutputData(0, this.properties.sceneUrl);
                     writeLog("🎉 HỆ THỐNG ĐÃ HOÀN TẤT DỰNG CẢNH 3D!", "success");
 
-                    this.update3DViewer();
+                    // Wait until the combined GLB has been fetched and passed to
+                    // the global viewport. Otherwise the pipeline can report
+                    // success while the viewer is still empty.
+                    await this.update3DViewer();
+                    this.setDirtyCanvas(true, true);
                 } else {
                     const errText = await res.text();
                     throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
+                this.properties.status = "Scene failed";
+                this.properties.error = e.message || String(e);
                 writeLog(`❌ Lỗi ghép cảnh: ${e.message}`, "error");
                 throw e;
             }
         };
 
+        NodeSceneCombiner.prototype.onDrawForeground = function (ctx) {
+            const scale = canvas.ds.scale || 1;
+            const status = this.properties.status || "Waiting for models...";
+            const hasScene = Boolean(this.properties.sceneUrl);
+            const color = hasScene ? "#34d399" : (this.properties.error ? "#f09a9f" : "#a1a1aa");
+
+            ctx.fillStyle = color;
+            ctx.font = `bold ${Math.max(11, 13 * scale)}px Outfit`;
+            ctx.fillText(hasScene ? "✓ 3D scene ready" : status, 18, 174);
+
+            ctx.fillStyle = "#a1a1aa";
+            ctx.font = `${Math.max(10, 11 * scale)}px Outfit`;
+            ctx.fillText(`Models: ${this.properties.modelCount || 0}`, 18, 196);
+
+            if (hasScene) {
+                ctx.fillStyle = "#71717a";
+                ctx.font = `${Math.max(9, 10 * scale)}px Fira Code`;
+                ctx.fillText("scene_combined.glb", 18, 218);
+            } else if (this.properties.error) {
+                ctx.fillStyle = "#f09a9f";
+                ctx.font = `${Math.max(9, 10 * scale)}px Outfit`;
+                ctx.fillText(String(this.properties.error).slice(0, 58), 18, 218);
+            }
+        };
+
         // Update overlay interactive 3D view on DOM
-        NodeSceneCombiner.prototype.update3DViewer = function () {
+        NodeSceneCombiner.prototype.update3DViewer = async function () {
             if (!this.properties.sceneUrl) return;
 
             const viewerId = `viewer-${this.id}`;
@@ -5120,7 +5161,7 @@
                 
                 viewer.innerHTML = `<div style="color: #d1d5db; font-family: 'Outfit'; display: flex; align-items: center; justify-content: center; height: 100%; background: #34373b;">⏳ Đang nạp mô hình 3D...</div>`;
                 
-                fetch(this.properties.sceneUrl, {
+                const loadPromise = fetch(this.properties.sceneUrl, {
                     headers: { "ngrok-skip-browser-warning": "69420" }
                 })
                 .then(res => {
@@ -5232,7 +5273,11 @@
                     writeLog(`❌ Lỗi nạp mô hình 3D: ${err.message}`, "error");
                     setSpatialViewportError("Preview failed");
                     viewer.innerHTML = `<div style="color: #f09a9f; font-family: 'Outfit'; display: flex; align-items: center; justify-content: center; height: 100%; background: #34373b; padding: 10px; text-align: center;">❌ Lỗi nạp mô hình 3D: ${err.message}</div>`;
+                    throw err;
                 });
+
+                this.position3DViewer();
+                return loadPromise;
             }
             this.position3DViewer();
         };
