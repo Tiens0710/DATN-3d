@@ -123,21 +123,49 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
         )
     else:
         detail_instruction = ""
+
+    geometry_instructions = {
+        "table": (
+            "Use an eye-level front three-quarter camera, never an overhead or top-down view. "
+            "Show the complete table from the tabletop to the floor: a horizontal tabletop, "
+            "the apron or support, and four connected legs or one complete pedestal base, "
+            "with every foot visible. The tabletop must never appear as a separate flat slab. "
+        ),
+        "chair": (
+            "Use an eye-level front three-quarter camera and show the complete chair from the "
+            "top of the backrest to the floor: one seat, one backrest, connected supports, "
+            "and all legs with their feet visible. Do not show a close-up or a chair fragment. "
+        ),
+        "sofa": (
+            "Use an eye-level front three-quarter camera and show the complete sofa from its "
+            "backrest to its feet, including the full seat, arms, base, and legs. "
+        ),
+    }
+    geometry_instruction = geometry_instructions.get(
+        label,
+        "Use an eye-level front three-quarter camera and show the complete object from its "
+        "highest point to its base, with all structural parts and feet visible. ",
+    )
     positive = (
         f"Exactly one complete standalone {descriptor}, centered and fully visible. "
         f"One {label} only, a single subject and a single instance, not a pair or set. "
+        f"{geometry_instruction}"
         f"{detail_instruction}"
         "Isolated product photo, empty surroundings, no scene, no extra furniture, "
         "no second object, no duplicate parts, "
-        "generous margins, correct structure, realistic proportions, clean white "
+        "generous margins, object fills about 70 percent of the frame, correct structure, "
+        "realistic proportions, clean white "
         "studio background, soft even lighting, sharp focus, realistic materials."
     )
     negative = (
         f"two {label}s, pair of {label}s, {label} set, multiple objects, second {label}, "
         f"duplicate object, repeated subject, extra furniture, {excluded}, "
         "plain blank surface, featureless smooth wood, missing decoration, "
-        "room scene, cropped, close-up, "
-        "fused parts, intersecting parts, missing parts, duplicate legs, floating parts, "
+        "overhead view, top-down view, bird's-eye view, extreme low angle, close-up, "
+        "cropped object, tabletop only, table surface only, shield-shaped tabletop, "
+        "flat slab, floating tabletop, missing legs, cropped legs, incomplete furniture, "
+        "black silhouette, fused parts, intersecting parts, missing parts, duplicate legs, "
+        "floating parts, "
         "deformed, blurry, low quality, room, people, text, watermark"
     )
     return positive, negative

@@ -129,11 +129,17 @@ one chair.
 Never invent extra furniture, duplicate objects, or decorative props.
 If the input is Vietnamese, translate it naturally to English.
 Make each object fully visible with accurate geometry, realistic construction,
-and minimal overlap.
-Use a three-quarter product-photography view, centered composition, clean
+and minimal overlap. For a table, explicitly show the horizontal tabletop,
+apron or support, and all connected legs or the complete pedestal down to the
+floor; for a chair, show the complete seat, backrest, supports, and feet.
+Never use an overhead, top-down, detail close-up, or cropped view of furniture.
+Use an eye-level three-quarter product-photography view, centered composition, clean
 neutral studio background, soft even lighting, sharp focus, and realistic
 materials. The result must be suitable for GroundingDINO, SAM2 segmentation,
 and single-image 3D reconstruction. Keep the prompt under 90 words.
+For tables, keep decoration restrained to the tabletop edge, apron, or legs;
+never describe a large central tabletop motif or an overhead view that hides
+the legs.
 """.strip()
 
 SCENE_GRAPH_INSTRUCTION = """
@@ -170,6 +176,15 @@ def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
     if not any(term in source for term in furniture_terms):
         return optimized_prompt
 
+    geometry_guard = ""
+    if "table" in source or "bÃ n" in source or "ban" in source:
+        geometry_guard = (
+            ", show the complete table from the horizontal tabletop to the floor in an "
+            "eye-level front three-quarter view, with all legs or the complete pedestal visible; "
+            "keep decoration restrained to the tabletop edge, apron, or legs, never a large central "
+            "top-down motif"
+        )
+
     # Respect an explicit plain/minimal request from the user.
     if any(term in source for term in ("plain", "minimalist", "minimal", "đơn giản")):
         return optimized_prompt
@@ -182,17 +197,21 @@ def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
     optimized_lower = optimized_prompt.lower()
     if any(marker in optimized_lower for marker in detail_markers):
         if "clearly visible" in optimized_lower or "clearly shown" in optimized_lower:
-            return optimized_prompt
+            return optimized_prompt.rstrip(" .") + geometry_guard + "."
         return (
             optimized_prompt.rstrip(" .")
             + ", make the requested decorative details prominent and clearly visible, "
             "not plain or blank."
+            + geometry_guard
+            + "."
         )
 
     return (
         optimized_prompt.rstrip(" .")
         + ", visible wood grain, softly beveled edges, subtle carved border or inlay "
         "clearly visible on the main surface, not plain or blank."
+        + geometry_guard
+        + "."
     )
 
 
@@ -206,8 +225,8 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
         return {
             "optimized_prompt": (
                 f"{clean_prompt}, photorealistic furniture product photography, "
-                "full objects visible, accurate proportions and construction, "
-                "three-quarter view, centered composition, clean neutral studio "
+                "full objects visible from top to floor, accurate proportions and construction, "
+                "eye-level three-quarter view, never overhead or top-down, centered composition, clean neutral studio "
                 "background, soft even lighting, sharp focus, realistic materials, "
                 "minimal overlap, no people, no text, no watermark, no extra objects, "
                 "suitable for object segmentation and single-image 3D reconstruction"
@@ -272,10 +291,10 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
         return {
             "optimized_prompt": (
                 f"{clean_prompt}, photorealistic furniture product photography, "
-                "full objects visible, accurate proportions and construction, "
+                "full objects visible from top to floor, accurate proportions and construction, "
                 "visible material texture, tasteful woodworking details, subtle "
                 "carved border or inlay, "
-                "three-quarter view, centered composition, clean neutral studio "
+                "eye-level three-quarter view, never overhead or top-down, centered composition, clean neutral studio "
                 "background, soft even lighting, sharp focus, realistic materials, "
                 "minimal overlap, no people, no text, no watermark, no extra objects, "
                 "suitable for object segmentation and single-image 3D reconstruction"
