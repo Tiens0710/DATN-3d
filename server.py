@@ -179,12 +179,20 @@ def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
         "motif", "floral", "wood grain", "beveled", "bevelled", "panel",
         "cham", "hoa van", "van go",
     )
-    if any(marker in optimized_prompt.lower() for marker in detail_markers):
-        return optimized_prompt
+    optimized_lower = optimized_prompt.lower()
+    if any(marker in optimized_lower for marker in detail_markers):
+        if "clearly visible" in optimized_lower or "clearly shown" in optimized_lower:
+            return optimized_prompt
+        return (
+            optimized_prompt.rstrip(" .")
+            + ", make the requested decorative details prominent and clearly visible, "
+            "not plain or blank."
+        )
 
     return (
         optimized_prompt.rstrip(" .")
-        + ", visible wood grain, softly beveled edges, subtle carved border or inlay."
+        + ", visible wood grain, softly beveled edges, subtle carved border or inlay "
+        "clearly visible on the main surface, not plain or blank."
     )
 
 

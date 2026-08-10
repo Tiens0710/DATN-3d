@@ -97,9 +97,36 @@ def _object_descriptor(label: str, scene_prompt: str) -> str:
 def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tuple[str, str]:
     excluded = ", ".join(sorted(set(all_labels) - {label})) or "other furniture"
     descriptor = _object_descriptor(label, scene_prompt)
+    detail_markers = (
+        "carv", "ornate", "decor", "inlay", "engrave", "pattern", "motif",
+        "floral", "wood grain", "beveled", "bevelled", "panel",
+        "hoa văn", "chạm khắc", "họa tiết",
+    )
+    detail_requested = any(
+        marker in f"{scene_prompt} {descriptor}".lower()
+        for marker in detail_markers
+    )
+    if detail_requested and label == "table":
+        detail_instruction = (
+            "The requested decorative craftsmanship is mandatory and clearly visible: "
+            "a distinct carved border or inlay along the tabletop edge, not a plain blank top. "
+        )
+    elif detail_requested and label == "chair":
+        detail_instruction = (
+            "The requested decorative craftsmanship is mandatory and clearly visible: "
+            "a distinct carved motif or patterned panel on the chair backrest, not a plain blank back. "
+        )
+    elif detail_requested:
+        detail_instruction = (
+            "The requested decorative craftsmanship is mandatory and clearly visible on the main object, "
+            "not a plain blank surface. "
+        )
+    else:
+        detail_instruction = ""
     positive = (
         f"Exactly one complete standalone {descriptor}, centered and fully visible. "
         f"One {label} only, a single subject and a single instance, not a pair or set. "
+        f"{detail_instruction}"
         "Isolated product photo, empty surroundings, no scene, no extra furniture, "
         "no second object, no duplicate parts, "
         "generous margins, correct structure, realistic proportions, clean white "
@@ -108,6 +135,7 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
     negative = (
         f"two {label}s, pair of {label}s, {label} set, multiple objects, second {label}, "
         f"duplicate object, repeated subject, extra furniture, {excluded}, "
+        "plain blank surface, featureless smooth wood, missing decoration, "
         "room scene, cropped, close-up, "
         "fused parts, intersecting parts, missing parts, duplicate legs, floating parts, "
         "deformed, blurry, low quality, room, people, text, watermark"
