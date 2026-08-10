@@ -159,6 +159,35 @@ Rules:
 """.strip()
 
 
+def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
+    """Keep Gemini output decorative without changing object identity/count."""
+    source = source_prompt.lower()
+    furniture_terms = (
+        "table", "chair", "sofa", "couch", "bed", "desk", "cabinet",
+        "wardrobe", "shelf", "stool", "bench", "lamp", "dresser",
+        "furniture", "bàn", "ghế", "tủ", "giường",
+    )
+    if not any(term in source for term in furniture_terms):
+        return optimized_prompt
+
+    # Respect an explicit plain/minimal request from the user.
+    if any(term in source for term in ("plain", "minimalist", "minimal", "đơn giản")):
+        return optimized_prompt
+
+    detail_markers = (
+        "carv", "ornate", "decor", "inlay", "engrave", "engraving", "pattern",
+        "motif", "floral", "wood grain", "beveled", "bevelled", "panel",
+        "cham", "hoa van", "van go",
+    )
+    if any(marker in optimized_prompt.lower() for marker in detail_markers):
+        return optimized_prompt
+
+    return (
+        optimized_prompt.rstrip(" .")
+        + ", visible wood grain, softly beveled edges, subtle carved border or inlay."
+    )
+
+
 def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
     clean_prompt = " ".join(prompt.split()).strip()
     if not clean_prompt:
@@ -224,6 +253,7 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
         ).strip()
         if not optimized_prompt:
             raise RuntimeError("Gemini returned an empty prompt")
+        optimized_prompt = _ensure_furniture_details(clean_prompt, optimized_prompt)
 
         return {
             "optimized_prompt": optimized_prompt,
@@ -235,7 +265,8 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
             "optimized_prompt": (
                 f"{clean_prompt}, photorealistic furniture product photography, "
                 "full objects visible, accurate proportions and construction, "
-                "visible material texture and tasteful woodworking details, "
+                "visible material texture, tasteful woodworking details, subtle "
+                "carved border or inlay, "
                 "three-quarter view, centered composition, clean neutral studio "
                 "background, soft even lighting, sharp focus, realistic materials, "
                 "minimal overlap, no people, no text, no watermark, no extra objects, "
