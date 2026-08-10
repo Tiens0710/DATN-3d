@@ -167,56 +167,73 @@ def _mask_alpha(masks, scores) -> tuple[np.ndarray, int]:
 
 def _matting_alpha(image: Image.Image, box: list[int]) -> np.ndarray | None:
     """Run general-object matting on a focused crop and place alpha on canvas."""
+    global matting_session, matting_remove, matting_error
+
     if matting_session is None or matting_remove is None:
         return None
 
-    width, height = image.size
-    x1, y1, x2, y2 = [int(value) for value in box]
-    box_width = max(1, x2 - x1)
-    box_height = max(1, y2 - y1)
-    padding = max(12, int(max(box_width, box_height) * 0.08))
-    crop_box = (
-        max(0, x1 - padding),
-        max(0, y1 - padding),
-        min(width, x2 + padding),
-        min(height, y2 + padding),
-    )
-    crop = image.crop(crop_box).convert("RGB")
-    original_size = crop.size
-    scale = min(1.0, MATTING_MAX_SIDE / max(original_size))
-    if scale < 1.0:
-        crop = crop.resize(
-            (max(1, int(original_size[0] * scale)), max(1, int(original_size[1] * scale))),
-            Image.Resampling.LANCZOS,
+    try:
+        width, height = image.size
+        x1, y1, x2, y2 = [int(value) for value in box]
+        box_width = max(1, x2 - x1)
+        box_height = max(1, y2 - y1)
+        padding = max(12, int(max(box_width, box_height) * 0.08))
+        crop_box = (
+            max(0, x1 - padding),
+            max(0, y1 - padding),
+            min(width, x2 + padding),
+            min(height, y2 + padding),
         )
+        crop = image.crop(crop_box).convert("RGB")
+        original_size = crop.size
+        scale = min(1.0, MATTING_MAX_SIDE / max(original_size))
+        if scale < 1.0:
+            crop = crop.resize(
+                (
+                    max(1, int(original_size[0] * scale)),
+                    max(1, int(original_size[1] * scale)),
+                ),
+                Image.Resampling.LANCZOS,
+            )
 
-    buffer = io.BytesIO()
-    crop.save(buffer, format="PNG")
-    output = matting_remove(buffer.getvalue(), session=matting_session)
-    if isinstance(output, Image.Image):
-        cutout = output.convert("RGBA")
-    else:
-        cutout = Image.open(io.BytesIO(output)).convert("RGBA")
-    alpha = np.asarray(cutout.getchannel("A"), dtype=np.uint8)
-    if cutout.size != original_size:
-        alpha = np.asarray(
-            Image.fromarray(alpha).resize(original_size, Image.Resampling.LANCZOS),
-            dtype=np.uint8,
-        )
+        buffer = io.BytesIO()
+        crop.save(buffer, format="PNG")
+        output = matting_remove(buffer.getvalue(), session=matting_session)
+        if isinstance(output, Image.Image):
+            cutout = output.convert("RGBA")
+        else:
+            cutout = Image.open(io.BytesIO(output)).convert("RGBA")
+        alpha = np.asarray(cutout.getchannel("A"), dtype=np.uint8)
+        if cutout.size != original_size:
+            alpha = np.asarray(
+                Image.fromarray(alpha).resize(
+                    original_size,
+                    Image.Resampling.LANCZOS,
+                ),
+                dtype=np.uint8,
+            )
 
-    # Keep only meaningful alpha. Very faint shadows should not become mesh
-    # geometry, while the soft edge produced by matting is preserved.
-    alpha[alpha < 12] = 0
-    foreground = alpha >= 32
-    area_ratio = float(foreground.mean()) if foreground.size else 0.0
-    if area_ratio < 0.003 or area_ratio > 0.92:
+        # Keep only meaningful alpha. Very faint shadows should not become
+        # mesh geometry, while the soft edge produced by matting is preserved.
+        alpha[alpha < 12] = 0
+        foreground = alpha >= 32
+        area_ratio = float(foreground.mean()) if foreground.size else 0.0
+        if area_ratio < 0.003 or area_ratio > 0.92:
+            return None
+
+        canvas = np.zeros((height, width), dtype=np.uint8)
+        cx1, cy1, _, _ = crop_box
+        crop_height, crop_width = alpha.shape
+        canvas[cy1:cy1 + crop_height, cx1:cx1 + crop_width] = alpha
+        return canvas
+    except Exception as exc:
+        # Matting is an enhancement, never a hard dependency for segmentation.
+        # Disable it for the rest of this worker session and use SAM2 instead.
+        matting_session = None
+        matting_remove = None
+        matting_error = f"Runtime matting disabled: {exc}\n{traceback.format_exc()}"
+        print(matting_error, flush=True)
         return None
-
-    canvas = np.zeros((height, width), dtype=np.uint8)
-    cx1, cy1, _, _ = crop_box
-    crop_height, crop_width = alpha.shape
-    canvas[cy1:cy1 + crop_height, cx1:cx1 + crop_width] = alpha
-    return canvas
 
 
 def _predict_refined_alpha(
