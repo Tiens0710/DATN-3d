@@ -2165,6 +2165,7 @@
         #canvas-container {
             position: relative;
             isolation: isolate;
+            overflow: hidden;
             background-color: #0b1016;
             background-image:
                 linear-gradient(var(--sf-grid-major) 1px, transparent 1px),
@@ -3606,11 +3607,11 @@
             const container = document.getElementById("canvas-container");
             const canvasElement = canvas.canvas;
             if (!container || !canvasElement) return [0, 0];
-            // `point` is already in LiteGraph canvas coordinates. Convert it
-            // to screen/offset coordinates; the inverse conversion places
-            // DOM overlays outside the node after zooming.
-            const canvasPoint = typeof canvas.convertCanvasToOffset === "function"
-                ? canvas.convertCanvasToOffset(point)
+            // LiteGraph's overlay helpers use offset coordinates for the
+            // node position. Using the inverse conversion makes DOM widgets
+            // drift away from their canvas node after zooming.
+            const canvasPoint = typeof canvas.convertOffsetToCanvas === "function"
+                ? canvas.convertOffsetToCanvas(point)
                 : [
                     point[0] * canvas.ds.scale + canvas.ds.offset[0],
                     point[1] * canvas.ds.scale + canvas.ds.offset[1],
