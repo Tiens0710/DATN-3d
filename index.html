@@ -326,6 +326,20 @@
                 linear-gradient(180deg, #3a3d41 0%, #34373b 46%, #292c30 100%);
         }
 
+        .viewer-model-label {
+            position: absolute;
+            top: 8px;
+            left: 10px;
+            z-index: 3;
+            max-width: calc(100% - 20px);
+            overflow: hidden;
+            color: #e5e7eb;
+            font: 600 11px 'Outfit', sans-serif;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
         .viewer-stage::before {
             content: "";
             position: absolute;
@@ -4866,7 +4880,10 @@
         function NodeTrellis3D() {
             this.addInput("crops_data", "object");
             this.addOutput("models_data", "object");
-            this.properties = { models: [] };
+            this.properties = {
+                models: [],
+                viewerModelIndex: 0,
+            };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
             });
@@ -4984,6 +5001,7 @@
                     this.setOutputData(0, this.properties.models);
                     const firstModel = this.properties.models.find((model) => model.model_url);
                     if (firstModel) {
+                        await this.update3DViewer();
                         await previewBackendGlb(`${backendUrl}${firstModel.model_url}`);
                     }
                     writeLog("✅ TRELLIS dựng hình 3D Mesh hoàn thành!", "success");
@@ -5019,6 +5037,88 @@
                 ctx.fillText(m.model_url.substring(0, 52) + "...", 25, 99 + (idx * 34));
             });
         };
+        NodeTrellis3D.prototype.update3DViewer = async function () {
+            const models = (this.properties.models || []).filter((model) => model.model_url);
+            if (!models.length) return;
+
+            const index = Math.min(
+                Math.max(0, Number(this.properties.viewerModelIndex) || 0),
+                models.length - 1
+            );
+            const model = models[index];
+            const sourceUrl = `${backendUrl}${model.model_url}`;
+            const viewerId = `trellis-viewer-${this.id}`;
+            let viewer = document.getElementById(viewerId);
+
+            if (!viewer) {
+                viewer = document.createElement("div");
+                viewer.id = viewerId;
+                viewer.className = "node-3d-container";
+                viewer.style.zIndex = "1000";
+                document.getElementById("canvas-container").appendChild(viewer);
+            }
+
+            this.position3DViewer();
+            if (this._lastTrellisViewerUrl === sourceUrl) return;
+            this._lastTrellisViewerUrl = sourceUrl;
+            viewer.innerHTML = `
+                <div class="viewer-stage">
+                    <div class="viewer-model-label">${model.label || model.name || "3D model"}</div>
+                    <model-viewer
+                        src="${sourceUrl}"
+                        camera-controls
+                        auto-rotate
+                        shadow-intensity="1.2"
+                        exposure="1.0"
+                        alt="TRELLIS generated 3D model">
+                    </model-viewer>
+                    <div class="viewer-controls">
+                        <button class="viewer-btn" data-action="spin">Stop Spin</button>
+                        <button class="viewer-btn" data-action="reset">Reset View</button>
+                        <button class="viewer-btn" data-action="download">Tải GLB</button>
+                    </div>
+                </div>
+            `;
+
+            const modelViewer = viewer.querySelector("model-viewer");
+            viewer.querySelector('[data-action="spin"]').onclick = (event) => {
+                event.stopPropagation();
+                if (modelViewer.hasAttribute("auto-rotate")) {
+                    modelViewer.removeAttribute("auto-rotate");
+                    event.currentTarget.innerText = "Auto Spin";
+                } else {
+                    modelViewer.setAttribute("auto-rotate", "");
+                    event.currentTarget.innerText = "Stop Spin";
+                }
+            };
+            viewer.querySelector('[data-action="reset"]').onclick = (event) => {
+                event.stopPropagation();
+                modelViewer.cameraOrbit = "0deg 75deg auto";
+                modelViewer.fieldOfView = "auto";
+            };
+            viewer.querySelector('[data-action="download"]').onclick = async (event) => {
+                event.stopPropagation();
+                try {
+                    await downloadBackendFile(sourceUrl, `${model.name || "model"}.glb`);
+                } catch (error) {
+                    writeLog(`Lỗi tải model GLB: ${error.message}`, "error");
+                }
+            };
+            this.position3DViewer();
+        };
+
+        NodeTrellis3D.prototype.position3DViewer = function () {
+            const viewer = document.getElementById(`trellis-viewer-${this.id}`);
+            if (!viewer) return;
+            const scale = canvas.ds.scale || 1;
+            const screenPos = graphToContainerPosition([this.pos[0] + 10, this.pos[1] + 72]);
+            viewer.style.left = `${screenPos[0]}px`;
+            viewer.style.top = `${screenPos[1]}px`;
+            viewer.style.width = `${Math.max(120, (this.size[0] - 20) * scale)}px`;
+            viewer.style.height = `${Math.max(90, (this.size[1] - 84) * scale)}px`;
+            viewer.style.display = this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE ? "none" : "block";
+        };
+
         LiteGraph.registerNodeType("datn/trellis_3d", NodeTrellis3D);
 
 
@@ -5337,6 +5437,11 @@
                 combiners.forEach(n => n.position3DViewer());
             }
 
+            const trellisNodes = graph.findNodesByType("datn/trellis_3d");
+            if (trellisNodes && trellisNodes.length > 0) {
+                trellisNodes.forEach(n => n.position3DViewer());
+            }
+
             // Căn chỉnh vị trí Textarea nhập Prompt
             const prompts = graph.findNodesByType("datn/input_prompt");
             if (prompts && prompts.length > 0) {
@@ -5347,6 +5452,11 @@
         NodeSceneCombiner.prototype.onRemoved = function () {
             const viewerId = `viewer-${this.id}`;
             const viewer = document.getElementById(viewerId);
+            if (viewer) viewer.remove();
+        };
+
+        NodeTrellis3D.prototype.onRemoved = function () {
+            const viewer = document.getElementById(`trellis-viewer-${this.id}`);
             if (viewer) viewer.remove();
         };
 
