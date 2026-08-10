@@ -4489,7 +4489,7 @@
                     body: JSON.stringify({
                         prompt: generationPrompt,
                         layout: {}, // Send empty layout to satisfy backend schema
-                        lora_scale: 0.0
+                        lora_scale: 0.2
                     })
                 });
                 if (res.ok) {
@@ -4547,7 +4547,7 @@
                 body: JSON.stringify({
                     prompt,
                     layout: objectLayout,
-                    lora_scale: 0.0
+                    lora_scale: 0.2
                 })
             });
 

@@ -78,7 +78,7 @@ class PromptOptimizeRequest(BaseModel):
 class ImageGenRequest(BaseModel):
     prompt: str
     layout: Dict[str, Any]
-    lora_scale: float = 0.6
+    lora_scale: float = 0.2
 
 
 class Sam2Request(BaseModel):

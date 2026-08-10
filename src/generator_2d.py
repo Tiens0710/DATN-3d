@@ -210,7 +210,7 @@ def _sanitize_generated_jobs(jobs: list[dict]) -> list[dict]:
 def generate_object_images(
     scene_prompt: str,
     objects: list[dict],
-    lora_scale: float = 0.0,
+    lora_scale: float = 0.2,
 ) -> list[dict]:
     """Generate isolated object images through the resident SD3.5 worker."""
     if not objects:

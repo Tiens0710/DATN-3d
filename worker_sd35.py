@@ -41,7 +41,7 @@ inference_lock = threading.Lock()
 class GenerateRequest(BaseModel):
     scene_prompt: str
     objects: list[dict]
-    lora_scale: float = 0.0
+    lora_scale: float = 0.2
 
 
 def _create_pipeline(*, force_download: bool = False):
