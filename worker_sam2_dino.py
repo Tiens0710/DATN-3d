@@ -1,6 +1,7 @@
 """Resident SAM2 + GroundingDINO segmentation worker."""
 
 import argparse
+import io
 import json
 import os
 import re
@@ -46,7 +47,18 @@ sam_predictor = None
 dino_load_image = None
 dino_predict = None
 load_error = None
+matting_session = None
+matting_remove = None
+matting_error = None
 inference_lock = threading.Lock()
+
+MATTING_ENABLED = os.environ.get("ENABLE_MATTING", "1").lower() not in {
+    "0",
+    "false",
+    "no",
+}
+MATTING_MODEL = os.environ.get("MATTING_MODEL", "isnet-general-use")
+MATTING_MAX_SIDE = int(os.environ.get("MATTING_MAX_SIDE", "1024"))
 
 
 class SegmentRequest(BaseModel):
@@ -59,6 +71,32 @@ class SegmentRequest(BaseModel):
 
 class SanitizeRequest(BaseModel):
     objects: list[dict]
+
+
+def _load_matting() -> None:
+    """Load an optional alpha-matting refiner without blocking SAM2 startup."""
+    global matting_session, matting_remove, matting_error
+
+    if not MATTING_ENABLED:
+        matting_error = "Matting disabled by ENABLE_MATTING"
+        print("Alpha matting disabled; using SAM2 only.", flush=True)
+        return
+
+    try:
+        from rembg import new_session, remove
+
+        print(f"Loading alpha matting model: {MATTING_MODEL}...", flush=True)
+        matting_session = new_session(MATTING_MODEL)
+        matting_remove = remove
+        matting_error = None
+        print("Alpha matting refiner ready.", flush=True)
+    except Exception as exc:
+        # DINO + SAM2 remain usable when the optional refiner cannot download
+        # its ONNX weights or the environment has no rembg installation.
+        matting_session = None
+        matting_remove = None
+        matting_error = f"{exc}\n{traceback.format_exc()}"
+        print(f"Alpha matting unavailable; using SAM2 fallback:\n{matting_error}", flush=True)
 
 
 def _load_models() -> None:
@@ -94,6 +132,7 @@ def _load_models() -> None:
         dino_predict = predict
         load_error = None
         print("SAM2 + GroundingDINO worker ready.", flush=True)
+        _load_matting()
     except Exception as exc:
         load_error = f"{exc}\n{traceback.format_exc()}"
         print(f"SAM2 + GroundingDINO worker failed to load:\n{load_error}", flush=True)
@@ -109,6 +148,9 @@ def health() -> dict:
     return {
         "ready": dino_model is not None and sam_predictor is not None,
         "error": load_error,
+        "matting_ready": matting_session is not None and matting_remove is not None,
+        "matting_model": MATTING_MODEL if MATTING_ENABLED else None,
+        "matting_error": matting_error,
     }
 
 
@@ -121,6 +163,108 @@ def _mask_alpha(masks, scores) -> tuple[np.ndarray, int]:
     mask = ndimage.binary_fill_holes(mask)
     alpha = ndimage.gaussian_filter(mask.astype(np.float32) * 255.0, sigma=1.0)
     return np.clip(alpha, 0, 255).astype(np.uint8), best
+
+
+def _matting_alpha(image: Image.Image, box: list[int]) -> np.ndarray | None:
+    """Run general-object matting on a focused crop and place alpha on canvas."""
+    if matting_session is None or matting_remove is None:
+        return None
+
+    width, height = image.size
+    x1, y1, x2, y2 = [int(value) for value in box]
+    box_width = max(1, x2 - x1)
+    box_height = max(1, y2 - y1)
+    padding = max(12, int(max(box_width, box_height) * 0.08))
+    crop_box = (
+        max(0, x1 - padding),
+        max(0, y1 - padding),
+        min(width, x2 + padding),
+        min(height, y2 + padding),
+    )
+    crop = image.crop(crop_box).convert("RGB")
+    original_size = crop.size
+    scale = min(1.0, MATTING_MAX_SIDE / max(original_size))
+    if scale < 1.0:
+        crop = crop.resize(
+            (max(1, int(original_size[0] * scale)), max(1, int(original_size[1] * scale))),
+            Image.Resampling.LANCZOS,
+        )
+
+    buffer = io.BytesIO()
+    crop.save(buffer, format="PNG")
+    output = matting_remove(buffer.getvalue(), session=matting_session)
+    if isinstance(output, Image.Image):
+        cutout = output.convert("RGBA")
+    else:
+        cutout = Image.open(io.BytesIO(output)).convert("RGBA")
+    alpha = np.asarray(cutout.getchannel("A"), dtype=np.uint8)
+    if cutout.size != original_size:
+        alpha = np.asarray(
+            Image.fromarray(alpha).resize(original_size, Image.Resampling.LANCZOS),
+            dtype=np.uint8,
+        )
+
+    # Keep only meaningful alpha. Very faint shadows should not become mesh
+    # geometry, while the soft edge produced by matting is preserved.
+    alpha[alpha < 12] = 0
+    foreground = alpha >= 32
+    area_ratio = float(foreground.mean()) if foreground.size else 0.0
+    if area_ratio < 0.003 or area_ratio > 0.92:
+        return None
+
+    canvas = np.zeros((height, width), dtype=np.uint8)
+    cx1, cy1, _, _ = crop_box
+    crop_height, crop_width = alpha.shape
+    canvas[cy1:cy1 + crop_height, cx1:cx1 + crop_width] = alpha
+    return canvas
+
+
+def _predict_refined_alpha(
+    image: Image.Image,
+    box: list[int],
+) -> tuple[np.ndarray, int, float, str]:
+    """Predict SAM2 structure and optionally refine the boundary with matting."""
+    width, height = image.size
+    x1, y1, x2, y2 = [int(value) for value in box]
+    padding = max(12, int(min(width, height) * 0.035))
+    sam_box = np.array(
+        [
+            max(0, x1 - padding),
+            max(0, y1 - padding),
+            min(width, x2 + padding),
+            min(height, y2 + padding),
+        ],
+        dtype=np.float32,
+    )
+
+    sam_predictor.set_image(np.asarray(image.convert("RGB")))
+    masks, scores, _ = sam_predictor.predict(
+        box=sam_box,
+        multimask_output=True,
+    )
+    sam_alpha, best_mask = _mask_alpha(masks, scores)
+    alpha = sam_alpha
+    method = "sam2"
+
+    refined = _matting_alpha(image, [int(value) for value in sam_box])
+    if refined is not None:
+        sam_support = sam_alpha >= 32
+        refined_support = refined >= 32
+        intersection = np.logical_and(sam_support, refined_support).sum()
+        union = np.logical_or(sam_support, refined_support).sum()
+        overlap = float(intersection / max(1, union))
+        if overlap >= 0.20:
+            alpha = refined
+            method = f"sam2+{MATTING_MODEL}"
+
+    # The detector box is a semantic guardrail: matting must not pull in a
+    # neighboring chair/table even when the source image contains duplicates.
+    allowed = np.zeros_like(alpha)
+    sx1, sy1, sx2, sy2 = [int(value) for value in sam_box]
+    allowed[sy1:sy2, sx1:sx2] = 255
+    alpha = np.minimum(alpha, allowed)
+    alpha[alpha < 12] = 0
+    return alpha, best_mask, float(scores[best_mask]), method
 
 
 def _box_iou(first: list[int], second: list[int]) -> float:
@@ -222,38 +366,19 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
             # Preserve uncommon open-vocabulary objects that DINO cannot name;
             # the later segmentation stage can still process the original image.
             job["sanitized"] = False
+            job["segmentation_method"] = "not-detected"
             sanitized_jobs.append(job)
             continue
 
         selected = candidates[0]
         width, height = source_image.size
         x1, y1, x2, y2 = selected["box"]
-        padding = max(4, int(min(width, height) * 0.015))
-        sam_box = np.array(
-            [
-                max(0, x1 - padding),
-                max(0, y1 - padding),
-                min(width, x2 + padding),
-                min(height, y2 + padding),
-            ],
-            dtype=np.float32,
+        alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
+            source_image,
+            [x1, y1, x2, y2],
         )
-
-        sam_predictor.set_image(np.asarray(source_image))
-        masks, scores, _ = sam_predictor.predict(
-            box=sam_box,
-            multimask_output=True,
-        )
-        alpha, best_mask = _mask_alpha(masks, scores)
-
-        # Hard-limit the alpha to the selected detection so a neighboring
-        # duplicate cannot leak into the final isolated object.
-        allowed = np.zeros_like(alpha)
-        sx1, sy1, sx2, sy2 = [int(value) for value in sam_box]
-        allowed[sy1:sy2, sx1:sx2] = 255
-        alpha = np.minimum(alpha, allowed)
         alpha_image = Image.fromarray(alpha)
-        content_box = alpha_image.getbbox() or (sx1, sy1, sx2, sy2)
+        content_box = alpha_image.getbbox() or (x1, y1, x2, y2)
 
         rgba = source_image.convert("RGBA")
         rgba.putalpha(alpha_image)
@@ -272,7 +397,8 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 "sanitized": True,
                 "kept_box": selected["box"],
                 "kept_confidence": selected["confidence"],
-                "mask_score": float(scores[best_mask]),
+                "mask_score": mask_score,
+                "segmentation_method": segmentation_method,
             }
         )
         sanitized_jobs.append(job)
@@ -306,9 +432,7 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
 
         label = str(item.get("label", "object")).strip().lower() or "object"
         image, candidates = _detect_label_instances(image_path, label)
-        rgb = np.asarray(image)
-        height, width = rgb.shape[:2]
-        sam_predictor.set_image(rgb)
+        width, height = image.size
 
         if candidates:
             box_values = candidates[0]["box"]
@@ -317,12 +441,10 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
             margin = max(18, int(min(width, height) * 0.04))
             box_values = [margin, margin, width - margin, height - margin]
             confidence = 0.0
-        box = np.array(box_values, dtype=np.float32)
-        masks, scores, _ = sam_predictor.predict(
-            box=box,
-            multimask_output=True,
+        alpha, best, mask_score, segmentation_method = _predict_refined_alpha(
+            image,
+            box_values,
         )
-        alpha, best = _mask_alpha(masks, scores)
 
         rgba = image.convert("RGBA")
         rgba.putalpha(Image.fromarray(alpha))
@@ -339,12 +461,13 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
                 "label": label,
                 "confidence": confidence,
                 "detected_instances": len(candidates),
-                "mask_score": float(scores[best]),
+                "mask_score": mask_score,
                 "box": box_values,
                 "final_box": [0, 0, width, height],
                 "crop_path": crop_path,
                 "crop_url": f"/crops/{name}.png",
                 "source_mode": "objectwise_sam2",
+                "segmentation_method": segmentation_method,
             }
         )
 
@@ -460,11 +583,10 @@ def _segment_uploaded(
         previews = []
         for index, candidate in enumerate(kept, start=1):
             x1, y1, x2, y2 = candidate["box"]
-            masks, scores, _ = sam_predictor.predict(
-                box=np.array([x1, y1, x2, y2], dtype=np.float32),
-                multimask_output=True,
+            alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
+                source_image,
+                [x1, y1, x2, y2],
             )
-            alpha, best_mask = _mask_alpha(masks, scores)
             rgba = source_image.convert("RGBA")
             rgba.putalpha(Image.fromarray(alpha))
             safe_label = re.sub(r"[^a-z0-9]+", "_", candidate["label"].lower()).strip("_")
@@ -480,13 +602,14 @@ def _segment_uploaded(
                     "name": name,
                     "label": candidate["label"],
                     "confidence": candidate["confidence"],
-                    "mask_score": float(scores[best_mask]),
+                    "mask_score": mask_score,
                     "box": [x1, y1, x2, y2],
                     "final_box": [x1, y1, x2, y2],
                     "crop_path": crop_path,
                     "crop_url": f"/crops/{name}.png",
                     "source_mode": "uploaded_grounded_sam2_auto",
                     "detector_fallback": bool(candidate.get("detector_fallback", False)),
+                    "segmentation_method": segmentation_method,
                 }
             )
 
@@ -522,11 +645,10 @@ def _segment_uploaded(
                 x1, y1, x2, y2 = 0, 0, width, height
                 detector_fallback = True
 
-        masks, scores, _ = sam_predictor.predict(
-            box=np.array([x1, y1, x2, y2], dtype=np.float32),
-            multimask_output=True,
+        alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
+            source_image,
+            [x1, y1, x2, y2],
         )
-        alpha, best_mask = _mask_alpha(masks, scores)
         rgba = source_image.convert("RGBA")
         rgba.putalpha(Image.fromarray(alpha))
         crop_path = os.path.join(crops_dir, f"{name}.png")
@@ -540,13 +662,14 @@ def _segment_uploaded(
                 "name": name,
                 "label": label,
                 "confidence": confidence,
-                "mask_score": float(scores[best_mask]),
+                "mask_score": mask_score,
                 "box": [x1, y1, x2, y2],
                 "final_box": [x1, y1, x2, y2],
                 "crop_path": crop_path,
                 "crop_url": f"/crops/{name}.png",
                 "source_mode": "uploaded_grounded_sam2",
                 "detector_fallback": detector_fallback,
+                "segmentation_method": segmentation_method,
             }
         )
 

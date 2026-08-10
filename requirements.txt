@@ -48,7 +48,8 @@ imageio-ffmpeg==0.5.1
 opencv-python-headless
 tqdm
 easydict
-rembg[cpu]
+rembg[cpu]==2.0.60
+onnxruntime==1.20.1
 ninja
 setuptools==69.5.1
 wheel

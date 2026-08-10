@@ -554,6 +554,7 @@ def api_generate_image(request: ImageGenRequest):
                 "detected_instances": item.get("detected_instances"),
                 "sanitized": bool(item.get("sanitized", False)),
                 "count_validation": item.get("count_validation", "unknown"),
+                "segmentation_method": item.get("segmentation_method", "unknown"),
             }
             for item in generated
         ]
