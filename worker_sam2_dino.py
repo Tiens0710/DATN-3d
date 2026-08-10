@@ -59,6 +59,9 @@ MATTING_ENABLED = os.environ.get("ENABLE_MATTING", "1").lower() not in {
 }
 MATTING_MODEL = os.environ.get("MATTING_MODEL", "isnet-general-use")
 MATTING_MAX_SIDE = int(os.environ.get("MATTING_MAX_SIDE", "1024"))
+MASK_MIN_COMPONENT_RATIO = float(
+    os.environ.get("MASK_MIN_COMPONENT_RATIO", "0.00002")
+)
 
 
 class SegmentRequest(BaseModel):
@@ -154,14 +157,59 @@ def health() -> dict:
     }
 
 
+def _clean_alpha(alpha: np.ndarray, box: list[int]) -> np.ndarray:
+    """Remove faint shadows/noise while preserving thin furniture parts."""
+    height, width = alpha.shape[:2]
+    x1, y1, x2, y2 = [int(value) for value in box]
+    allowed = np.zeros_like(alpha, dtype=np.uint8)
+    allowed[max(0, y1):min(height, y2), max(0, x1):min(width, x2)] = 255
+    alpha = np.minimum(alpha, allowed)
+    alpha[alpha < 24] = 0
+
+    support = alpha >= 32
+    # Close tiny pinholes in the contour, but do not fill large holes such as
+    # the space between chair legs, rails, or bicycle spokes.
+    support = ndimage.binary_closing(
+        support,
+        structure=np.ones((3, 3), dtype=bool),
+    )
+    labels, count = ndimage.label(support)
+    if count:
+        sizes = np.asarray(
+            ndimage.sum(support, labels, index=np.arange(1, count + 1)),
+            dtype=np.int64,
+        )
+        minimum = max(12, int(alpha.size * MASK_MIN_COMPONENT_RATIO))
+        keep_labels = np.where(sizes >= minimum)[0] + 1
+        if keep_labels.size == 0:
+            keep_labels = np.asarray([int(np.argmax(sizes)) + 1])
+        support = np.isin(labels, keep_labels)
+        alpha = np.where(support, alpha, 0).astype(np.uint8)
+
+    alpha = ndimage.gaussian_filter(alpha.astype(np.float32), sigma=0.65)
+    alpha[alpha < 24] = 0
+    return np.clip(alpha, 0, 255).astype(np.uint8)
+
+
 def _mask_alpha(masks, scores) -> tuple[np.ndarray, int]:
     best = int(np.argmax(scores))
     mask = ndimage.binary_closing(
         masks[best].astype(bool),
-        structure=np.ones((3, 3)),
+        structure=np.ones((3, 3), dtype=bool),
     )
-    mask = ndimage.binary_fill_holes(mask)
-    alpha = ndimage.gaussian_filter(mask.astype(np.float32) * 255.0, sigma=1.0)
+    # Fill only small internal pinholes. Filling all holes can destroy the
+    # negative spaces of chairs, tables, bicycle frames, and similar objects.
+    holes = ndimage.binary_fill_holes(mask)
+    small_holes = np.logical_and(holes, np.logical_not(mask))
+    hole_labels, hole_count = ndimage.label(small_holes)
+    if hole_count:
+        hole_sizes = np.asarray(
+            ndimage.sum(small_holes, hole_labels, index=np.arange(1, hole_count + 1)),
+            dtype=np.int64,
+        )
+        fill_labels = np.where(hole_sizes <= max(32, mask.size // 500))[0] + 1
+        mask = np.logical_or(mask, np.isin(hole_labels, fill_labels))
+    alpha = ndimage.gaussian_filter(mask.astype(np.float32) * 255.0, sigma=0.65)
     return np.clip(alpha, 0, 255).astype(np.uint8), best
 
 
@@ -271,7 +319,14 @@ def _predict_refined_alpha(
         union = np.logical_or(sam_support, refined_support).sum()
         overlap = float(intersection / max(1, union))
         if overlap >= 0.20:
-            alpha = refined
+            # Matting gives a cleaner edge, while a slightly dilated SAM mask
+            # prevents it from absorbing a neighboring object or background.
+            sam_gate = ndimage.binary_dilation(
+                sam_support,
+                structure=np.ones((5, 5), dtype=bool),
+                iterations=1,
+            )
+            alpha = np.where(sam_gate, refined, 0).astype(np.uint8)
             method = f"sam2+{MATTING_MODEL}"
 
     # The detector box is a semantic guardrail: matting must not pull in a
@@ -279,8 +334,7 @@ def _predict_refined_alpha(
     allowed = np.zeros_like(alpha)
     sx1, sy1, sx2, sy2 = [int(value) for value in sam_box]
     allowed[sy1:sy2, sx1:sx2] = 255
-    alpha = np.minimum(alpha, allowed)
-    alpha[alpha < 12] = 0
+    alpha = _clean_alpha(alpha, [sx1, sy1, sx2, sy2])
     return alpha, best_mask, float(scores[best_mask]), method
 
 

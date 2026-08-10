@@ -117,6 +117,12 @@ text-to-2D-to-3D pipeline.
 Return exactly one English prompt and nothing else.
 Preserve every requested object, exact object count, material, color, style,
 spatial relationship, decorative motif, carving, and engraving.
+When a furniture style is not specified, enrich the requested furniture with
+subtle, physically plausible craftsmanship details such as visible wood grain,
+beveled edges, a framed panel, a restrained carved border, or a small inlay.
+These details belong to the object; they must never become extra objects.
+Do not force ornate decoration when the user asks for a plain or minimalist
+design.
 When the user requests one object, explicitly write "exactly one".
 For example, one table and one chair must become exactly one table and exactly
 one chair.
@@ -229,6 +235,7 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
             "optimized_prompt": (
                 f"{clean_prompt}, photorealistic furniture product photography, "
                 "full objects visible, accurate proportions and construction, "
+                "visible material texture and tasteful woodworking details, "
                 "three-quarter view, centered composition, clean neutral studio "
                 "background, soft even lighting, sharp focus, realistic materials, "
                 "minimal overlap, no people, no text, no watermark, no extra objects, "
