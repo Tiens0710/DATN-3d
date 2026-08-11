@@ -272,8 +272,17 @@ Rules:
 - Use one object entry per object category and put repeated quantity in count.
 - Keep the user's material, color, style, and distinguishing details in
   description. Do not invent props or objects.
-- Relations use zero-based indexes into objects. Use an empty relations list
-  for a single object.
+- Relations use zero-based indexes into objects. For multiple objects, return
+  enough relations to connect every object into one practical scene. Preserve
+  explicit spatial instructions from the user. When no position is stated,
+  infer a normal functional layout instead of putting everything in a row:
+  a coffee table is in_front_of a sofa, a floor lamp or plant is next_to the
+  sofa, a nightstand is next_to a bed, a chair is next_to a dining table, and
+  a small table lamp can be on_top_of a table or nightstand. Use an empty
+  relations list only for a single object.
+- Express the relation from the movable/accessory object to its anchor. Example:
+  for sofa + coffee table + floor lamp, return table in_front_of sofa and lamp
+  right_of sofa.
 """.strip()
 
 IMAGE_ANALYSIS_INSTRUCTION = """

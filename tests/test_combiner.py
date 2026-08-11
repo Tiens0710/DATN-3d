@@ -1,0 +1,50 @@
+import sys
+import types
+import unittest
+
+import numpy as np
+
+try:
+    import trimesh  # noqa: F401
+except ModuleNotFoundError:
+    sys.modules["trimesh"] = types.SimpleNamespace(Trimesh=object)
+
+from src.combiner import _position_entries, _semantic_relations
+
+
+class SceneCombinerTests(unittest.TestCase):
+    def test_living_room_uses_functional_positions_and_floor_alignment(self):
+        entries = {
+            "sofa_1": self._entry("sofa", 2.1, 0.9, 0.85),
+            "table_1": self._entry("table", 1.2, 0.72, 0.75),
+            "lamp_1": self._entry("floor_lamp", 0.38, 0.38, 1.65),
+        }
+        relations, inferred = _semantic_relations(
+            entries,
+            [
+                {"subject": "sofa_1", "relation": "next_to", "object": "table_1"},
+                {"subject": "table_1", "relation": "next_to", "object": "lamp_1"},
+            ],
+        )
+        _position_entries(entries, relations)
+
+        self.assertLess(entries["table_1"]["position"][1], entries["sofa_1"]["position"][1])
+        self.assertGreater(entries["lamp_1"]["position"][0], entries["sofa_1"]["position"][0])
+        self.assertEqual({entry["position"][2] for entry in entries.values()}, {0.0})
+        self.assertIn("table_in_front_of_sofa", inferred)
+        self.assertIn("lamp_beside_sofa", inferred)
+
+    @staticmethod
+    def _entry(category, width, depth, height):
+        return {
+            "category": category,
+            "width": width,
+            "depth": depth,
+            "height": height,
+            "scene_scale": 1.0,
+            "position": np.zeros(3, dtype=float),
+        }
+
+
+if __name__ == "__main__":
+    unittest.main()
