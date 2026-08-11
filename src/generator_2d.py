@@ -94,9 +94,24 @@ def _object_descriptor(label: str, scene_prompt: str) -> str:
     return label
 
 
-def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tuple[str, str]:
+def _object_prompt(
+    label: str,
+    scene_prompt: str,
+    all_labels: list[str],
+    object_description: str = "",
+) -> tuple[str, str]:
     excluded = ", ".join(sorted(set(all_labels) - {label})) or "other furniture"
-    descriptor = _object_descriptor(label, scene_prompt)
+    description = " ".join(str(object_description).split()).strip(" ,.;:")
+    generic_descriptions = {
+        "",
+        label,
+        f"one {label} requested by the user",
+    }
+    descriptor = (
+        description
+        if description.lower() not in generic_descriptions
+        else _object_descriptor(label, scene_prompt)
+    )
     detail_markers = (
         "carv", "ornate", "decor", "inlay", "engrave", "pattern", "motif",
         "floral", "beveled", "bevelled", "panel",
@@ -196,7 +211,12 @@ def build_object_jobs(
         object_id = str(item.get("id", f"{label}_{index}"))
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", object_id):
             raise ValueError(f"Invalid object id: {object_id}")
-        positive, negative = _object_prompt(label, scene_prompt, all_labels)
+        positive, negative = _object_prompt(
+            label,
+            scene_prompt,
+            all_labels,
+            object_description=str(item.get("description", "")),
+        )
         jobs.append({
             "name": object_id,
             "label": label,

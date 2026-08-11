@@ -29,8 +29,8 @@ from src.generator_2d import build_object_jobs
 
 
 SD35_CACHE_DIR = "/kaggle/working/sd35_medium_cache_v1"
-SD35_NUM_INFERENCE_STEPS = int(os.environ.get("SD35_NUM_INFERENCE_STEPS", "24"))
-SD35_IMAGE_SIZE = int(os.environ.get("SD35_IMAGE_SIZE", "704"))
+SD35_NUM_INFERENCE_STEPS = int(os.environ.get("SD35_NUM_INFERENCE_STEPS", "28"))
+SD35_IMAGE_SIZE = int(os.environ.get("SD35_IMAGE_SIZE", "768"))
 SD35_GUIDANCE_SCALE = float(os.environ.get("SD35_GUIDANCE_SCALE", "4.5"))
 SD35_LORA_PATH = os.environ.get(
     "SD35_LORA_PATH",

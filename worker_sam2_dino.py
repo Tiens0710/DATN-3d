@@ -191,8 +191,55 @@ def _clean_alpha(alpha: np.ndarray, box: list[int]) -> np.ndarray:
     return np.clip(alpha, 0, 255).astype(np.uint8)
 
 
-def _mask_alpha(masks, scores) -> tuple[np.ndarray, int]:
-    best = int(np.argmax(scores))
+def _mask_extent(mask: np.ndarray) -> tuple[int, int, int, int] | None:
+    rows, columns = np.where(mask)
+    if not rows.size or not columns.size:
+        return None
+    return (
+        int(columns.min()),
+        int(rows.min()),
+        int(columns.max()) + 1,
+        int(rows.max()) + 1,
+    )
+
+
+def _select_complete_mask(masks, scores, box: list[int]) -> int:
+    """Prefer a complete object mask over a high-score partial component."""
+    x1, y1, x2, y2 = [int(value) for value in box]
+    box_width = max(1, x2 - x1)
+    box_height = max(1, y2 - y1)
+    box_area = box_width * box_height
+    ranked = []
+
+    for index, candidate in enumerate(masks):
+        support = candidate.astype(bool)
+        extent = _mask_extent(support)
+        if extent is None:
+            ranked.append((-1.0, index))
+            continue
+
+        mx1, my1, mx2, my2 = extent
+        width_coverage = min(1.0, (mx2 - mx1) / box_width)
+        height_coverage = min(1.0, (my2 - my1) / box_height)
+        area_ratio = float(support.sum() / max(1, box_area))
+        plausible_area = 1.0 if 0.035 <= area_ratio <= 1.05 else 0.0
+        sam_score = float(scores[index])
+
+        # Thin furniture often has a lower raw SAM score than a seat-only or
+        # tabletop-only mask. Extent coverage therefore carries more weight.
+        completeness = (
+            sam_score
+            + 0.42 * height_coverage
+            + 0.28 * width_coverage
+            + 0.08 * plausible_area
+        )
+        ranked.append((completeness, index))
+
+    return max(ranked)[1]
+
+
+def _mask_alpha(masks, scores, box: list[int]) -> tuple[np.ndarray, int]:
+    best = _select_complete_mask(masks, scores, box)
     mask = ndimage.binary_closing(
         masks[best].astype(bool),
         structure=np.ones((3, 3), dtype=bool),
@@ -307,7 +354,7 @@ def _predict_refined_alpha(
         box=sam_box,
         multimask_output=True,
     )
-    sam_alpha, best_mask = _mask_alpha(masks, scores)
+    sam_alpha, best_mask = _mask_alpha(masks, scores, [int(value) for value in sam_box])
     alpha = sam_alpha
     method = "sam2"
 
@@ -318,7 +365,17 @@ def _predict_refined_alpha(
         intersection = np.logical_and(sam_support, refined_support).sum()
         union = np.logical_or(sam_support, refined_support).sum()
         overlap = float(intersection / max(1, union))
-        if overlap >= 0.20:
+        sam_extent = _mask_extent(sam_support)
+        refined_extent = _mask_extent(refined_support)
+        preserves_extent = False
+        if sam_extent is not None and refined_extent is not None:
+            smx1, smy1, smx2, smy2 = sam_extent
+            rmx1, rmy1, rmx2, rmy2 = refined_extent
+            preserves_extent = (
+                (rmx2 - rmx1) >= 0.85 * max(1, smx2 - smx1)
+                and (rmy2 - rmy1) >= 0.85 * max(1, smy2 - smy1)
+            )
+        if overlap >= 0.20 and preserves_extent:
             # Matting gives a cleaner edge, while a slightly dilated SAM mask
             # prevents it from absorbing a neighboring object or background.
             sam_gate = ndimage.binary_dilation(
@@ -335,6 +392,17 @@ def _predict_refined_alpha(
     sx1, sy1, sx2, sy2 = [int(value) for value in sam_box]
     allowed[sy1:sy2, sx1:sx2] = 255
     alpha = _clean_alpha(alpha, [sx1, sy1, sx2, sy2])
+    final_extent = _mask_extent(alpha >= 32)
+    if final_extent is None:
+        raise ValueError("SAM2 returned an empty object mask")
+    fmx1, fmy1, fmx2, fmy2 = final_extent
+    width_coverage = (fmx2 - fmx1) / max(1, sx2 - sx1)
+    height_coverage = (fmy2 - fmy1) / max(1, sy2 - sy1)
+    if width_coverage < 0.38 or height_coverage < 0.48:
+        raise ValueError(
+            "SAM2 returned an incomplete object mask "
+            f"(width coverage={width_coverage:.2f}, height coverage={height_coverage:.2f})"
+        )
     return alpha, best_mask, float(scores[best_mask]), method
 
 
@@ -434,6 +502,11 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
         job["count_validation"] = "detected" if candidates else "undetected"
 
         if not candidates:
+            if label in {"chair", "dining chair", "table", "dining table", "sofa", "bed"}:
+                raise ValueError(
+                    f"GroundingDINO could not verify the generated '{label}'. "
+                    "Regenerate the 2D object instead of forwarding an unchecked image."
+                )
             # Preserve uncommon open-vocabulary objects that DINO cannot name;
             # the later segmentation stage can still process the original image.
             job["sanitized"] = False

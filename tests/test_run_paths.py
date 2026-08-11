@@ -32,6 +32,29 @@ class RunPathTests(unittest.TestCase):
                     object_image_dir=directory,
                 )
 
+    def test_object_specific_description_reaches_generation_prompt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            jobs = build_object_jobs(
+                "one table beside one chair",
+                [
+                    {
+                        "id": "table_1",
+                        "label": "table",
+                        "description": "rectangular walnut table with a carved floral apron",
+                    },
+                    {
+                        "id": "chair_2",
+                        "label": "chair",
+                        "description": "walnut chair with a carved backrest panel",
+                    },
+                ],
+                object_image_dir=directory,
+            )
+
+        self.assertIn("carved floral apron", jobs[0]["prompt"])
+        self.assertNotIn("backrest panel", jobs[0]["prompt"])
+        self.assertIn("carved backrest panel", jobs[1]["prompt"])
+
 
 if __name__ == "__main__":
     unittest.main()

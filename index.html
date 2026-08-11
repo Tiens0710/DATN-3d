@@ -4773,9 +4773,14 @@
             let autoDetectUpload = false;
             if (inputLayout && inputLayout.layout && Object.keys(inputLayout.layout).length > 0) {
                 finalLayout = inputLayout;
-                // Extract active labels from layout keys
-                const activeLabels = Object.keys(inputLayout.layout).map(nid => {
-                    return nid.split("_")[0];
+                // Preserve semantic labels from the object plan. Splitting an
+                // id such as dining_chair_2 at the first underscore produced
+                // the incorrect generic label "dining".
+                const labelById = new Map(
+                    (inputLayout.objects || []).map((item) => [item.id, item.label])
+                );
+                const activeLabels = Object.keys(inputLayout.layout).map((nid) => {
+                    return labelById.get(nid) || nid.replace(/_\d+$/, "").replaceAll("_", " ");
                 }).filter(Boolean);
                 this.properties.labels = activeLabels.join(", ");
                 // Update widget text if visible
