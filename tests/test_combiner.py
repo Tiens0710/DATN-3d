@@ -20,6 +20,7 @@ from src.combiner import (
     _constrain_floor_plan,
     _layout_dimensions,
     _position_entries,
+    _prepare_mesh,
     _relations_connect_all,
     _semantic_relations,
     combine_scene_meshes,
@@ -51,6 +52,22 @@ class SceneCombinerTests(unittest.TestCase):
 
         self.assertAlmostEqual(0.021 * sofa_scale, 2.10)
         self.assertAlmostEqual(0.0165 * lamp_scale, 1.65)
+
+    @unittest.skipUnless(TRIMESH_AVAILABLE, "trimesh is required for orientation tests")
+    def test_rotated_sofa_is_aligned_and_faces_negative_z(self):
+        seat = trimesh.creation.box(extents=[0.9, 0.35, 2.1])
+        seat.apply_translation([0.0, 0.35, 0.0])
+        backrest = trimesh.creation.box(extents=[0.18, 0.85, 2.1])
+        backrest.apply_translation([-0.36, 0.75, 0.0])
+        rotated_sofa = trimesh.util.concatenate([seat, backrest])
+
+        prepared, dimensions = _prepare_mesh(rotated_sofa, "sofa", 0.01)
+        vertices = np.asarray(prepared.vertices)
+        high = vertices[:, 1] >= vertices[:, 1].min() + 0.62 * np.ptp(vertices[:, 1])
+
+        self.assertGreater(dimensions[0], dimensions[1])
+        center_z = (vertices[:, 2].min() + vertices[:, 2].max()) / 2
+        self.assertGreater(np.median(vertices[high, 2]), center_z)
 
     def test_living_room_uses_functional_positions_and_floor_alignment(self):
         entries = {

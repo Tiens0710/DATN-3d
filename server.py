@@ -49,10 +49,10 @@ os.makedirs(RUNS_DIR, exist_ok=True)
 
 app = FastAPI(
     title="DATN 3D Scene Reconstruction API",
-    version="1.2.2",
+    version="1.2.3",
 )
 
-BACKEND_BUILD = "metric-mesh-layout-v4"
+BACKEND_BUILD = "canonical-facing-layout-v5"
 
 allowed_origins = [
     origin.strip()
@@ -776,7 +776,7 @@ def health_check():
     readiness = backend_readiness()
     return {
         "status": "ok",
-        "version": "1.2.2",
+        "version": "1.2.3",
         "build": BACKEND_BUILD,
         **readiness,
         "gemini_model": GEMINI_MODEL,

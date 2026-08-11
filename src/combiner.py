@@ -38,6 +38,16 @@ PRIMARY_SCALE_AXIS = {
     "plant": 2,
 }
 
+HORIZONTAL_ALIGNMENT_CATEGORIES = {
+    "sofa",
+    "coffee_table",
+    "dining_table",
+    "table",
+    "cabinet",
+}
+
+BACKREST_CATEGORIES = {"sofa", "armchair", "chair"}
+
 
 def _as_mesh(path: str) -> trimesh.Trimesh:
     loaded = trimesh.load(path, force="scene", process=False)
@@ -113,12 +123,46 @@ def _layout_dimensions(
     return np.clip(mesh_dimensions, expected * 0.80, expected * 1.20)
 
 
+def _canonicalize_orientation(mesh: trimesh.Trimesh, category: str) -> trimesh.Trimesh:
+    """Align elongated furniture to X and seat fronts toward negative Z."""
+    mesh = mesh.copy()
+    vertices = np.asarray(mesh.vertices, dtype=float)
+    if len(vertices) < 4:
+        return mesh
+
+    if category in HORIZONTAL_ALIGNMENT_CATEGORIES:
+        horizontal = vertices[:, [0, 2]]
+        centered = horizontal - np.median(horizontal, axis=0)
+        covariance = np.cov(centered, rowvar=False)
+        eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+        if eigenvalues[-1] > max(eigenvalues[0] * 1.10, 1e-10):
+            principal = eigenvectors[:, -1]
+            yaw = float(np.arctan2(principal[1], principal[0]))
+            mesh.apply_transform(trimesh.transformations.rotation_matrix(yaw, [0, 1, 0]))
+
+    if category in BACKREST_CATEGORIES:
+        vertices = np.asarray(mesh.vertices, dtype=float)
+        y_min = float(vertices[:, 1].min())
+        y_max = float(vertices[:, 1].max())
+        high = vertices[:, 1] >= y_min + 0.62 * (y_max - y_min)
+        if np.count_nonzero(high) >= 3:
+            high_z = float(np.median(vertices[high, 2]))
+            center_z = float((vertices[:, 2].min() + vertices[:, 2].max()) / 2)
+            # Backrests are the dominant high geometry. Keep them on +Z so
+            # the usable front side of every seat consistently faces -Z.
+            if high_z < center_z:
+                mesh.apply_transform(
+                    trimesh.transformations.rotation_matrix(np.pi, [0, 1, 0])
+                )
+    return mesh
+
+
 def _prepare_mesh(
     mesh: trimesh.Trimesh,
     category: str,
     scale_factor: float,
 ) -> tuple[trimesh.Trimesh, np.ndarray]:
-    mesh = mesh.copy()
+    mesh = _canonicalize_orientation(mesh, category)
     bounds = _robust_bounds(mesh)
     full_bounds = np.asarray(mesh.bounds, dtype=float)
     # GLB/model-viewer uses Y-up: X is left/right, Y is height, Z is depth.
