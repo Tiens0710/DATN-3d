@@ -93,6 +93,19 @@ def _category_scale(dimensions: np.ndarray, category: str, scene_scale: float) -
     return float(np.clip(ratio, 0.08, 12.0))
 
 
+def _layout_dimensions(
+    mesh_dimensions: np.ndarray,
+    category: str,
+    scene_scale: float,
+) -> np.ndarray:
+    """Bound noisy TRELLIS extents before converting relations to distances."""
+    target = TARGET_DIMENSIONS.get(category)
+    if not target:
+        return np.asarray(mesh_dimensions, dtype=float)
+    expected = np.asarray(target, dtype=float) * scene_scale
+    return np.clip(mesh_dimensions, expected * 0.80, expected * 1.20)
+
+
 def _prepare_mesh(
     mesh: trimesh.Trimesh,
     category: str,
@@ -100,11 +113,12 @@ def _prepare_mesh(
 ) -> tuple[trimesh.Trimesh, np.ndarray]:
     mesh = mesh.copy()
     bounds = _robust_bounds(mesh)
+    full_bounds = np.asarray(mesh.bounds, dtype=float)
     mesh.apply_translation(
         [
             -float((bounds[0, 0] + bounds[1, 0]) / 2),
             -float((bounds[0, 1] + bounds[1, 1]) / 2),
-            -float(bounds[0, 2]),
+            -float(full_bounds[0, 2]),
         ]
     )
     mesh.apply_scale(scale_factor)
@@ -332,14 +346,17 @@ def combine_scene_meshes(
         label = str(model.get("label", name))
         category = _category(label, str(model.get("description", "")))
         mesh, dimensions = _prepare_mesh(_as_mesh(str(resolved_path)), category, scale_factor)
+        scene_scale = max(scale_factor / 0.01, 1e-3)
+        placement_dimensions = _layout_dimensions(dimensions, category, scene_scale)
         entries[name] = {
             "model": model,
             "mesh": mesh,
             "category": category,
-            "width": float(dimensions[0]),
-            "depth": float(dimensions[1]),
-            "height": float(dimensions[2]),
-            "scene_scale": max(scale_factor / 0.01, 1e-3),
+            "width": float(placement_dimensions[0]),
+            "depth": float(placement_dimensions[1]),
+            "height": float(placement_dimensions[2]),
+            "mesh_dimensions": dimensions,
+            "scene_scale": scene_scale,
             "position": np.zeros(3, dtype=float),
         }
 
@@ -386,6 +403,9 @@ def combine_scene_meshes(
                     round(entry["width"], 6),
                     round(entry["depth"], 6),
                     round(entry["height"], 6),
+                ],
+                "mesh_dimensions_xyz": [
+                    round(float(value), 6) for value in entry["mesh_dimensions"]
                 ],
             }
         )

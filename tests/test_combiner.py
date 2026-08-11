@@ -11,6 +11,7 @@ except ModuleNotFoundError:
 
 from src.combiner import (
     _category_scale,
+    _layout_dimensions,
     _position_entries,
     _relations_connect_all,
     _semantic_relations,
@@ -18,6 +19,17 @@ from src.combiner import (
 
 
 class SceneCombinerTests(unittest.TestCase):
+    def test_layout_dimensions_limit_noisy_mesh_depth(self):
+        dimensions = _layout_dimensions(
+            np.array([2.1, 4.8, 0.85]),
+            "sofa",
+            1.0,
+        )
+
+        self.assertAlmostEqual(dimensions[0], 2.10)
+        self.assertAlmostEqual(dimensions[1], 0.90 * 1.20)
+        self.assertAlmostEqual(dimensions[2], 0.85)
+
     def test_primary_axis_scaling_uses_realistic_furniture_size(self):
         sofa_scale = _category_scale(np.array([0.8, 0.7, 0.9]), "sofa", 1.0)
         lamp_scale = _category_scale(np.array([0.5, 0.5, 0.8]), "floor_lamp", 1.0)
