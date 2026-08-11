@@ -166,8 +166,6 @@ def _semantic_relations(
             )
 
     inferred = []
-    if not allow_inference:
-        return normalized, inferred
     sofa = _find_entry(entries, {"sofa"})
     table = _find_entry(entries, {"coffee_table", "table", "dining_table"})
     lamp = _find_entry(entries, {"floor_lamp", "lamp"})
@@ -182,36 +180,52 @@ def _semantic_relations(
             if first and second and {edge["subject"], edge["object"]} == {first, second}
         ]
 
-    # A vague "sofa and table" should form a seating area, not a horizontal catalog row.
+    # Furniture scenes need a geometry safety layer even when Gemini returned a
+    # connected graph. Otherwise relation chains can place a lamp relative to a
+    # table that is already relative to a sofa, making the final scene enormous.
     sofa_table_edges = pair_edges(sofa, table)
     if sofa and table:
-        if not sofa_table_edges:
-            normalized.append({"subject": table, "relation": "in_front_of", "object": sofa})
-            inferred.append("table_in_front_of_sofa")
-        elif all(edge["relation"] == "next_to" for edge in sofa_table_edges):
-            for edge in sofa_table_edges:
-                edge.update({"subject": table, "relation": "in_front_of", "object": sofa})
+        normalized = [
+            edge
+            for edge in normalized
+            if {edge["subject"], edge["object"]} != {sofa, table}
+        ]
+        normalized.insert(0, {"subject": table, "relation": "in_front_of", "object": sofa})
+        if not sofa_table_edges or any(edge["relation"] != "in_front_of" for edge in sofa_table_edges):
             inferred.append("table_in_front_of_sofa")
 
-    if sofa and lamp and not pair_edges(sofa, lamp):
+    if sofa and lamp:
         normalized = [
             edge
             for edge in normalized
-            if not (lamp in (edge["subject"], edge["object"]) and edge["relation"] == "next_to")
+            if lamp not in (edge["subject"], edge["object"])
         ]
-        normalized.append({"subject": lamp, "relation": "right_of", "object": sofa})
+        normalized.insert(1, {"subject": lamp, "relation": "right_of", "object": sofa})
         inferred.append("lamp_beside_sofa")
-    if sofa and plant and not pair_edges(sofa, plant):
+    if sofa and plant:
         normalized = [
             edge
             for edge in normalized
-            if not (plant in (edge["subject"], edge["object"]) and edge["relation"] == "next_to")
+            if plant not in (edge["subject"], edge["object"])
         ]
-        normalized.append({"subject": plant, "relation": "right_of", "object": sofa})
+        normalized.insert(1, {"subject": plant, "relation": "left_of", "object": sofa})
         inferred.append("plant_beside_sofa")
-    if bed and nightstand and not pair_edges(bed, nightstand):
-        normalized.append({"subject": nightstand, "relation": "right_of", "object": bed})
+    if bed and nightstand:
+        normalized = [
+            edge
+            for edge in normalized
+            if {edge["subject"], edge["object"]} != {bed, nightstand}
+        ]
+        normalized.insert(0, {"subject": nightstand, "relation": "right_of", "object": bed})
         inferred.append("nightstand_beside_bed")
+
+    if not allow_inference:
+        inferred = [rule for rule in inferred if rule in {
+            "table_in_front_of_sofa",
+            "lamp_beside_sofa",
+            "plant_beside_sofa",
+            "nightstand_beside_bed",
+        }]
 
     # Remove duplicate edges after semantic replacement.
     unique = []
@@ -226,9 +240,9 @@ def _semantic_relations(
 
 def _relation_offset(subject: dict, target: dict, relation: str, side_index: int = 0) -> np.ndarray:
     scene_scale = max(subject["scene_scale"], target["scene_scale"])
-    clearance = 0.10 * scene_scale
+    clearance = 0.06 * scene_scale
     horizontal = subject["width"] / 2 + target["width"] / 2 + clearance
-    depth_clearance = 0.14 * scene_scale
+    depth_clearance = 0.10 * scene_scale
     depth = subject["depth"] / 2 + target["depth"] / 2 + depth_clearance
     if relation == "left_of":
         return np.array([-horizontal, 0.0, 0.0])
@@ -414,11 +428,7 @@ def combine_scene_meshes(
         relation_source == "gemini_structured"
         and _relations_connect_all(entries, relations)
     )
-    relations, inferred_rules = _semantic_relations(
-        entries,
-        relations,
-        allow_inference=not gemini_complete,
-    )
+    relations, inferred_rules = _semantic_relations(entries, relations)
     _position_entries(entries, relations)
 
     scene = trimesh.Scene()

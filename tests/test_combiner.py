@@ -66,7 +66,7 @@ class SceneCombinerTests(unittest.TestCase):
         self.assertIn("table_in_front_of_sofa", inferred)
         self.assertIn("lamp_beside_sofa", inferred)
 
-    def test_complete_gemini_layout_is_not_overridden(self):
+    def test_complete_gemini_layout_gets_functional_geometry_safety(self):
         entries = {
             "sofa_1": self._entry("sofa", 2.1, 0.9, 0.85),
             "table_1": self._entry("table", 1.2, 0.72, 0.75),
@@ -84,8 +84,21 @@ class SceneCombinerTests(unittest.TestCase):
             allow_inference=False,
         )
 
-        self.assertEqual(relations, gemini_relations)
-        self.assertEqual(inferred, [])
+        self.assertEqual(
+            relations,
+            [
+                {"subject": "table_1", "relation": "in_front_of", "object": "sofa_1"},
+                {"subject": "lamp_1", "relation": "right_of", "object": "sofa_1"},
+            ],
+        )
+        self.assertIn("table_in_front_of_sofa", inferred)
+        self.assertIn("lamp_beside_sofa", inferred)
+
+        _position_entries(entries, relations)
+        self.assertAlmostEqual(entries["table_1"]["position"][0], 0.0)
+        self.assertLess(entries["table_1"]["position"][2], 0.0)
+        self.assertGreater(entries["lamp_1"]["position"][0], 0.0)
+        self.assertLess(entries["lamp_1"]["position"][0], 1.5)
 
     def test_floor_plan_constrains_extreme_object_spacing(self):
         entries = {
