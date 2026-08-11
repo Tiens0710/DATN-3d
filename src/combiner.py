@@ -43,10 +43,11 @@ def _as_mesh(path: str) -> trimesh.Trimesh:
     loaded = trimesh.load(path, force="scene", process=False)
     if isinstance(loaded, trimesh.Trimesh):
         return loaded.copy()
-    geometries = list(loaded.geometry.values())
-    if not geometries:
+    if not loaded.geometry:
         raise ValueError(f"GLB has no geometry: {path}")
-    return trimesh.util.concatenate(geometries)
+    # A GLB can store orientation, scale and translation in its scene graph.
+    # Flattening raw geometries would silently discard those node transforms.
+    return loaded.to_geometry()
 
 
 def _category(label: str, description: str = "") -> str:
