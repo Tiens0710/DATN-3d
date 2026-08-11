@@ -16,6 +16,7 @@ except ModuleNotFoundError:
 
 from src.combiner import (
     _as_mesh,
+    _apply_gemini_placements,
     _category_scale,
     _constrain_floor_plan,
     _layout_dimensions,
@@ -90,7 +91,7 @@ class SceneCombinerTests(unittest.TestCase):
         self.assertIn("table_in_front_of_sofa", inferred)
         self.assertIn("lamp_beside_sofa", inferred)
 
-    def test_complete_gemini_layout_gets_functional_geometry_safety(self):
+    def test_complete_gemini_relations_are_preserved_for_metric_placement(self):
         entries = {
             "sofa_1": self._entry("sofa", 2.1, 0.9, 0.85),
             "table_1": self._entry("table", 1.2, 0.72, 0.75),
@@ -108,21 +109,33 @@ class SceneCombinerTests(unittest.TestCase):
             allow_inference=False,
         )
 
-        self.assertEqual(
-            relations,
-            [
-                {"subject": "table_1", "relation": "in_front_of", "object": "sofa_1"},
-                {"subject": "lamp_1", "relation": "right_of", "object": "sofa_1"},
-            ],
-        )
-        self.assertIn("table_in_front_of_sofa", inferred)
-        self.assertIn("lamp_beside_sofa", inferred)
+        self.assertEqual(relations, gemini_relations)
+        self.assertEqual(inferred, [])
 
-        _position_entries(entries, relations)
-        self.assertAlmostEqual(entries["table_1"]["position"][0], 0.0)
-        self.assertLess(entries["table_1"]["position"][2], 0.0)
-        self.assertGreater(entries["lamp_1"]["position"][0], 0.0)
-        self.assertLess(entries["lamp_1"]["position"][0], 1.5)
+    def test_gemini_metric_placements_drive_xyz_and_rotation(self):
+        entries = {
+            "sofa_1": self._entry("sofa", 2.1, 0.9, 0.85),
+            "table_1": self._entry("coffee_table", 1.1, 0.65, 0.45),
+            "lamp_1": self._entry("floor_lamp", 0.38, 0.38, 1.65),
+        }
+        placements = [
+            {"object_id": "sofa_1", "position_xyz": [2.0, 0.0, 1.0], "rotation_y_degrees": 0},
+            {"object_id": "table_1", "position_xyz": [2.0, 0.0, -0.2], "rotation_y_degrees": 15},
+            {"object_id": "lamp_1", "position_xyz": [3.4, 0.0, 1.0], "rotation_y_degrees": -20},
+        ]
+        relations = [
+            {"subject": "table_1", "relation": "in_front_of", "object": "sofa_1"},
+            {"subject": "lamp_1", "relation": "right_of", "object": "sofa_1"},
+        ]
+
+        applied = _apply_gemini_placements(entries, placements, relations)
+
+        self.assertTrue(applied)
+        np.testing.assert_allclose(entries["sofa_1"]["position"], [0.0, 0.0, 0.0])
+        np.testing.assert_allclose(entries["table_1"]["position"], [0.0, 0.0, -1.2])
+        np.testing.assert_allclose(entries["lamp_1"]["position"], [1.4, 0.0, 0.0])
+        self.assertEqual(entries["table_1"]["rotation_y_degrees"], 15.0)
+        self.assertEqual(entries["lamp_1"]["rotation_y_degrees"], -20.0)
 
     def test_floor_plan_constrains_extreme_object_spacing(self):
         entries = {
@@ -192,10 +205,16 @@ class SceneCombinerTests(unittest.TestCase):
                         {"subject": "table_1", "relation": "in_front_of", "object": "sofa_1"},
                         {"subject": "lamp_1", "relation": "right_of", "object": "sofa_1"},
                     ],
+                    "placements": [
+                        {"object_id": "sofa_1", "position_xyz": [0, 0, 0], "rotation_y_degrees": 0},
+                        {"object_id": "table_1", "position_xyz": [0, 0, -1.2], "rotation_y_degrees": 12},
+                        {"object_id": "lamp_1", "position_xyz": [1.4, 0, 0], "rotation_y_degrees": -8},
+                    ],
                 },
             )
 
             report = json.loads(output_path.with_suffix(".layout.json").read_text())
+            self.assertTrue(report["gemini_placement_applied"])
             positions = {
                 item["name"]: np.asarray(item["position_xyz"], dtype=float)
                 for item in report["objects"]
@@ -208,6 +227,12 @@ class SceneCombinerTests(unittest.TestCase):
             self.assertTrue(all(abs(position[1]) < 1e-8 for position in positions.values()))
             self.assertLess(positions["table_1"][2], positions["sofa_1"][2])
             self.assertGreater(positions["lamp_1"][0], positions["sofa_1"][0])
+            rotations = {
+                item["name"]: item["rotation_y_degrees"]
+                for item in report["objects"]
+            }
+            self.assertEqual(rotations["table_1"], 12.0)
+            self.assertEqual(rotations["lamp_1"], -8.0)
 
             objects = {item["name"]: item for item in report["objects"]}
             self.assertAlmostEqual(objects["sofa_1"]["mesh_dimensions_wdh"][0], 2.10, places=4)
@@ -217,7 +242,7 @@ class SceneCombinerTests(unittest.TestCase):
             exported = trimesh.load(output_path, force="scene", process=False)
             self.assertEqual(len(exported.geometry), 3)
             self.assertLess(float(exported.extents[0]), 3.2)
-            self.assertLess(float(exported.extents[2]), 2.0)
+            self.assertLess(float(exported.extents[2]), 2.2)
             for geometry in exported.geometry.values():
                 self.assertAlmostEqual(float(geometry.bounds[0, 1]), 0.0, places=5)
 

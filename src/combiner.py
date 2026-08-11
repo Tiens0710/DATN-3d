@@ -216,6 +216,8 @@ def _semantic_relations(
             )
 
     inferred = []
+    if not allow_inference:
+        return normalized, inferred
     sofa = _find_entry(entries, {"sofa"})
     table = _find_entry(entries, {"coffee_table", "table", "dining_table"})
     lamp = _find_entry(entries, {"floor_lamp", "lamp"})
@@ -268,14 +270,6 @@ def _semantic_relations(
         ]
         normalized.insert(0, {"subject": nightstand, "relation": "right_of", "object": bed})
         inferred.append("nightstand_beside_bed")
-
-    if not allow_inference:
-        inferred = [rule for rule in inferred if rule in {
-            "table_in_front_of_sofa",
-            "lamp_beside_sofa",
-            "plant_beside_sofa",
-            "nightstand_beside_bed",
-        }]
 
     # Remove duplicate edges after semantic replacement.
     unique = []
@@ -403,6 +397,95 @@ def _position_entries(entries: dict, relations: list[dict]) -> None:
     _constrain_floor_plan(entries, relations, anchor)
 
 
+def _apply_gemini_placements(
+    entries: dict,
+    placements: list[dict],
+    relations: list[dict],
+) -> bool:
+    """Apply Gemini's complete metric 3D plan, correcting only invalid geometry."""
+    placement_by_id = {}
+    for placement in placements:
+        object_id = str(placement.get("object_id", ""))
+        try:
+            position = np.asarray(placement["position_xyz"], dtype=float)
+            rotation = float(placement.get("rotation_y_degrees", 0.0))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if object_id in entries and position.shape == (3,) and np.all(np.isfinite(position)):
+            placement_by_id[object_id] = (position, rotation)
+
+    if set(placement_by_id) != set(entries):
+        return False
+
+    anchor = _choose_anchor(entries)
+    anchor_position = placement_by_id[anchor][0]
+    for name, entry in entries.items():
+        position, rotation = placement_by_id[name]
+        position = position.copy()
+        position[0] -= anchor_position[0]
+        position[2] -= anchor_position[2]
+        entry["position"] = position
+        entry["rotation_y_degrees"] = float(((rotation + 180.0) % 360.0) - 180.0)
+
+    # Preserve Gemini's composition while fitting pathological coordinates into
+    # a practical room envelope.
+    horizontal = np.asarray(
+        [[entry["position"][0], entry["position"][2]] for entry in entries.values()]
+    )
+    span = np.ptp(horizontal, axis=0)
+    max_span = 5.0 * max((entry["scene_scale"] for entry in entries.values()), default=1.0)
+    largest_span = float(max(span))
+    if largest_span > max_span:
+        compression = max_span / largest_span
+        for entry in entries.values():
+            entry["position"][[0, 2]] *= compression
+
+    stacked = {edge["subject"] for edge in relations if edge.get("relation") == "on_top_of"}
+    for name, entry in entries.items():
+        if name not in stacked:
+            entry["position"][1] = 0.0
+        else:
+            entry["position"][1] = max(0.0, float(entry["position"][1]))
+
+    # Resolve only actual solid overlap. The direction chosen by Gemini is
+    # retained; the movable relation subject receives the minimum correction.
+    for edge in relations:
+        subject_id = edge.get("subject")
+        target_id = edge.get("object")
+        if subject_id not in entries or target_id not in entries:
+            continue
+        subject = entries[subject_id]
+        target = entries[target_id]
+        relation = str(edge.get("relation", "next_to"))
+        if relation == "on_top_of":
+            subject["position"][1] = target["position"][1] + target["height"]
+            continue
+        if relation == "under":
+            continue
+
+        delta = subject["position"] - target["position"]
+        required_x = subject["width"] / 2 + target["width"] / 2 + 0.06 * subject["scene_scale"]
+        required_z = subject["depth"] / 2 + target["depth"] / 2 + 0.06 * subject["scene_scale"]
+        overlap_x = required_x - abs(float(delta[0]))
+        overlap_z = required_z - abs(float(delta[2]))
+        if overlap_x <= 0 or overlap_z <= 0:
+            continue
+
+        if relation in {"left_of", "right_of"}:
+            sign = -1.0 if relation == "left_of" else 1.0
+            subject["position"][0] = target["position"][0] + sign * required_x
+        elif relation in {"in_front_of", "behind"}:
+            sign = -1.0 if relation == "in_front_of" else 1.0
+            subject["position"][2] = target["position"][2] + sign * required_z
+        elif overlap_x <= overlap_z:
+            sign = -1.0 if delta[0] < 0 else 1.0
+            subject["position"][0] = target["position"][0] + sign * required_x
+        else:
+            sign = -1.0 if delta[2] < 0 else 1.0
+            subject["position"][2] = target["position"][2] + sign * required_z
+    return True
+
+
 def _relations_connect_all(entries: dict, relations: list[dict]) -> bool:
     if len(entries) <= 1:
         return True
@@ -478,8 +561,18 @@ def combine_scene_meshes(
         relation_source == "gemini_structured"
         and _relations_connect_all(entries, relations)
     )
-    relations, inferred_rules = _semantic_relations(entries, relations)
-    _position_entries(entries, relations)
+    placements = list(layout.get("placements") or [])
+    gemini_placement_applied = (
+        relation_source == "gemini_structured"
+        and _apply_gemini_placements(entries, placements, relations)
+    )
+    relations, inferred_rules = _semantic_relations(
+        entries,
+        relations,
+        allow_inference=not gemini_placement_applied,
+    )
+    if not gemini_placement_applied:
+        _position_entries(entries, relations)
 
     scene = trimesh.Scene()
     report = {
@@ -488,10 +581,19 @@ def combine_scene_meshes(
         "inferred_rules": inferred_rules,
         "relation_source": relation_source,
         "gemini_layout_applied": gemini_complete,
+        "gemini_placement_applied": gemini_placement_applied,
         "coordinate_system": {"x": "left-right", "y": "up", "z": "front-back"},
         "objects": [],
     }
     for name, entry in entries.items():
+        rotation_y = float(entry.get("rotation_y_degrees", 0.0))
+        if abs(rotation_y) > 1e-8:
+            entry["mesh"].apply_transform(
+                trimesh.transformations.rotation_matrix(
+                    np.radians(rotation_y),
+                    [0, 1, 0],
+                )
+            )
         entry["mesh"].apply_translation(entry["position"])
         scene.add_geometry(entry["mesh"], node_name=name)
         report["objects"].append(
@@ -500,6 +602,7 @@ def combine_scene_meshes(
                 "label": entry["model"].get("label", name),
                 "category": entry["category"],
                 "position_xyz": [round(float(value), 6) for value in entry["position"]],
+                "rotation_y_degrees": round(rotation_y, 6),
                 "dimensions_wdh": [
                     round(entry["width"], 6),
                     round(entry["depth"], 6),

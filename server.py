@@ -49,10 +49,10 @@ os.makedirs(RUNS_DIR, exist_ok=True)
 
 app = FastAPI(
     title="DATN 3D Scene Reconstruction API",
-    version="1.2.3",
+    version="1.3.0",
 )
 
-BACKEND_BUILD = "canonical-facing-layout-v5"
+BACKEND_BUILD = "gemini-metric-layout-v6"
 
 allowed_origins = [
     origin.strip()
@@ -262,7 +262,9 @@ pipeline. Return JSON only, with this schema:
 {"objects":[{"label":"singular concrete object name in English", "count":1,
 "description":"short description of this object"}],
 "relation":"single|next_to|on_top_of|under|in_front_of|behind|left_of|right_of",
-"relations":[{"subject":0,"relation":"next_to","object":1}]}
+"relations":[{"subject":0,"relation":"next_to","object":1}],
+"placements":[{"object":0,"position_xyz":[0.0,0.0,0.0],
+"rotation_y_degrees":0.0}]}
 
 Rules:
 - Act as a practical interior designer and 3D scene planner. You decide the
@@ -298,6 +300,14 @@ Rules:
   "relation":"in_front_of","relations":[
   {"subject":1,"relation":"in_front_of","object":0},
   {"subject":2,"relation":"right_of","object":0}]}
+- You are the authority for 3D placement. Return one placement for every object
+  entry. Coordinates are metres in a Y-up scene: X is left/right, Y is height,
+  and Z is front/back. Put the main anchor at [0,0,0]. Negative Z is in front
+  of the anchor and positive Z is behind it. Floor-standing objects use Y=0.
+  Keep a normal room compact, generally within X/Z = -3 to 3 metres. Use
+  rotation_y_degrees to make interacting objects face naturally. Do not overlap
+  solid objects. For a sofa, coffee table and floor lamp, a practical example is
+  sofa [0,0,0], table [0,0,-1.1], and lamp [1.3,0,0].
 """.strip()
 
 IMAGE_ANALYSIS_INSTRUCTION = """
@@ -531,7 +541,7 @@ def _gemini_scene_graph(prompt: str) -> dict | None:
     payload = {
         "systemInstruction": {"parts": [{"text": SCENE_GRAPH_INSTRUCTION}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 400},
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 700},
     }
     http_request = urllib_request.Request(
         endpoint,
@@ -581,6 +591,7 @@ def _gemini_scene_graph(prompt: str) -> dict | None:
         clean_objects,
         relation=data.get("relation"),
         relations=data.get("relations", []),
+        placements=data.get("placements", []),
         parser_source="gemini_structured",
     )
 
@@ -776,7 +787,7 @@ def health_check():
     readiness = backend_readiness()
     return {
         "status": "ok",
-        "version": "1.2.3",
+        "version": "1.3.0",
         "build": BACKEND_BUILD,
         **readiness,
         "gemini_model": GEMINI_MODEL,

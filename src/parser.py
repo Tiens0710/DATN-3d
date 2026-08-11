@@ -1,3 +1,4 @@
+import math
 import re
 import unicodedata
 
@@ -137,6 +138,7 @@ def parse_scene_graph_from_objects(
     objects: list[dict],
     relation: str | None = None,
     relations: list[dict] | None = None,
+    placements: list[dict] | None = None,
     parser_source: str = "structured",
 ) -> dict:
     """Build the common graph format from arbitrary object specifications.
@@ -228,12 +230,34 @@ def parse_scene_graph_from_objects(
     else:
         graph_relation = graph_relation or "next_to"
 
+    expanded_placements = []
+    for placement in placements or []:
+        try:
+            group = groups[int(placement["object"])]
+            raw_position = placement["position_xyz"]
+            position = [float(raw_position[index]) for index in range(3)]
+            rotation = float(placement.get("rotation_y_degrees", 0.0))
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        if not all(math.isfinite(value) for value in position + [rotation]):
+            continue
+        for repeat_index, node_id in enumerate(group):
+            repeated_position = list(position)
+            if len(group) > 1:
+                repeated_position[0] += (repeat_index - (len(group) - 1) / 2) * 0.75
+            expanded_placements.append({
+                "object_id": node_id,
+                "position_xyz": repeated_position,
+                "rotation_y_degrees": rotation,
+            })
+
     return {
         "nodes": nodes,
         "edges": edges,
         "relation": graph_relation,
         "raw": clean_prompt,
         "mode": "objectwise",
+        "placements": expanded_placements,
         "parser_source": parser_source,
     }
 

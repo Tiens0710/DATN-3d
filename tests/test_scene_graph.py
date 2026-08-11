@@ -56,6 +56,31 @@ class SceneGraphTests(unittest.TestCase):
             self.assertLessEqual(box["x"] + box["w"], 512)
             self.assertLessEqual(box["y"] + box["h"], 512)
 
+    def test_gemini_metric_placements_survive_parser_and_layout(self):
+        graph = parse_scene_graph_from_objects(
+            "a sofa with a coffee table in front",
+            [{"label": "sofa"}, {"label": "coffee table"}],
+            relations=[{"subject": 1, "relation": "in_front_of", "object": 0}],
+            placements=[
+                {"object": 0, "position_xyz": [0, 0, 0], "rotation_y_degrees": 0},
+                {"object": 1, "position_xyz": [0, 0, -1.1], "rotation_y_degrees": 10},
+            ],
+            parser_source="gemini_structured",
+        )
+        layout = compute_layout(graph)
+
+        self.assertEqual(
+            layout["placements"],
+            [
+                {"object_id": "sofa_1", "position_xyz": [0.0, 0.0, 0.0], "rotation_y_degrees": 0.0},
+                {
+                    "object_id": "coffee_table_2",
+                    "position_xyz": [0.0, 0.0, -1.1],
+                    "rotation_y_degrees": 10.0,
+                },
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

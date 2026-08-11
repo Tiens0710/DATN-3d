@@ -58,6 +58,7 @@ def compute_layout(scene_graph: dict) -> dict:
         "subject_id": subject_id or nodes[0]["id"],
         "target_id": target_id if len(nodes) > 1 else None,
         "relations": relations,
+        "placements": list(scene_graph.get("placements", [])),
         "relation_source": scene_graph.get("parser_source", "deterministic_fallback"),
         "mode": "objectwise",
     }
