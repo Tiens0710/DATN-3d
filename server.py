@@ -177,6 +177,27 @@ def _run_paths(run_id: str, create: bool = False) -> Dict[str, Path]:
     return paths
 
 
+def _write_run_metadata(paths: Dict[str, Path], filename: str, payload: Dict[str, Any]) -> None:
+    metadata_path = paths["root"] / filename
+    with metadata_path.open("w", encoding="utf-8") as file:
+        json.dump(payload, file, ensure_ascii=False, indent=2, default=str)
+
+
+def _create_full_run_archive(paths: Dict[str, Path]) -> Path:
+    """Package every useful artifact from one isolated pipeline run."""
+    archive_path = paths["outputs"] / "pipeline_full_results.zip"
+    archive_resolved = archive_path.resolve()
+    with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for file_path in sorted(paths["root"].rglob("*")):
+            if not file_path.is_file() or file_path.resolve() == archive_resolved:
+                continue
+            archive.write(
+                file_path,
+                file_path.relative_to(paths["root"]).as_posix(),
+            )
+    return archive_path
+
+
 def _active_run_ids() -> set[str]:
     with trellis_jobs_lock:
         return {
@@ -843,6 +864,17 @@ def api_generate_image(request: ImageGenRequest):
         contact_sheet = paths["outputs"] / "objectwise_2d.png"
         create_object_contact_sheet(generated, str(contact_sheet))
         shutil.copy2(contact_sheet, paths["input"])
+        _write_run_metadata(
+            paths,
+            "generation_metadata.json",
+            {
+                "run_id": request.run_id,
+                "prompt": request.prompt,
+                "layout": layout,
+                "lora_scale": request.lora_scale,
+                "objects": generated,
+            },
+        )
         images = [
             {
                 "name": item["name"],
@@ -947,6 +979,18 @@ def api_run_sam2(request: Sam2Request):
                 raise RuntimeError("Segmentation worker returned a crop outside the active run")
             crop["crop_path"] = str(crop_path)
             crop["crop_url"] = f"/runs/{request.run_id}/crops/{crop_path.name}"
+        _write_run_metadata(
+            paths,
+            "segmentation_metadata.json",
+            {
+                "run_id": request.run_id,
+                "mode": source_mode,
+                "prompt": request.prompt,
+                "layout": effective_layout,
+                "image_analysis": image_analysis,
+                "crops": crops,
+            },
+        )
         return {
             "status": "success",
             "mode": source_mode,
@@ -1022,29 +1066,24 @@ def api_combine_scene(request: CombineRequest):
         ):
             raise RuntimeError("Scene combining failed")
 
-        zip_path = paths["outputs"] / "scene_assets.zip"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            if paths["input"].exists():
-                archive.write(paths["input"], "input_image.png")
-
-            for directory, archive_dir in (
-                (paths["crops"], "crops"),
-                (paths["models"], "models"),
-            ):
-                for file_path in directory.iterdir():
-                    if file_path.is_file():
-                        archive.write(
-                            file_path,
-                            os.path.join(archive_dir, file_path.name),
-                        )
-
-            archive.write(scene_path, "scene_combined.glb")
+        _write_run_metadata(
+            paths,
+            "scene_metadata.json",
+            {
+                "run_id": request.run_id,
+                "models": request.models,
+                "layout": request.layout,
+                "scale_factor": request.scale_factor,
+                "scene_file": "outputs/scene_combined.glb",
+            },
+        )
+        zip_path = _create_full_run_archive(paths)
 
         return {
             "status": "success",
             "run_id": request.run_id,
             "scene_url": f"/runs/{request.run_id}/outputs/scene_combined.glb",
-            "zip_url": f"/runs/{request.run_id}/outputs/scene_assets.zip",
+            "zip_url": f"/runs/{request.run_id}/outputs/pipeline_full_results.zip",
         }
     except HTTPException:
         raise

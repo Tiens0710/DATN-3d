@@ -3079,7 +3079,7 @@
                         <div class="telemetry-row"><span>Seed</span><strong>42</strong></div>
                     </div>
 
-                    <button class="viewport-download" id="btn-spatial-download" type="button"><i data-lucide="download"></i>Download GLB</button>
+                    <button class="viewport-download" id="btn-spatial-download" type="button"><i data-lucide="archive"></i>Tải toàn bộ kết quả</button>
                 </div>
             </section>
         </div>
@@ -3455,14 +3455,31 @@
             if (spatialViewer) spatialViewer.cameraOrbit = "90deg 75deg auto";
         });
         document.getElementById("btn-spatial-download")?.addEventListener("click", async () => {
-            if (!spatialLatestSceneUrl) {
-                writeLog("Chưa có mô hình GLB để tải.", "error");
+            if (!spatialLatestZipUrl) {
+                writeLog("Chưa có gói kết quả đầy đủ để tải.", "error");
                 return;
             }
+            const button = document.getElementById("btn-spatial-download");
+            const originalHtml = button?.innerHTML || "";
             try {
-                await downloadBackendFile(spatialLatestSceneUrl, "scene_combined.glb");
+                if (button) {
+                    button.disabled = true;
+                    button.innerHTML = '<i data-lucide="loader-circle"></i>Đang tải...';
+                    window.lucide?.createIcons();
+                }
+                await downloadBackendFile(
+                    spatialLatestZipUrl,
+                    `spatialflow_full_results_${currentRunId.slice(0, 8)}.zip`
+                );
+                writeLog("Đã tải toàn bộ ảnh, crop, mô hình 3D và metadata.", "success");
             } catch (error) {
-                writeLog(`Lỗi tải scene GLB: ${error.message}`, "error");
+                writeLog(`Lỗi tải gói kết quả: ${error.message}`, "error");
+            } finally {
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = originalHtml;
+                    window.lucide?.createIcons();
+                }
             }
         });
 
@@ -5457,7 +5474,7 @@
                                 const objectUrl = URL.createObjectURL(blob);
                                 const a = document.createElement("a");
                                 a.href = objectUrl;
-                                a.download = "scene_assets.zip";
+                                a.download = "spatialflow_full_results.zip";
                                 document.body.appendChild(a);
                                 a.click();
                                 a.remove();
