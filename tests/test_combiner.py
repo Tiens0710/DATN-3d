@@ -45,6 +45,13 @@ class SceneCombinerTests(unittest.TestCase):
         self.assertAlmostEqual(0.8 * sofa_scale, 2.10)
         self.assertAlmostEqual(0.8 * lamp_scale, 1.65)
 
+    def test_normalized_trellis_mesh_can_reach_metric_furniture_size(self):
+        sofa_scale = _category_scale(np.array([0.021, 0.009, 0.0085]), "sofa", 1.0)
+        lamp_scale = _category_scale(np.array([0.0038, 0.0038, 0.0165]), "floor_lamp", 1.0)
+
+        self.assertAlmostEqual(0.021 * sofa_scale, 2.10)
+        self.assertAlmostEqual(0.0165 * lamp_scale, 1.65)
+
     def test_living_room_uses_functional_positions_and_floor_alignment(self):
         entries = {
             "sofa_1": self._entry("sofa", 2.1, 0.9, 0.85),
@@ -185,8 +192,15 @@ class SceneCombinerTests(unittest.TestCase):
             self.assertLess(positions["table_1"][2], positions["sofa_1"][2])
             self.assertGreater(positions["lamp_1"][0], positions["sofa_1"][0])
 
+            objects = {item["name"]: item for item in report["objects"]}
+            self.assertAlmostEqual(objects["sofa_1"]["mesh_dimensions_wdh"][0], 2.10, places=4)
+            self.assertAlmostEqual(objects["table_1"]["mesh_dimensions_wdh"][0], 1.10, places=4)
+            self.assertAlmostEqual(objects["lamp_1"]["mesh_dimensions_wdh"][2], 1.65, places=4)
+
             exported = trimesh.load(output_path, force="scene", process=False)
             self.assertEqual(len(exported.geometry), 3)
+            self.assertLess(float(exported.extents[0]), 3.2)
+            self.assertLess(float(exported.extents[2]), 2.0)
             for geometry in exported.geometry.values():
                 self.assertAlmostEqual(float(geometry.bounds[0, 1]), 0.0, places=5)
 

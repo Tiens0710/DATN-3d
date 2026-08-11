@@ -91,7 +91,13 @@ def _category_scale(dimensions: np.ndarray, category: str, scene_scale: float) -
         ratio = target_dimensions[primary_axis] / dimensions[primary_axis]
     else:
         ratio = float(np.median(target_dimensions / dimensions))
-    return float(np.clip(ratio, 0.08, 12.0))
+    # TRELLIS exports are not guaranteed to use one unit convention. Some GLBs
+    # arrive close to metres while others are normalized to a unit cube. The
+    # old upper bound of 12 left normalized meshes about 8-20x too small after
+    # the base 0.01 scene conversion, while placement still used metre-sized
+    # furniture dimensions. Keep a broad corruption guard but allow the model
+    # to reach the requested real-world primary dimension.
+    return float(np.clip(ratio, 0.002, 500.0))
 
 
 def _layout_dimensions(
