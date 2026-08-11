@@ -263,6 +263,9 @@ pipeline. Return JSON only, with this schema:
 "relations":[{"subject":0,"relation":"next_to","object":1}]}
 
 Rules:
+- Act as a practical interior designer and 3D scene planner. You decide the
+  most realistic relative placement from the user's wording and normal object
+  function; do not merely preserve the order in which nouns appear.
 - Recognize ANY concrete object, not only furniture. Keep labels such as
   bicycle, house, toy, car, lamp, plant, cup, or any other object requested.
 - Preserve the exact requested quantity. "two chairs" means count 2; do not
@@ -283,6 +286,16 @@ Rules:
 - Express the relation from the movable/accessory object to its anchor. Example:
   for sofa + coffee table + floor lamp, return table in_front_of sofa and lamp
   right_of sofa.
+- Every object in a multi-object request must be connected to the scene by at
+  least one relation. Prefer one large stable object such as sofa, bed, or table
+  as the anchor. Do not use next_to for every edge unless the user explicitly
+  asks for a row. For a living room, a valid answer is:
+  {"objects":[{"label":"sofa","count":1,"description":"sofa"},
+  {"label":"coffee table","count":1,"description":"coffee table"},
+  {"label":"floor lamp","count":1,"description":"floor lamp"}],
+  "relation":"in_front_of","relations":[
+  {"subject":1,"relation":"in_front_of","object":0},
+  {"subject":2,"relation":"right_of","object":0}]}
 """.strip()
 
 IMAGE_ANALYSIS_INSTRUCTION = """

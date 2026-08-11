@@ -90,7 +90,11 @@ def _find_entry(entries: dict, categories: set[str]) -> str | None:
     )
 
 
-def _semantic_relations(entries: dict, relations: list[dict]) -> tuple[list[dict], list[str]]:
+def _semantic_relations(
+    entries: dict,
+    relations: list[dict],
+    allow_inference: bool = True,
+) -> tuple[list[dict], list[str]]:
     """Complete vague object lists with common interior-design relationships."""
     valid_names = set(entries)
     normalized = []
@@ -107,6 +111,8 @@ def _semantic_relations(entries: dict, relations: list[dict]) -> tuple[list[dict
             )
 
     inferred = []
+    if not allow_inference:
+        return normalized, inferred
     sofa = _find_entry(entries, {"sofa"})
     table = _find_entry(entries, {"coffee_table", "table", "dining_table"})
     lamp = _find_entry(entries, {"floor_lamp", "lamp"})
@@ -239,6 +245,27 @@ def _position_entries(entries: dict, relations: list[dict]) -> None:
             entry["position"][2] = 0.0
 
 
+def _relations_connect_all(entries: dict, relations: list[dict]) -> bool:
+    if len(entries) <= 1:
+        return True
+    adjacency = {name: set() for name in entries}
+    for edge in relations:
+        subject = edge.get("subject")
+        target = edge.get("object")
+        if subject in adjacency and target in adjacency and subject != target:
+            adjacency[subject].add(target)
+            adjacency[target].add(subject)
+    visited = set()
+    pending = [next(iter(entries))]
+    while pending:
+        current = pending.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        pending.extend(adjacency[current] - visited)
+    return len(visited) == len(entries)
+
+
 def combine_scene_meshes(
     models: list,
     output_scene_path: str,
@@ -285,7 +312,16 @@ def combine_scene_meshes(
             {"subject": names[index + 1], "relation": relation, "object": names[index]}
             for index in range(len(names) - 1)
         ]
-    relations, inferred_rules = _semantic_relations(entries, relations)
+    relation_source = str(layout.get("relation_source", "deterministic_fallback"))
+    gemini_complete = (
+        relation_source == "gemini_structured"
+        and _relations_connect_all(entries, relations)
+    )
+    relations, inferred_rules = _semantic_relations(
+        entries,
+        relations,
+        allow_inference=not gemini_complete,
+    )
     _position_entries(entries, relations)
 
     scene = trimesh.Scene()
@@ -293,6 +329,8 @@ def combine_scene_meshes(
         "relation": relation,
         "relations": relations,
         "inferred_rules": inferred_rules,
+        "relation_source": relation_source,
+        "gemini_layout_applied": gemini_complete,
         "coordinate_system": {"x": "left-right", "y": "front-back", "z": "up"},
         "objects": [],
     }

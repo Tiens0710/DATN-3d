@@ -9,7 +9,7 @@ try:
 except ModuleNotFoundError:
     sys.modules["trimesh"] = types.SimpleNamespace(Trimesh=object)
 
-from src.combiner import _position_entries, _semantic_relations
+from src.combiner import _position_entries, _relations_connect_all, _semantic_relations
 
 
 class SceneCombinerTests(unittest.TestCase):
@@ -33,6 +33,27 @@ class SceneCombinerTests(unittest.TestCase):
         self.assertEqual({entry["position"][2] for entry in entries.values()}, {0.0})
         self.assertIn("table_in_front_of_sofa", inferred)
         self.assertIn("lamp_beside_sofa", inferred)
+
+    def test_complete_gemini_layout_is_not_overridden(self):
+        entries = {
+            "sofa_1": self._entry("sofa", 2.1, 0.9, 0.85),
+            "table_1": self._entry("table", 1.2, 0.72, 0.75),
+            "lamp_1": self._entry("floor_lamp", 0.38, 0.38, 1.65),
+        }
+        gemini_relations = [
+            {"subject": "table_1", "relation": "left_of", "object": "sofa_1"},
+            {"subject": "lamp_1", "relation": "behind", "object": "sofa_1"},
+        ]
+
+        self.assertTrue(_relations_connect_all(entries, gemini_relations))
+        relations, inferred = _semantic_relations(
+            entries,
+            gemini_relations,
+            allow_inference=False,
+        )
+
+        self.assertEqual(relations, gemini_relations)
+        self.assertEqual(inferred, [])
 
     @staticmethod
     def _entry(category, width, depth, height):
