@@ -255,6 +255,41 @@ def _choose_anchor(entries: dict) -> str:
     return max(entries, key=lambda name: entries[name]["width"] * entries[name]["depth"])
 
 
+def _constrain_floor_plan(entries: dict, relations: list[dict], anchor: str) -> None:
+    """Keep relation chains compact enough for a practical room composition."""
+    adjacency = {name: set() for name in entries}
+    for edge in relations:
+        subject = edge.get("subject")
+        target = edge.get("object")
+        if subject in adjacency and target in adjacency and subject != target:
+            adjacency[subject].add(target)
+            adjacency[target].add(subject)
+
+    hops = {anchor: 0}
+    pending = [anchor]
+    while pending:
+        current = pending.pop(0)
+        for neighbor in adjacency[current]:
+            if neighbor not in hops:
+                hops[neighbor] = hops[current] + 1
+                pending.append(neighbor)
+
+    anchor_entry = entries[anchor]
+    for name, entry in entries.items():
+        if name == anchor:
+            continue
+        hop_count = max(1, hops.get(name, 1))
+        scene_scale = max(anchor_entry["scene_scale"], entry["scene_scale"])
+        x_limit = hop_count * (
+            anchor_entry["width"] / 2 + entry["width"] / 2 + 0.45 * scene_scale
+        )
+        z_limit = hop_count * (
+            anchor_entry["depth"] / 2 + entry["depth"] / 2 + 0.45 * scene_scale
+        )
+        entry["position"][0] = float(np.clip(entry["position"][0], -x_limit, x_limit))
+        entry["position"][2] = float(np.clip(entry["position"][2], -z_limit, z_limit))
+
+
 def _position_entries(entries: dict, relations: list[dict]) -> None:
     anchor = _choose_anchor(entries)
     positioned = {anchor}
@@ -300,6 +335,8 @@ def _position_entries(entries: dict, relations: list[dict]) -> None:
     for name, entry in entries.items():
         if name not in stacked:
             entry["position"][1] = 0.0
+
+    _constrain_floor_plan(entries, relations, anchor)
 
 
 def _relations_connect_all(entries: dict, relations: list[dict]) -> bool:

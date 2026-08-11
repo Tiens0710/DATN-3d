@@ -17,6 +17,7 @@ except ModuleNotFoundError:
 from src.combiner import (
     _as_mesh,
     _category_scale,
+    _constrain_floor_plan,
     _layout_dimensions,
     _position_entries,
     _relations_connect_all,
@@ -85,6 +86,25 @@ class SceneCombinerTests(unittest.TestCase):
 
         self.assertEqual(relations, gemini_relations)
         self.assertEqual(inferred, [])
+
+    def test_floor_plan_constrains_extreme_object_spacing(self):
+        entries = {
+            "sofa_1": self._entry("sofa", 2.1, 0.9, 0.85),
+            "table_1": self._entry("coffee_table", 1.1, 0.65, 0.45),
+            "lamp_1": self._entry("floor_lamp", 0.38, 0.38, 1.65),
+        }
+        entries["table_1"]["position"][:] = [0.0, 0.0, -12.0]
+        entries["lamp_1"]["position"][:] = [15.0, 0.0, 0.0]
+        relations = [
+            {"subject": "table_1", "relation": "in_front_of", "object": "sofa_1"},
+            {"subject": "lamp_1", "relation": "right_of", "object": "sofa_1"},
+        ]
+
+        _constrain_floor_plan(entries, relations, "sofa_1")
+
+        self.assertLessEqual(abs(entries["table_1"]["position"][2]), 1.225)
+        self.assertLessEqual(abs(entries["lamp_1"]["position"][0]), 1.69)
+        self.assertEqual({entry["position"][1] for entry in entries.values()}, {0.0})
 
     @unittest.skipUnless(TRIMESH_AVAILABLE, "trimesh is required for GLB integration tests")
     def test_glb_scene_graph_transform_is_applied_when_loading(self):

@@ -3044,6 +3044,8 @@
                         id="spatial-global-viewer"
                         camera-controls
                         auto-rotate
+                        camera-orbit="30deg 72deg 78%"
+                        field-of-view="35deg"
                         shadow-intensity="1.2"
                         exposure="1.05"
                         environment-image="neutral"
@@ -3296,6 +3298,8 @@
             spatialLatestSceneUrl = sceneUrl || "";
             spatialLatestZipUrl = zipUrl || "";
             globalViewer.src = objectUrl;
+            globalViewer.cameraOrbit = "30deg 72deg 78%";
+            globalViewer.fieldOfView = "35deg";
             globalViewer.hidden = false;
             if (emptyState) emptyState.style.display = "none";
             const finalScene = Boolean(sceneUrl);
@@ -3442,17 +3446,17 @@
         });
         document.getElementById("btn-view-reset")?.addEventListener("click", () => {
             if (!spatialViewer) return;
-            spatialViewer.cameraOrbit = "0deg 75deg auto";
-            spatialViewer.fieldOfView = "auto";
+            spatialViewer.cameraOrbit = "30deg 72deg 78%";
+            spatialViewer.fieldOfView = "35deg";
         });
         document.getElementById("btn-view-front")?.addEventListener("click", () => {
-            if (spatialViewer) spatialViewer.cameraOrbit = "0deg 75deg auto";
+            if (spatialViewer) spatialViewer.cameraOrbit = "0deg 75deg 78%";
         });
         document.getElementById("btn-view-top")?.addEventListener("click", () => {
-            if (spatialViewer) spatialViewer.cameraOrbit = "0deg 5deg auto";
+            if (spatialViewer) spatialViewer.cameraOrbit = "0deg 5deg 78%";
         });
         document.getElementById("btn-view-side")?.addEventListener("click", () => {
-            if (spatialViewer) spatialViewer.cameraOrbit = "90deg 75deg auto";
+            if (spatialViewer) spatialViewer.cameraOrbit = "90deg 75deg 78%";
         });
         document.getElementById("btn-spatial-download")?.addEventListener("click", async () => {
             if (!spatialLatestZipUrl) {
@@ -5192,6 +5196,8 @@
                         src="${sourceUrl}"
                         camera-controls
                         auto-rotate
+                        camera-orbit="30deg 72deg 78%"
+                        field-of-view="35deg"
                         shadow-intensity="1.2"
                         exposure="1.0"
                         alt="TRELLIS generated 3D model">
@@ -5217,8 +5223,8 @@
             };
             viewer.querySelector('[data-action="reset"]').onclick = (event) => {
                 event.stopPropagation();
-                modelViewer.cameraOrbit = "0deg 75deg auto";
-                modelViewer.fieldOfView = "auto";
+                modelViewer.cameraOrbit = "30deg 72deg 78%";
+                modelViewer.fieldOfView = "35deg";
             };
             viewer.querySelector('[data-action="download"]').onclick = async (event) => {
                 event.stopPropagation();
@@ -5403,6 +5409,8 @@
                         src="${this._objectUrl}" 
                         camera-controls 
                         auto-rotate 
+                        camera-orbit="30deg 72deg 78%"
+                        field-of-view="35deg"
                         alt="DATN Interactive 3D Scene Combined Output"
                         shadow-intensity="1.5"
                         exposure="1.0"
@@ -5432,8 +5440,8 @@
 
                     viewer.querySelector(`#btn-reset-${this.id}`).onclick = (e) => {
                         e.stopPropagation();
-                        modelViewer.cameraOrbit = "0deg 75deg auto";
-                        modelViewer.fieldOfView = "auto";
+                        modelViewer.cameraOrbit = "30deg 72deg 78%";
+                        modelViewer.fieldOfView = "35deg";
                     };
 
                     viewer.querySelector(`#btn-scene-${this.id}`).onclick = async (e) => {
