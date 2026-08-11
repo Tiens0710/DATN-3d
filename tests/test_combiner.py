@@ -52,9 +52,9 @@ class SceneCombinerTests(unittest.TestCase):
         )
         _position_entries(entries, relations)
 
-        self.assertLess(entries["table_1"]["position"][1], entries["sofa_1"]["position"][1])
+        self.assertLess(entries["table_1"]["position"][2], entries["sofa_1"]["position"][2])
         self.assertGreater(entries["lamp_1"]["position"][0], entries["sofa_1"]["position"][0])
-        self.assertEqual({entry["position"][2] for entry in entries.values()}, {0.0})
+        self.assertEqual({entry["position"][1] for entry in entries.values()}, {0.0})
         self.assertIn("table_in_front_of_sofa", inferred)
         self.assertIn("lamp_beside_sofa", inferred)
 

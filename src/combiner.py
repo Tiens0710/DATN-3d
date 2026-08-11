@@ -114,22 +114,25 @@ def _prepare_mesh(
     mesh = mesh.copy()
     bounds = _robust_bounds(mesh)
     full_bounds = np.asarray(mesh.bounds, dtype=float)
+    # GLB/model-viewer uses Y-up: X is left/right, Y is height, Z is depth.
     mesh.apply_translation(
         [
             -float((bounds[0, 0] + bounds[1, 0]) / 2),
-            -float((bounds[0, 1] + bounds[1, 1]) / 2),
-            -float(full_bounds[0, 2]),
+            -float(full_bounds[0, 1]),
+            -float((bounds[0, 2] + bounds[1, 2]) / 2),
         ]
     )
     mesh.apply_scale(scale_factor)
 
-    dimensions = _robust_bounds(mesh)[1] - _robust_bounds(mesh)[0]
+    raw_extents = _robust_bounds(mesh)[1] - _robust_bounds(mesh)[0]
+    dimensions = raw_extents[[0, 2, 1]]  # width, depth, height
     if category in TARGET_DIMENSIONS and np.all(dimensions > 1e-6):
         scene_scale = max(scale_factor / 0.01, 1e-3)
         uniform_scale = _category_scale(dimensions, category, scene_scale)
         mesh.apply_scale(uniform_scale)
         scaled_bounds = _robust_bounds(mesh)
-        dimensions = scaled_bounds[1] - scaled_bounds[0]
+        scaled_extents = scaled_bounds[1] - scaled_bounds[0]
+        dimensions = scaled_extents[[0, 2, 1]]
 
     return mesh, dimensions
 
@@ -231,13 +234,13 @@ def _relation_offset(subject: dict, target: dict, relation: str, side_index: int
     if relation == "right_of":
         return np.array([horizontal, 0.0, 0.0])
     if relation == "in_front_of":
-        return np.array([0.0, -depth, 0.0])
+        return np.array([0.0, 0.0, -depth])
     if relation == "behind":
-        return np.array([0.0, depth, 0.0])
+        return np.array([0.0, 0.0, depth])
     if relation == "on_top_of":
-        return np.array([0.0, 0.0, target["height"] + 0.02 * target["scene_scale"]])
+        return np.array([0.0, target["height"] + 0.02 * target["scene_scale"], 0.0])
     if relation == "under":
-        return np.array([0.0, 0.0, -subject["height"] - 0.02 * subject["scene_scale"]])
+        return np.array([0.0, -subject["height"] - 0.02 * subject["scene_scale"], 0.0])
     side = -1.0 if side_index % 2 == 0 else 1.0
     return np.array([side * horizontal, 0.0, 0.0])
 
@@ -283,19 +286,19 @@ def _position_entries(entries: dict, relations: list[dict]) -> None:
 
     # Disconnected objects form a second row behind the main composition.
     cursor_x = 0.0
-    back_y = max((entry["depth"] for entry in entries.values()), default=1.0) + 0.35
+    back_z = max((entry["depth"] for entry in entries.values()), default=1.0) + 0.35
     for name, entry in entries.items():
         if name in positioned:
             continue
-        entry["position"][:] = [cursor_x, back_y, 0.0]
+        entry["position"][:] = [cursor_x, 0.0, back_z]
         cursor_x += entry["width"] + 0.25 * entry["scene_scale"]
         positioned.add(name)
 
-    # Floor-standing objects must share z=0. Only stacking relations may lift them.
+    # Floor-standing objects must share y=0 in GLB coordinates.
     stacked = {edge["subject"] for edge in relations if edge["relation"] == "on_top_of"}
     for name, entry in entries.items():
         if name not in stacked:
-            entry["position"][2] = 0.0
+            entry["position"][1] = 0.0
 
 
 def _relations_connect_all(entries: dict, relations: list[dict]) -> bool:
@@ -387,7 +390,7 @@ def combine_scene_meshes(
         "inferred_rules": inferred_rules,
         "relation_source": relation_source,
         "gemini_layout_applied": gemini_complete,
-        "coordinate_system": {"x": "left-right", "y": "front-back", "z": "up"},
+        "coordinate_system": {"x": "left-right", "y": "up", "z": "front-back"},
         "objects": [],
     }
     for name, entry in entries.items():
@@ -399,12 +402,12 @@ def combine_scene_meshes(
                 "label": entry["model"].get("label", name),
                 "category": entry["category"],
                 "position_xyz": [round(float(value), 6) for value in entry["position"]],
-                "dimensions_xyz": [
+                "dimensions_wdh": [
                     round(entry["width"], 6),
                     round(entry["depth"], 6),
                     round(entry["height"], 6),
                 ],
-                "mesh_dimensions_xyz": [
+                "mesh_dimensions_wdh": [
                     round(float(value), 6) for value in entry["mesh_dimensions"]
                 ],
             }
