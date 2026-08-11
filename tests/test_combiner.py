@@ -9,10 +9,22 @@ try:
 except ModuleNotFoundError:
     sys.modules["trimesh"] = types.SimpleNamespace(Trimesh=object)
 
-from src.combiner import _position_entries, _relations_connect_all, _semantic_relations
+from src.combiner import (
+    _category_scale,
+    _position_entries,
+    _relations_connect_all,
+    _semantic_relations,
+)
 
 
 class SceneCombinerTests(unittest.TestCase):
+    def test_primary_axis_scaling_uses_realistic_furniture_size(self):
+        sofa_scale = _category_scale(np.array([0.8, 0.7, 0.9]), "sofa", 1.0)
+        lamp_scale = _category_scale(np.array([0.5, 0.5, 0.8]), "floor_lamp", 1.0)
+
+        self.assertAlmostEqual(0.8 * sofa_scale, 2.10)
+        self.assertAlmostEqual(0.8 * lamp_scale, 1.65)
+
     def test_living_room_uses_functional_positions_and_floor_alignment(self):
         entries = {
             "sofa_1": self._entry("sofa", 2.1, 0.9, 0.85),

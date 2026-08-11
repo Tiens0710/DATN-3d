@@ -22,6 +22,22 @@ TARGET_DIMENSIONS = {
     "plant": (0.50, 0.50, 1.25),
 }
 
+# The axis that best represents each object's real-world scale.
+PRIMARY_SCALE_AXIS = {
+    "sofa": 0,
+    "armchair": 2,
+    "chair": 2,
+    "coffee_table": 0,
+    "dining_table": 0,
+    "table": 0,
+    "bed": 0,
+    "nightstand": 2,
+    "cabinet": 2,
+    "floor_lamp": 2,
+    "lamp": 2,
+    "plant": 2,
+}
+
 
 def _as_mesh(path: str) -> trimesh.Trimesh:
     loaded = trimesh.load(path, force="scene", process=False)
@@ -53,13 +69,37 @@ def _category(label: str, description: str = "") -> str:
     return "object"
 
 
+def _robust_bounds(mesh: trimesh.Trimesh) -> np.ndarray:
+    vertices = np.asarray(mesh.vertices, dtype=float)
+    if len(vertices) < 200:
+        return np.asarray(mesh.bounds, dtype=float)
+    lower = np.quantile(vertices, 0.005, axis=0)
+    upper = np.quantile(vertices, 0.995, axis=0)
+    if np.any(upper - lower <= 1e-6):
+        return np.asarray(mesh.bounds, dtype=float)
+    return np.stack([lower, upper])
+
+
+def _category_scale(dimensions: np.ndarray, category: str, scene_scale: float) -> float:
+    target = TARGET_DIMENSIONS.get(category)
+    if not target or np.any(dimensions <= 1e-6):
+        return 1.0
+    target_dimensions = np.asarray(target, dtype=float) * scene_scale
+    primary_axis = PRIMARY_SCALE_AXIS.get(category)
+    if primary_axis is not None:
+        ratio = target_dimensions[primary_axis] / dimensions[primary_axis]
+    else:
+        ratio = float(np.median(target_dimensions / dimensions))
+    return float(np.clip(ratio, 0.08, 12.0))
+
+
 def _prepare_mesh(
     mesh: trimesh.Trimesh,
     category: str,
     scale_factor: float,
 ) -> tuple[trimesh.Trimesh, np.ndarray]:
     mesh = mesh.copy()
-    bounds = np.asarray(mesh.bounds, dtype=float)
+    bounds = _robust_bounds(mesh)
     mesh.apply_translation(
         [
             -float((bounds[0, 0] + bounds[1, 0]) / 2),
@@ -69,16 +109,13 @@ def _prepare_mesh(
     )
     mesh.apply_scale(scale_factor)
 
-    dimensions = np.asarray(mesh.extents, dtype=float)
-    target = TARGET_DIMENSIONS.get(category)
-    if target and np.all(dimensions > 1e-6):
+    dimensions = _robust_bounds(mesh)[1] - _robust_bounds(mesh)[0]
+    if category in TARGET_DIMENSIONS and np.all(dimensions > 1e-6):
         scene_scale = max(scale_factor / 0.01, 1e-3)
-        target_dimensions = np.asarray(target, dtype=float) * scene_scale
-        ratios = target_dimensions / dimensions
-        # The median resists a single noisy TRELLIS axis without distorting mesh geometry.
-        uniform_scale = float(np.clip(np.median(ratios), 0.08, 12.0))
+        uniform_scale = _category_scale(dimensions, category, scene_scale)
         mesh.apply_scale(uniform_scale)
-        dimensions = np.asarray(mesh.extents, dtype=float)
+        scaled_bounds = _robust_bounds(mesh)
+        dimensions = scaled_bounds[1] - scaled_bounds[0]
 
     return mesh, dimensions
 
@@ -170,9 +207,11 @@ def _semantic_relations(
 
 
 def _relation_offset(subject: dict, target: dict, relation: str, side_index: int = 0) -> np.ndarray:
-    clearance = 0.16 * max(subject["scene_scale"], target["scene_scale"])
+    scene_scale = max(subject["scene_scale"], target["scene_scale"])
+    clearance = 0.10 * scene_scale
     horizontal = subject["width"] / 2 + target["width"] / 2 + clearance
-    depth = subject["depth"] / 2 + target["depth"] / 2 + clearance
+    depth_clearance = 0.14 * scene_scale
+    depth = subject["depth"] / 2 + target["depth"] / 2 + depth_clearance
     if relation == "left_of":
         return np.array([-horizontal, 0.0, 0.0])
     if relation == "right_of":
