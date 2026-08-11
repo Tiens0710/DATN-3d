@@ -191,19 +191,38 @@ def parse_scene_graph_from_objects(
         edge_relation = str(edge.get("relation", "next_to"))
         if edge_relation not in valid_relations:
             edge_relation = "next_to"
-        edges.append({
-            "subject": subject_group[0],
-            "relation": edge_relation,
-            "object": object_group[0],
-        })
+        if len(subject_group) == len(object_group):
+            pairs = zip(subject_group, object_group)
+        elif len(object_group) == 1:
+            pairs = ((subject, object_group[0]) for subject in subject_group)
+        elif len(subject_group) == 1:
+            pairs = ((subject_group[0], obj) for obj in object_group)
+        else:
+            pairs = (
+                (subject, obj)
+                for subject in subject_group
+                for obj in object_group
+            )
+        edges.extend(
+            {
+                "subject": subject,
+                "relation": edge_relation,
+                "object": obj,
+            }
+            for subject, obj in pairs
+            if subject != obj
+        )
 
     if not edges and len(nodes) >= 2:
         graph_relation = graph_relation or "next_to"
-        edges.append({
-            "subject": nodes[0]["id"],
-            "relation": graph_relation,
-            "object": nodes[1]["id"],
-        })
+        edges.extend(
+            {
+                "subject": nodes[index]["id"],
+                "relation": graph_relation,
+                "object": nodes[index + 1]["id"],
+            }
+            for index in range(len(nodes) - 1)
+        )
     elif len(nodes) == 1:
         graph_relation = "single"
     else:

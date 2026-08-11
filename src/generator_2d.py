@@ -99,7 +99,7 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
     descriptor = _object_descriptor(label, scene_prompt)
     detail_markers = (
         "carv", "ornate", "decor", "inlay", "engrave", "pattern", "motif",
-        "floral", "wood grain", "beveled", "bevelled", "panel",
+        "floral", "beveled", "bevelled", "panel",
         "hoa văn", "chạm khắc", "họa tiết",
     )
     detail_requested = any(
@@ -108,18 +108,15 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
     )
     if detail_requested and label == "table":
         detail_instruction = (
-            "The requested decorative craftsmanship is mandatory and clearly visible: "
-            "a distinct carved border or inlay along the tabletop edge, not a plain blank top. "
+            "Show the requested carving only as a clear restrained border on the apron or tabletop edge. "
         )
     elif detail_requested and label == "chair":
         detail_instruction = (
-            "The requested decorative craftsmanship is mandatory and clearly visible: "
-            "a distinct carved motif or patterned panel on the chair backrest, not a plain blank back. "
+            "Show the requested carving as one clear restrained panel on the backrest. "
         )
     elif detail_requested:
         detail_instruction = (
-            "The requested decorative craftsmanship is mandatory and clearly visible on the main object, "
-            "not a plain blank surface. "
+            "Keep the requested decoration clear, restrained, and attached to the object. "
         )
     else:
         detail_instruction = ""
@@ -145,74 +142,67 @@ def _object_prompt(label: str, scene_prompt: str, all_labels: list[str]) -> tupl
 
     geometry_instructions = {
         "table": (
-            "Use an eye-level front three-quarter camera, never an overhead or top-down view. "
-            "Show the complete table from the tabletop to the floor: "
+            "Complete table, eye-level front three-quarter view. "
             f"{table_shape_instruction}"
-            f"{table_base_instruction}, an attached apron or support, and every foot visible. "
-            "The tabletop must never appear as a separate flat slab. "
+            f"{table_base_instruction}, attached apron, every foot visible. "
         ),
         "chair": (
-            "Use an eye-level front three-quarter camera and show the complete chair from the "
-            "top of the backrest to the floor: one seat, one backrest, connected supports, "
-            "and all legs with their feet visible. Do not show a close-up or a chair fragment. "
+            "Complete chair, eye-level front three-quarter view, one seat, one backrest, "
+            "connected supports, four legs and every foot visible. "
         ),
         "sofa": (
-            "Use an eye-level front three-quarter camera and show the complete sofa from its "
-            "backrest to its feet, including the full seat, arms, base, and legs. "
+            "Complete sofa, eye-level front three-quarter view, full seat, arms, base, and feet visible. "
         ),
     }
     geometry_instruction = geometry_instructions.get(
         label,
-        "Use an eye-level front three-quarter camera and show the complete object from its "
-        "highest point to its base, with all structural parts and feet visible. ",
+        "Complete object, eye-level front three-quarter view, all structural parts visible. ",
     )
     positive = (
-        f"Exactly one complete standalone {descriptor}, centered and fully visible. "
-        f"One {label} only, a single subject and a single instance, not a pair or set. "
+        f"Product photo of exactly one standalone {descriptor}. "
         f"{geometry_instruction}"
         f"{detail_instruction}"
-        "Isolated product photo, empty surroundings, no scene, no extra furniture, "
-        "no second object, no duplicate parts, "
-        "generous margins, object fills about 70 percent of the frame, correct structure, "
-        "realistic proportions, clean white "
-        "studio background, soft even lighting, sharp focus, realistic materials."
+        "Centered, fully visible, 70 percent of frame, white studio background, "
+        "soft even light, realistic material, accurate proportions."
     )
     negative = (
-        f"two {label}s, pair of {label}s, {label} set, multiple objects, second {label}, "
-        f"duplicate object, repeated subject, extra furniture, {excluded}, "
-        "featureless malformed furniture, missing structure, "
-        "overhead view, top-down view, bird's-eye view, extreme low angle, close-up, "
-        "cropped object, tabletop only, table surface only, shield-shaped tabletop, "
-        "flat slab, floating tabletop, missing legs, cropped legs, incomplete furniture, "
-        "black silhouette, fused parts, intersecting parts, missing parts, duplicate legs, "
-        "floating parts, "
-        "deformed, blurry, low quality, room, people, text, watermark"
+        f"extra object, duplicate {label}, pair, set, {excluded}, cropped, close-up, "
+        "top-down, extreme perspective, malformed geometry, fused parts, floating parts, "
+        "missing legs, extra legs, black silhouette, clutter, text, watermark"
     )
+    if detail_requested:
+        negative += ", missing requested carving, blank decorative area"
     if label == "table" and not explicit_shape:
-        negative += ", round tabletop, circular tabletop, oval tabletop"
+        negative += ", round tabletop, oval tabletop"
     if label == "table" and not explicit_pedestal:
-        negative += ", pedestal table, single central leg, three-legged table, cabriole legs"
+        negative += ", pedestal table, central leg, three-legged table, cabriole legs"
     return positive, negative
 
 
-def build_object_jobs(scene_prompt: str, objects: list[dict]) -> list[dict]:
+def build_object_jobs(
+    scene_prompt: str,
+    objects: list[dict],
+    object_image_dir: str = OBJECT_IMAGE_DIR,
+) -> list[dict]:
     """Build the deterministic per-object prompts shared with the SD3.5 worker."""
     if not objects:
         raise ValueError("The object-wise generator received no objects")
 
-    Path(OBJECT_IMAGE_DIR).mkdir(parents=True, exist_ok=True)
+    Path(object_image_dir).mkdir(parents=True, exist_ok=True)
     all_labels = [str(item.get("label", "furniture")).lower() for item in objects]
     jobs = []
     for index, item in enumerate(objects, start=1):
         label = str(item.get("label", "furniture")).lower().strip() or "furniture"
         object_id = str(item.get("id", f"{label}_{index}"))
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", object_id):
+            raise ValueError(f"Invalid object id: {object_id}")
         positive, negative = _object_prompt(label, scene_prompt, all_labels)
         jobs.append({
             "name": object_id,
             "label": label,
             "prompt": positive,
             "negative_prompt": negative,
-            "image_path": os.path.join(OBJECT_IMAGE_DIR, f"{object_id}.png"),
+            "image_path": os.path.join(object_image_dir, f"{object_id}.png"),
             "seed": 42 + index * 101,
         })
     return jobs
@@ -263,6 +253,8 @@ def generate_object_images(
     scene_prompt: str,
     objects: list[dict],
     lora_scale: float = 0.2,
+    object_image_dir: str = OBJECT_IMAGE_DIR,
+    manifest_path: str = OBJECT_MANIFEST,
 ) -> list[dict]:
     """Generate isolated object images through the resident SD3.5 worker."""
     if not objects:
@@ -276,6 +268,7 @@ def generate_object_images(
                 "scene_prompt": scene_prompt,
                 "objects": objects,
                 "lora_scale": lora_scale,
+                "output_dir": object_image_dir,
             },
             timeout=SD35_WORKER_TIMEOUT,
         )
@@ -302,7 +295,8 @@ def generate_object_images(
         if not image_path or not os.path.isfile(image_path):
             raise FileNotFoundError(image_path or "Missing SD3.5 image path")
 
-    with open(OBJECT_MANIFEST, "w", encoding="utf-8") as file:
+    Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as file:
         json.dump(jobs, file, ensure_ascii=False, indent=2)
     return jobs
 

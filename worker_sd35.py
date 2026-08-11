@@ -25,7 +25,7 @@ from fastapi import FastAPI, HTTPException
 from packaging.version import Version
 from pydantic import BaseModel
 
-from src.generator_2d import OBJECT_MANIFEST, build_object_jobs
+from src.generator_2d import build_object_jobs
 
 
 SD35_CACHE_DIR = "/kaggle/working/sd35_medium_cache_v1"
@@ -51,6 +51,7 @@ class GenerateRequest(BaseModel):
     scene_prompt: str
     objects: list[dict]
     lora_scale: float = 0.2
+    output_dir: str
 
 
 def _create_pipeline(*, force_download: bool = False):
@@ -112,6 +113,10 @@ def _load_lora_adapter(loaded_pipeline):
 
     lora_loaded = False
     lora_error = None
+    if SD35_LORA_SCALE <= 0:
+        print("SD35 LoRA disabled; using the base model.", flush=True)
+        return loaded_pipeline
+
     source_path = Path(SD35_LORA_PATH)
     required = (
         source_path / "adapter_config.json",
@@ -298,7 +303,22 @@ def generate(payload: GenerateRequest) -> dict:
             f"using resident scale={SD35_LORA_SCALE}",
             flush=True,
         )
-    jobs = build_object_jobs(payload.scene_prompt, payload.objects)
+    output_dir = Path(payload.output_dir).resolve()
+    runs_root = Path("/kaggle/working/runs").resolve()
+    run_id = output_dir.parent.name
+    if (
+        runs_root not in output_dir.parents
+        or output_dir.name != "object_images"
+        or len(run_id) != 32
+        or any(character not in "0123456789abcdef" for character in run_id)
+    ):
+        raise HTTPException(status_code=400, detail="Invalid object image output directory")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    jobs = build_object_jobs(
+        payload.scene_prompt,
+        payload.objects,
+        object_image_dir=str(output_dir),
+    )
 
     with inference_lock:
         try:
@@ -320,8 +340,6 @@ def generate(payload: GenerateRequest) -> dict:
                     ).images[0]
                     image.save(job["image_path"])
 
-            with open(OBJECT_MANIFEST, "w", encoding="utf-8") as file:
-                json.dump(jobs, file, ensure_ascii=False, indent=2)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,

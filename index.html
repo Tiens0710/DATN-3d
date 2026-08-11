@@ -3155,10 +3155,82 @@
         let isConnected = false;
         let uploadedImageUrl = "";
         let uploadedImageName = "";
+        let currentRunId = "";
+        let appApiKey = localStorage.getItem("datn-app-api-key") || "";
         // Keep a local preview while the file is waiting for the backend.
         // The blob URL must never be sent to the Kaggle API.
         let uploadedPreviewUrl = "";
         let pendingUploadFile = null;
+        let selectedUploadFile = null;
+
+        function apiHeaders(extra = {}) {
+            const headers = {
+                "ngrok-skip-browser-warning": "69420",
+                ...extra,
+            };
+            if (appApiKey) headers["X-API-Key"] = appApiKey;
+            return headers;
+        }
+
+        async function createPipelineRun(mode = "text") {
+            if (!backendUrl || !isConnected) {
+                throw new Error("Backend is not connected");
+            }
+            const response = await fetch(`${backendUrl}/api/runs`, {
+                method: "POST",
+                headers: apiHeaders(),
+            });
+            if (!response.ok) {
+                throw new Error(`Cannot create pipeline run: ${response.status} - ${await response.text()}`);
+            }
+            const data = await response.json();
+            currentRunId = data.run_id;
+            writeLog(`Run ${currentRunId.slice(0, 8)} created for ${mode} input.`, "system");
+            return currentRunId;
+        }
+
+        function clearRunBoundNodeCache() {
+            graph?._nodes?.forEach((node) => {
+                delete node._lastRequestKey;
+                delete node._lastSegmentationKey;
+                delete node._lastCrops;
+                delete node._lastModels;
+                delete node._lastTrellisViewerUrl;
+                if (node.type === "datn/sdxl_gen") {
+                    node.properties.imageUrl = "";
+                    node.properties.objectImages = [];
+                    node._imageObj = null;
+                } else if (node.type === "datn/grounded_sam2") {
+                    node.properties.crops = [];
+                    node.properties.previewUrl = "";
+                    node.properties.detectedLayout = {};
+                    node._cropImages = [];
+                } else if (node.type === "datn/trellis_3d") {
+                    node.properties.models = [];
+                    document.getElementById(`trellis-viewer-${node.id}`)?.remove();
+                } else if (node.type === "datn/scene_combiner") {
+                    node.properties.sceneUrl = "";
+                    node.properties.zipUrl = "";
+                    document.getElementById(`viewer-${node.id}`)?.remove();
+                }
+            });
+            const globalViewer = document.getElementById("spatial-global-viewer");
+            const previousObjectUrl = globalViewer?.dataset?.objectUrl;
+            if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
+            if (globalViewer) {
+                globalViewer.removeAttribute("src");
+                globalViewer.hidden = true;
+                delete globalViewer.dataset.objectUrl;
+            }
+            const emptyState = document.getElementById("spatial-viewport-empty");
+            if (emptyState) emptyState.style.display = "flex";
+            const stateLabel = document.getElementById("spatial-viewport-state");
+            if (stateLabel) stateLabel.textContent = "Waiting for output";
+            const sceneStatus = document.getElementById("scene-meta-status");
+            if (sceneStatus) sceneStatus.textContent = "IDLE";
+            const objectCount = document.getElementById("scene-meta-objects");
+            if (objectCount) objectCount.textContent = "0";
+        }
         window.lucide?.createIcons({
             attrs: {
                 "stroke-width": 1.7,
@@ -3554,7 +3626,7 @@
             try {
                 const res = await fetch(`${url}/api/health`, {
                     method: 'GET',
-                    headers: { "ngrok-skip-browser-warning": "69420" },
+                    headers: apiHeaders(),
                     signal: controller.signal,
                 });
                 if (res.ok) {
@@ -3563,6 +3635,11 @@
                         const failedChecks = Object.entries(data.checks || {})
                             .filter(([, value]) => value === false)
                             .map(([name]) => name)
+                            .concat(
+                                Object.entries(data.checks?.workers || {})
+                                    .filter(([, worker]) => !worker.ready)
+                                    .map(([name]) => `worker:${name}`)
+                            )
                             .join(", ");
                         throw new Error(
                             `Backend chưa sẵn sàng${failedChecks ? ` (${failedChecks})` : ""}.`
@@ -3577,6 +3654,9 @@
                         '<span class="icon-label"><i data-lucide="check"></i><span class="button-copy">Connected</span></span>';
                     window.lucide?.createIcons();
                     localStorage.setItem("datn-ngrok-url", url);
+                    if (data.auth_enabled && !appApiKey) {
+                        writeLog("Backend requires an API key. Enter it in Setup before running.", "warning");
+                    }
                     writeLog(`✅ Đã kết nối thành công! Phiên bản: ${data.version || '1.0.0'}`, "success");
                     if (pendingUploadFile) {
                         writeLog("Đang tải ảnh đã chọn lên backend...", "system");
@@ -3749,9 +3829,13 @@
             // A new input must invalidate the previous segmentation preview.
             (graph.findNodesByType("datn/grounded_sam2") || []).forEach((samNode) => {
                 samNode.properties.crops = [];
+                samNode.properties.previewUrl = "";
+                samNode.properties.detectedLayout = {};
                 samNode._lastSegmentationKey = "";
                 samNode._inputImageObj = null;
                 samNode._cropImages = [];
+                samNode.setOutputData(0, null);
+                samNode.setOutputData(1, null);
                 samNode.setDirtyCanvas(true, true);
             });
             canvas.draw(true, true);
@@ -3772,8 +3856,9 @@
             uploadedPreviewUrl = "";
         }
 
-        async function uploadImageFile(file) {
+        async function uploadImageFile(file, { resetLabels = true } = {}) {
             if (!file) return;
+            selectedUploadFile = file;
             if (!file.type.startsWith("image/")) {
                 writeLog("Chỉ hỗ trợ file ảnh PNG, JPG hoặc WebP.", "error");
                 return;
@@ -3782,6 +3867,18 @@
             // Show the selected file immediately, even before Connect/upload.
             pendingUploadFile = file;
             setLocalImagePreview(file);
+            clearRunBoundNodeCache();
+            if (resetLabels) {
+                const samNode = graph?.findNodesByType?.("datn/grounded_sam2")?.[0];
+                if (samNode) {
+                    samNode.properties.labels = "auto";
+                    samNode.properties.labelsTouched = false;
+                    const labelWidget = samNode.widgets?.find(
+                        (widget) => widget.name === "Labels / auto-detect"
+                    );
+                    if (labelWidget) labelWidget.value = "auto";
+                }
+            }
             if (!isConnected) {
                 writeLog(`Đã chọn ảnh ${file.name}. Hãy Connect GPU để bắt đầu tải ảnh lên.`, "warning");
                 return;
@@ -3800,9 +3897,12 @@
                 window.lucide?.createIcons();
             }
             try {
+                await createPipelineRun("image");
+                clearRunBoundNodeCache();
+                formData.append("run_id", currentRunId);
                 const response = await fetch(`${backendUrl}/api/upload_image`, {
                     method: "POST",
-                    headers: { "ngrok-skip-browser-warning": "69420" },
+                    headers: apiHeaders(),
                     body: formData,
                 });
                 if (!response.ok) {
@@ -3834,6 +3934,9 @@
             const file = imageUploadInput.files?.[0];
             imageUploadInput.value = "";
             if (!file) return;
+            if (inputMode !== "image") {
+                setupGraphForMode("image");
+            }
             pendingUploadFile = file;
             await uploadImageFile(file);
         });
@@ -4121,10 +4224,7 @@
             try {
                 const res = await fetch(`${backendUrl}/api/parse_scene_graph`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "ngrok-skip-browser-warning": "69420"
-                    },
+                    headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({ text: inputPrompt })
                 });
                 if (res.ok) {
@@ -4212,10 +4312,7 @@
             try {
                 const res = await fetch(`${backendUrl}/api/generate_layout`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "ngrok-skip-browser-warning": "69420"
-                    },
+                    headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify(graphData)
                 });
                 if (res.ok) {
@@ -4334,10 +4431,7 @@
 
             const res = await fetch(`${backendUrl}/api/optimize_prompt`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "69420"
-                },
+                headers: apiHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({ prompt })
             });
 
@@ -4446,10 +4540,7 @@
                         `${backendUrl}/api/optimize_prompt`,
                         {
                             method: "POST",
-                            headers: {
-                                "Content-Type": "application/json",
-                                "ngrok-skip-browser-warning": "69420"
-                            },
+                            headers: apiHeaders({ "Content-Type": "application/json" }),
                             body: JSON.stringify({ prompt })
                         }
                     );
@@ -4492,11 +4583,9 @@
 
                 const res = await fetch(`${backendUrl}/api/generate_image`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "ngrok-skip-browser-warning": "69420"
-                    },
+                    headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({
+                        run_id: currentRunId,
                         prompt: generationPrompt,
                         layout: {}, // Send empty layout to satisfy backend schema
                         lora_scale: 0.2
@@ -4539,7 +4628,7 @@
                 return;
             }
 
-            const requestKey = JSON.stringify({ prompt, objectLayout });
+            const requestKey = JSON.stringify({ runId: currentRunId, prompt, objectLayout });
             if (this._lastRequestKey === requestKey && this.properties.imageUrl) {
                 this.setOutputData(0, this.properties.imageUrl);
                 return;
@@ -4550,11 +4639,9 @@
 
             const res = await fetch(`${backendUrl}/api/generate_image`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "69420"
-                },
+                headers: apiHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({
+                    run_id: currentRunId,
                     prompt,
                     layout: objectLayout,
                     lora_scale: 0.2
@@ -4624,12 +4711,16 @@
             this.addInput("layout", "object");
             this.addInput("prompt", "string");
             this.addOutput("crops_data", "object");
+            this.addOutput("detected_layout", "object");
 
             this.properties = { 
                 crops: [],
+                previewUrl: "",
+                detectedLayout: {},
                 // Upload mode defaults to automatic multi-object detection.
                 // Users can enter comma-separated labels to constrain it.
-                labels: "auto"
+                labels: "auto",
+                labelsTouched: false,
             };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
@@ -4653,6 +4744,7 @@
             });
             this.addWidget("text", "Labels / auto-detect", this.properties.labels, (v) => {
                 this.properties.labels = v;
+                this.properties.labelsTouched = true;
             });
             this.size = [450, 420];
             this.color = "rgba(230, 81, 0, 0.85)";
@@ -4695,6 +4787,7 @@
                 const labelsArray = this.properties.labels.split(",").map(s => s.trim()).filter(Boolean);
                 autoDetectUpload = Boolean(
                     uploadedImageUrl && (
+                        !this.properties.labelsTouched ||
                         labelsArray.length === 0 ||
                         labelsArray.every((label) => ["auto", "automatic", "auto-detect"].includes(label.toLowerCase()))
                     )
@@ -4711,6 +4804,7 @@
             }
 
             const segmentationKey = JSON.stringify({
+                runId: currentRunId,
                 imageUrl,
                 userPrompt,
                 layout: finalLayout,
@@ -4724,6 +4818,7 @@
                 this.properties.crops.length > 0
             ) {
                 this.setOutputData(0, this.properties.crops);
+                this.setOutputData(1, this.properties.detectedLayout || {});
                 return;
             }
 
@@ -4733,11 +4828,9 @@
             try {
                 const res = await fetch(`${backendUrl}/api/run_sam2`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "ngrok-skip-browser-warning": "69420"
-                    },
+                    headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({
+                        run_id: currentRunId,
                         image_url: imageUrl,
                         layout: finalLayout,
                         prompt: userPrompt,
@@ -4748,7 +4841,25 @@
                 if (res.ok) {
                     const data = await res.json();
                     this.properties.crops = data.crops || [];
+                    this.properties.previewUrl = data.preview_url
+                        ? `${backendUrl}${data.preview_url}`
+                        : "";
+                    this.properties.detectedLayout = data.layout || {};
                     this.setOutputData(0, this.properties.crops);
+                    this.setOutputData(1, this.properties.detectedLayout);
+                    if (data.image_analysis?.objects?.length) {
+                        this.properties.labels = data.image_analysis.objects
+                            .map((item) => item.label)
+                            .join(", ");
+                        const textWidget = this.widgets?.find(
+                            (widget) => widget.name === "Labels / auto-detect"
+                        );
+                        if (textWidget) textWidget.value = this.properties.labels;
+                        writeLog(
+                            `Gemini nhận diện ảnh: ${this.properties.labels}.`,
+                            "info",
+                        );
+                    }
                     writeLog(`✅ SAM2 trích xuất thành công ${this.properties.crops.length} vật thể RGBA!`, "success");
 
                     this._cropImages = [];
@@ -4775,7 +4886,7 @@
             // 1. Draw input image (cached)
             let previewUrl = imageUrl;
             if (this.properties.crops && this.properties.crops.length > 0) {
-                previewUrl = `${backendUrl}/crops/sam2_visual.png`;
+                previewUrl = this.properties.previewUrl || imageUrl;
             }
 
             if (!this._inputImageObj || this._inputImageObj._rawUrl !== previewUrl) {
@@ -4928,11 +5039,8 @@
             try {
                 const res = await fetch(`${backendUrl}/api/generate_3d`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "ngrok-skip-browser-warning": "69420"
-                    },
-                    body: JSON.stringify({ crops: cropsData })
+                    headers: apiHeaders({ "Content-Type": "application/json" }),
+                    body: JSON.stringify({ run_id: currentRunId, crops: cropsData })
                 });
                 if (res.ok) {
                     let data = await res.json();
@@ -4949,9 +5057,7 @@
                             const statusRes = await fetch(
                                 `${backendUrl}/api/generate_3d/status/${jobId}`,
                                 {
-                                    headers: {
-                                        "ngrok-skip-browser-warning": "69420"
-                                    }
+                                    headers: apiHeaders()
                                 }
                             );
 
@@ -5174,11 +5280,9 @@
             try {
                 const res = await fetch(`${backendUrl}/api/combine_scene`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "ngrok-skip-browser-warning": "69420"
-                    },
+                    headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({
+                        run_id: currentRunId,
                         models: modelsData,
                         layout: relationLayout,
                         scale_factor: this.properties.scaleFactor
@@ -5506,6 +5610,8 @@
 
                 const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
                 nodeSAM2.pos = [500, 170];
+                nodeSAM2.properties.labels = "auto";
+                nodeSAM2.properties.labelsTouched = false;
                 graph.add(nodeSAM2);
 
                 const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
@@ -5519,6 +5625,7 @@
                 nodeImage.connect(0, nodeSAM2, 0);
                 nodeSAM2.connect(0, nodeTrellis, 0);
                 nodeTrellis.connect(0, nodeCombiner, 0);
+                nodeSAM2.connect(1, nodeCombiner, 1);
                 updateInputModeUI();
                 requestAnimationFrame(() => fitGraphToView(72));
                 writeLog("Flow hình ảnh đã được nạp: Upload → SAM2 → TRELLIS → Scene.", "info");
@@ -5635,6 +5742,17 @@
             };
 
             try {
+                if (inputMode === "text") {
+                    await createPipelineRun("text");
+                    clearRunBoundNodeCache();
+                } else if (selectedUploadFile) {
+                    await uploadImageFile(selectedUploadFile, { resetLabels: false });
+                    if (!uploadedImageUrl) {
+                        throw new Error("The image could not be uploaded for this run");
+                    }
+                } else if (!currentRunId) {
+                    throw new Error("Choose an input image before running the image workflow");
+                }
                 if (imageInputNode) {
                     await runNode(imageInputNode, "Input Image", "prompt");
                 } else if (promptNode) {
@@ -5711,6 +5829,17 @@
             btnRun.innerHTML = "⏳ Running...";
 
             try {
+                if (inputMode === "text") {
+                    await createPipelineRun("text");
+                    clearRunBoundNodeCache();
+                } else if (selectedUploadFile) {
+                    await uploadImageFile(selectedUploadFile, { resetLabels: false });
+                    if (!uploadedImageUrl) {
+                        throw new Error("The image could not be uploaded for this run");
+                    }
+                } else if (!currentRunId) {
+                    throw new Error("Choose an input image before running the image workflow");
+                }
                 for (let i = 0; i <= endIndex; i++) {
                     const [node, name] = nodes[i];
                     if (!node) continue;
@@ -5747,6 +5876,7 @@
                 uploadedImageUrl = "";
                 uploadedImageName = "";
                 pendingUploadFile = null;
+                selectedUploadFile = null;
                 clearLocalImagePreview();
             }
             setupGraphForMode(mode);
@@ -5853,6 +5983,14 @@
 
         // Kaggle Modal Events
         document.addEventListener("DOMContentLoaded", () => {
+            const apiKeyInput = document.getElementById("app-api-key");
+            if (apiKeyInput) {
+                apiKeyInput.value = appApiKey;
+                apiKeyInput.addEventListener("change", () => {
+                    appApiKey = apiKeyInput.value.trim();
+                    localStorage.setItem("datn-app-api-key", appApiKey);
+                });
+            }
             const modal = document.getElementById("kaggle-modal");
             const btnHelp = document.getElementById("btn-kaggle-help");
             const btnClose = document.getElementById("close-modal");
@@ -5883,6 +6021,11 @@
                 📖 Hướng dẫn & Code chạy trên Kaggle</h2>
 
             <div style="overflow-y: auto; flex: 1; padding-right: 8px;">
+                <label for="app-api-key" style="display:block; color:#d9e2ee; font-size:12px; margin-bottom:6px;">
+                    Backend API key (APP_API_KEY)
+                </label>
+                <input id="app-api-key" type="password" autocomplete="off" placeholder="Leave empty only for private development"
+                    style="width:100%; box-sizing:border-box; margin-bottom:16px; padding:10px 12px; color:white; background:#111820; border:1px solid #334353; border-radius:6px;">
                 <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6;">
                     Bạn có thể chạy dự án trực tiếp trên Kaggle GPU bằng cách sử dụng file Notebook
                     <strong>run_on_kaggle.ipynb</strong> đi kèm trong thư mục. Hoặc sao chép nhanh ô code sửa lỗi biên

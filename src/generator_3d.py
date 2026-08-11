@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 import requests
@@ -42,7 +43,34 @@ def _check_worker_ready() -> None:
         raise RuntimeError(f"TRELLIS worker is not ready: {detail}")
 
 
-def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
+def _path_within(path: str, root: str) -> Path:
+    resolved = Path(path).resolve()
+    resolved_root = Path(root).resolve()
+    if resolved != resolved_root and resolved_root not in resolved.parents:
+        raise ValueError(f"Path is outside the active run: {path}")
+    return resolved
+
+
+def _mesh_thickness_ratio(model_path: str) -> float | None:
+    """Return the thinnest-to-longest extent ratio for a generated GLB."""
+    try:
+        import numpy as np
+        import trimesh
+
+        loaded = trimesh.load(model_path, force="scene", process=False)
+        extents = np.asarray(loaded.bounds[1] - loaded.bounds[0], dtype=float)
+        longest = float(extents.max())
+        return float(extents.min() / longest) if longest > 0 else 0.0
+    except Exception:
+        return None
+
+
+def generate_3d_models(
+    crops: list,
+    multi_glb_dir: str,
+    allowed_root: str | None = None,
+    public_prefix: str = "/multi_object_glb",
+) -> list:
     """Generate one GLB per transparent SAM2 crop through the resident worker."""
     if not crops:
         raise ValueError("No SAM2 crops were provided to TRELLIS")
@@ -56,6 +84,10 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
         crop_path = str(crop.get("crop_path", "")).strip()
         if not name or not crop_path:
             raise ValueError("Each crop must include name and crop_path")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", name):
+            raise ValueError(f"Invalid crop name: {name}")
+        if allowed_root:
+            crop_path = str(_path_within(crop_path, allowed_root))
 
         try:
             response = requests.post(
@@ -80,14 +112,22 @@ def generate_3d_models(crops: list, multi_glb_dir: str) -> list:
             raise FileNotFoundError(
                 f"TRELLIS worker returned a missing model for {name}: {model_path}"
             )
+        thickness_ratio = _mesh_thickness_ratio(model_path)
+        if thickness_ratio is not None and thickness_ratio < 0.015:
+            raise RuntimeError(
+                f"TRELLIS produced an almost-flat mesh for {name} "
+                f"(thickness ratio {thickness_ratio:.4f}). Use a complete physical-object photo "
+                "with visible depth instead of flat artwork or a severe crop."
+            )
 
         models.append(
             {
                 "name": name,
                 "label": crop.get("label", name),
-                "model_url": f"/multi_object_glb/{name}.glb",
+                "model_url": f"{public_prefix.rstrip('/')}/{name}.glb",
                 "model_path": model_path,
                 "final_box": crop.get("final_box", [0, 0, 0, 0]),
+                "thickness_ratio": thickness_ratio,
             }
         )
 

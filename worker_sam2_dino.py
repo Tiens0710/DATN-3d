@@ -689,32 +689,68 @@ def _segment_uploaded(
 
     results = []
     previews = []
+    detection_cache = {}
+    label_occurrences = {}
     for index, item in enumerate(objects, start=1):
-        name = str(item.get("id") or f"{item.get('label', 'object')}_{index}")
         label = str(item.get("label", "furniture")).strip().lower() or "furniture"
-        boxes, logits, _ = dino_predict(
-            model=dino_model,
-            image=image_tensor,
-            caption=label + ".",
-            box_threshold=0.25,
-            text_threshold=0.20,
+        safe_label = re.sub(r"[^a-z0-9]+", "_", label).strip("_") or "object"
+        requested_name = str(item.get("id", "")).strip()
+        name = (
+            requested_name
+            if re.fullmatch(r"[A-Za-z0-9_-]{1,80}", requested_name)
+            else f"{safe_label}_{index}"
         )
 
-        detector_fallback = len(boxes) == 0
-        if detector_fallback:
-            x1, y1, x2, y2 = 0, 0, width, height
-            confidence = 0.0
-        else:
-            best_box = int(torch.argmax(logits).item())
-            center_x, center_y, box_width, box_height = boxes[best_box].tolist()
-            x1 = max(0, int((center_x - box_width / 2) * width))
-            y1 = max(0, int((center_y - box_height / 2) * height))
-            x2 = min(width, int((center_x + box_width / 2) * width))
-            y2 = min(height, int((center_y + box_height / 2) * height))
-            confidence = float(logits[best_box].item())
-            if x2 <= x1 or y2 <= y1:
-                x1, y1, x2, y2 = 0, 0, width, height
-                detector_fallback = True
+        if label not in detection_cache:
+            boxes, logits, _ = dino_predict(
+                model=dino_model,
+                image=image_tensor,
+                caption=label + ".",
+                box_threshold=0.25,
+                text_threshold=0.20,
+            )
+            scores = logits.detach().cpu()
+            if scores.ndim > 1:
+                scores = scores.max(dim=1).values
+            candidates = []
+            for box_index, normalized_box in enumerate(boxes.detach().cpu()):
+                center_x, center_y, box_width, box_height = normalized_box.tolist()
+                candidate_box = [
+                    max(0, int((center_x - box_width / 2) * width)),
+                    max(0, int((center_y - box_height / 2) * height)),
+                    min(width, int((center_x + box_width / 2) * width)),
+                    min(height, int((center_y + box_height / 2) * height)),
+                ]
+                x1, y1, x2, y2 = candidate_box
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                candidates.append({
+                    "box": candidate_box,
+                    "confidence": float(scores[box_index].item()),
+                })
+            candidates.sort(key=lambda candidate: candidate["confidence"], reverse=True)
+            kept = []
+            for candidate in candidates:
+                if any(
+                    _box_iou(candidate["box"], previous["box"]) >= 0.55
+                    for previous in kept
+                ):
+                    continue
+                kept.append(candidate)
+            detection_cache[label] = kept
+
+        occurrence = label_occurrences.get(label, 0)
+        label_occurrences[label] = occurrence + 1
+        candidates = detection_cache[label]
+        if occurrence >= len(candidates):
+            raise ValueError(
+                f"GroundingDINO found {len(candidates)} instance(s) of '{label}', "
+                f"but {occurrence + 1} were requested"
+            )
+        selected = candidates[occurrence]
+        x1, y1, x2, y2 = selected["box"]
+        confidence = selected["confidence"]
+        detector_fallback = False
 
         alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
             source_image,

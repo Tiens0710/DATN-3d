@@ -17,17 +17,30 @@ def compute_layout(scene_graph: dict) -> dict:
     elif not relation:
         relation = "next_to"
 
+    relations = [
+        {
+            "subject": edge.get("subject"),
+            "relation": str(edge.get("relation", "next_to")),
+            "object": edge.get("object"),
+        }
+        for edge in edges
+        if edge.get("subject") and edge.get("object")
+    ]
+
     boxes = {}
     if len(nodes) == 1:
         boxes[nodes[0]["id"]] = {"x": 128, "y": 80, "w": 256, "h": 352}
     else:
-        cell_width = 512 // min(len(nodes), 3)
+        columns = min(len(nodes), 3)
+        rows = (len(nodes) + columns - 1) // columns
+        cell_width = 512 // columns
+        cell_height = 512 // rows
         for index, node in enumerate(nodes):
             boxes[node["id"]] = {
                 "x": (index % 3) * cell_width + 16,
-                "y": 105 + (index // 3) * 205,
+                "y": (index // 3) * cell_height + 16,
                 "w": cell_width - 32,
-                "h": 285,
+                "h": cell_height - 32,
             }
 
     objects = [
@@ -44,6 +57,7 @@ def compute_layout(scene_graph: dict) -> dict:
         "relation": relation,
         "subject_id": subject_id or nodes[0]["id"],
         "target_id": target_id if len(nodes) > 1 else None,
+        "relations": relations,
         "relation_source": "prompt_rule",
         "mode": "objectwise",
     }

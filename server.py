@@ -1,10 +1,14 @@
 import os
 import asyncio
+import base64
 import io
 import importlib.util
 import json
+import hmac
+import re
 import shutil
 import threading
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -12,8 +16,10 @@ from urllib import request as urllib_request
 from urllib.parse import urlparse
 from typing import Dict, List, Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import requests
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
@@ -27,6 +33,7 @@ from src.combiner import combine_scene_meshes
 
 
 KAGGLE_WORKING = "/kaggle/working"
+RUNS_DIR = os.path.join(KAGGLE_WORKING, "runs")
 CROPS_DIR = os.path.join(KAGGLE_WORKING, "crops")
 MULTI_GLB_DIR = os.path.join(KAGGLE_WORKING, "multi_object_glb")
 OUT_DIR = os.path.join(KAGGLE_WORKING, "outputs", "trellis")
@@ -38,19 +45,41 @@ os.makedirs(MULTI_GLB_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(OBJECT_IMAGE_DIR, exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
+os.makedirs(RUNS_DIR, exist_ok=True)
 
 app = FastAPI(
     title="DATN 3D Scene Reconstruction API",
-    version="1.0.0",
+    version="1.2.0",
 )
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=allowed_origins != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+APP_API_KEY = os.environ.get("APP_API_KEY", "").strip()
+
+
+@app.middleware("http")
+async def protect_expensive_api(request: Request, call_next):
+    if (
+        APP_API_KEY
+        and request.method != "OPTIONS"
+        and request.url.path.startswith("/api/")
+        and request.url.path != "/api/health"
+    ):
+        supplied = request.headers.get("x-api-key", "")
+        if not hmac.compare_digest(supplied, APP_API_KEY):
+            return JSONResponse(status_code=401, content={"detail": "Invalid API key"})
+    return await call_next(request)
 
 app.mount("/crops", StaticFiles(directory=CROPS_DIR), name="crops")
 app.mount(
@@ -65,6 +94,7 @@ app.mount(
     name="object_images",
 )
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+app.mount("/runs", StaticFiles(directory=RUNS_DIR), name="runs")
 
 
 class TextPrompt(BaseModel):
@@ -76,12 +106,14 @@ class PromptOptimizeRequest(BaseModel):
 
 
 class ImageGenRequest(BaseModel):
+    run_id: str
     prompt: str
     layout: Dict[str, Any]
     lora_scale: float = 0.2
 
 
 class Sam2Request(BaseModel):
+    run_id: str
     image_url: str
     layout: Dict[str, Any]
     prompt: str = ""
@@ -90,10 +122,12 @@ class Sam2Request(BaseModel):
 
 
 class TrellisRequest(BaseModel):
+    run_id: str
     crops: List[Dict[str, Any]]
 
 
 class CombineRequest(BaseModel):
+    run_id: str
     models: List[Dict[str, Any]]
     layout: Dict[str, Any]
     scale_factor: float = 0.01
@@ -105,6 +139,77 @@ trellis_jobs_lock = threading.Lock()
 # Blocking inference runs outside the event loop via asyncio.to_thread().
 trellis_queue = asyncio.Queue()
 trellis_worker_task = None
+MAX_TRELLIS_QUEUE = int(os.environ.get("MAX_TRELLIS_QUEUE", "4"))
+JOB_TTL_SECONDS = int(os.environ.get("JOB_TTL_SECONDS", "21600"))
+RUN_TTL_SECONDS = int(os.environ.get("RUN_TTL_SECONDS", "21600"))
+MAX_STORED_RUNS = int(os.environ.get("MAX_STORED_RUNS", "20"))
+
+RUN_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
+
+
+def _validate_run_id(run_id: str) -> str:
+    clean = str(run_id or "").strip().lower()
+    if not RUN_ID_PATTERN.fullmatch(clean):
+        raise HTTPException(status_code=400, detail="Invalid run_id")
+    return clean
+
+
+def _run_paths(run_id: str, create: bool = False) -> Dict[str, Path]:
+    clean = _validate_run_id(run_id)
+    root = (Path(RUNS_DIR) / clean).resolve()
+    runs_root = Path(RUNS_DIR).resolve()
+    if runs_root not in root.parents:
+        raise HTTPException(status_code=400, detail="Invalid run path")
+    paths = {
+        "root": root,
+        "input": root / "input.png",
+        "objects": root / "object_images",
+        "manifest": root / "object_images_manifest.json",
+        "crops": root / "crops",
+        "models": root / "models",
+        "outputs": root / "outputs",
+    }
+    if create:
+        for key in ("root", "objects", "crops", "models", "outputs"):
+            paths[key].mkdir(parents=True, exist_ok=True)
+    elif not root.is_dir():
+        raise HTTPException(status_code=404, detail="Pipeline run not found")
+    return paths
+
+
+def _active_run_ids() -> set[str]:
+    with trellis_jobs_lock:
+        return {
+            str(job.get("run_id"))
+            for job in trellis_jobs.values()
+            if job.get("status") in {"queued", "running"}
+        }
+
+
+def _cleanup_state() -> None:
+    now = time.time()
+    with trellis_jobs_lock:
+        expired = [
+            job_id
+            for job_id, job in trellis_jobs.items()
+            if now - float(job.get("updated_at", job.get("created_at", now))) > JOB_TTL_SECONDS
+        ]
+        for job_id in expired:
+            trellis_jobs.pop(job_id, None)
+
+    active = _active_run_ids()
+    run_dirs = sorted(
+        (path for path in Path(RUNS_DIR).iterdir() if path.is_dir()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for index, path in enumerate(run_dirs):
+        if path.name in active:
+            continue
+        expired_by_age = now - path.stat().st_mtime > RUN_TTL_SECONDS
+        expired_by_count = index >= MAX_STORED_RUNS
+        if expired_by_age or expired_by_count:
+            shutil.rmtree(path, ignore_errors=True)
 
 GEMINI_MODEL = os.environ.get(
     "GEMINI_MODEL",
@@ -112,36 +217,20 @@ GEMINI_MODEL = os.environ.get(
 )
 
 PROMPT_OPTIMIZER_INSTRUCTION = """
-You optimize user prompts for Stable Diffusion 3.5 Medium in a furniture
-text-to-2D-to-3D pipeline.
-Return exactly one English prompt and nothing else.
-Preserve every requested object, exact object count, material, color, style,
-spatial relationship, decorative motif, carving, and engraving.
-Do not invent a style, shape, ornament, color, material, room, or prop that the
-user did not request. Keep an unspecified furniture design simple and
-conventional so it can be segmented and reconstructed reliably. Only preserve
-carving, patterns, inlays, engravings, or other decoration when the user
-explicitly requests it; those details belong to the object and must never
-become extra objects.
-When the user requests one object, explicitly write "exactly one".
-For example, one table and one chair must become exactly one table and exactly
-one chair.
-Never invent extra furniture, duplicate objects, or decorative props.
-If the input is Vietnamese, translate it naturally to English.
-Make each object fully visible with accurate geometry, realistic construction,
-and minimal overlap. For a dining table, use a conventional horizontal
-rectangular tabletop and four clearly connected straight legs at the corners
-unless the user explicitly requests another shape or a pedestal. Show the
-apron/support and every foot down to the floor. For a chair, show the complete
-seat, backrest, supports, and feet.
-Never use an overhead, top-down, detail close-up, or cropped view of furniture.
-Use an eye-level three-quarter product-photography view, centered composition, clean
-neutral studio background, soft even lighting, sharp focus, and realistic
-materials. The result must be suitable for GroundingDINO, SAM2 segmentation,
-and single-image 3D reconstruction. Keep the prompt under 90 words.
-For tables, keep decoration restrained to the tabletop edge, apron, or legs;
-never describe a large central tabletop motif or an overhead view that hides
-the legs.
+Rewrite the user's request as one concise English prompt for Stable Diffusion
+3.5 Medium. Return only the prompt, no explanation, and keep it under 55 words.
+Start with the exact inventory: "Exactly one ..." for every requested object.
+Preserve count, identity, material, color, shape, style, relation, and any
+explicitly requested carving or pattern. Never add objects, props, ornaments,
+or styles. Use conventional, physically plausible construction.
+Every object must be separate, fully visible from top to floor, and minimally
+overlapping. A generic dining table has one rectangular horizontal top, an
+attached apron, and four straight connected legs. A generic chair has one seat,
+one backrest, connected supports, and four legs. Use an eye-level front
+three-quarter product view, white studio background, soft even lighting, and
+realistic proportions. Never request top-down, close-up, cropped, surreal,
+sculptural, floating, fused, or duplicated furniture. Translate Vietnamese to
+natural English.
 """.strip()
 
 SCENE_GRAPH_INSTRUCTION = """
@@ -166,61 +255,46 @@ Rules:
   for a single object.
 """.strip()
 
+IMAGE_ANALYSIS_INSTRUCTION = """
+Inspect the uploaded image for an image-to-3D pipeline. Return JSON only:
+{"reconstructable":true,"reason":"short reason","objects":[
+{"label":"singular concrete English object label","count":1,
+"description":"short visual description"}]}
+
+Rules:
+- Mark reconstructable true only when the image clearly shows one or more
+  complete physical objects with enough visible shape for single-image 3D.
+- Mark false for drawings, logos, text, faces or people, flat artwork,
+  screenshots, textures, severe crops, heavy occlusion, or unclear subjects.
+- Include only prominent foreground objects intended for reconstruction.
+- Do not count object parts, shadows, reflections, or background surfaces.
+- Preserve repeated object quantity in count. Use concise GroundingDINO labels.
+""".strip()
+
 
 def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
-    """Keep Gemini output geometrically stable without inventing decoration."""
+    """Append short geometry guards without bloating the CLIP prompt."""
     source = source_prompt.lower()
-    furniture_terms = (
-        "table", "chair", "sofa", "couch", "bed", "desk", "cabinet",
-        "wardrobe", "shelf", "stool", "bench", "lamp", "dresser",
-        "furniture", "bàn", "ghế", "tủ", "giường",
-    )
-    if not any(term in source for term in furniture_terms):
-        return optimized_prompt
+    guards = []
 
-    geometry_guard = ""
-    if "table" in source or "bÃ n" in source or "ban" in source:
-        geometry_guard = (
-            ", show the complete table from a horizontal tabletop to the floor in an eye-level "
-            "front three-quarter view, with four clearly connected straight legs at the corners "
-            "unless the user explicitly requested a pedestal or another shape; keep any requested "
-            "decoration restrained to the tabletop edge or apron, never a large central top-down motif"
-        )
-
-    elif any(term in source for term in ("chair", "gháº¿", "ghe")):
-        geometry_guard = (
-            ", show the complete chair from the top of the backrest to the floor in an eye-level "
-            "front three-quarter view, with one seat, one backrest, connected supports, and all feet visible"
-        )
-    elif any(term in source for term in ("sofa", "couch")):
-        geometry_guard = (
-            ", show the complete sofa from the backrest to the floor in an eye-level front three-quarter view, "
-            "including the full seat, arms, base, and feet"
-        )
-
-    # Respect an explicit plain/minimal request from the user.
-    if any(term in source for term in ("plain", "minimalist", "minimal", "đơn giản")):
-        return optimized_prompt
+    if any(term in source for term in ("table", "bàn", "ban")):
+        guards.append("complete rectangular table with four connected legs visible")
+    if any(term in source for term in ("chair", "ghế", "ghe")):
+        guards.append("complete chair with seat, backrest, and all legs visible")
+    if any(term in source for term in ("sofa", "couch")):
+        guards.append("complete sofa with arms, base, and feet visible")
 
     detail_markers = (
-        "carv", "ornate", "decor", "inlay", "engrave", "engraving", "pattern",
-        "motif", "floral", "wood grain", "beveled", "bevelled", "panel",
-        "cham", "hoa van", "van go",
+        "carv", "ornate", "decor", "inlay", "engrave", "pattern", "motif",
+        "floral", "cham", "chạm", "hoa van", "hoa văn", "họa tiết",
     )
-    optimized_lower = optimized_prompt.lower()
-    source_requests_details = any(marker in source for marker in detail_markers)
-    if source_requests_details:
-        if "clearly visible" in optimized_lower or "clearly shown" in optimized_lower:
-            return optimized_prompt.rstrip(" .") + geometry_guard + "."
-        return (
-            optimized_prompt.rstrip(" .")
-            + ", make the requested decorative details prominent and clearly visible, "
-            "not plain or blank."
-            + geometry_guard
-            + "."
-        )
+    if any(marker in source for marker in detail_markers):
+        guards.append("requested decoration clearly visible but structurally restrained")
 
-    return optimized_prompt.rstrip(" .") + geometry_guard + "."
+    if not guards:
+        return optimized_prompt
+
+    return optimized_prompt.rstrip(" .") + ", " + ", ".join(guards) + "."
 
 
 def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
@@ -243,6 +317,7 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
             "warning": "GEMINI_API_KEY is not configured",
             "model": GEMINI_MODEL,
         }
+
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{GEMINI_MODEL}:generateContent"
@@ -309,6 +384,93 @@ def optimize_prompt_with_gemini(prompt: str) -> Dict[str, Any]:
             "warning": f"Gemini optimization failed: {exc}",
             "model": GEMINI_MODEL,
         }
+
+
+def analyze_uploaded_image_with_gemini(image_path: str) -> Dict[str, Any]:
+    """Identify reconstructable foreground objects before segmentation."""
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is required for uploaded-image analysis")
+
+    with Image.open(image_path) as source:
+        image = source.convert("RGB")
+        image.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=88, optimize=True)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent"
+    )
+    payload = {
+        "systemInstruction": {
+            "parts": [{"text": IMAGE_ANALYSIS_INSTRUCTION}]
+        },
+        "contents": [{
+            "role": "user",
+            "parts": [
+                {"text": "Analyze this exact uploaded image."},
+                {"inlineData": {"mimeType": "image/jpeg", "data": encoded}},
+            ],
+        }],
+        "generationConfig": {
+            "temperature": 0.0,
+            "maxOutputTokens": 500,
+            "responseMimeType": "application/json",
+        },
+    }
+    http_request = urllib_request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        },
+        method="POST",
+    )
+    with urllib_request.urlopen(http_request, timeout=60) as response:
+        response_data = json.loads(response.read().decode("utf-8"))
+    parts = (
+        response_data.get("candidates", [{}])[0]
+        .get("content", {})
+        .get("parts", [])
+    )
+    text = " ".join(
+        part.get("text", "").strip()
+        for part in parts
+        if part.get("text")
+    ).strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+    data = json.loads(text)
+    reconstructable = bool(data.get("reconstructable"))
+    objects = data.get("objects") if isinstance(data.get("objects"), list) else []
+    clean_objects = []
+    for item in objects[:8]:
+        if not isinstance(item, dict):
+            continue
+        label = " ".join(str(item.get("label", "")).split()).strip(" ,.;:").lower()
+        if not label:
+            continue
+        try:
+            count = int(item.get("count", 1))
+        except (TypeError, ValueError):
+            count = 1
+        clean_objects.append({
+            "label": label,
+            "count": max(1, min(count, 6)),
+            "description": " ".join(
+                str(item.get("description", label)).split()
+            ).strip(),
+        })
+    if reconstructable and not clean_objects:
+        raise ValueError("Gemini found no usable foreground object labels")
+    return {
+        "reconstructable": reconstructable,
+        "reason": " ".join(str(data.get("reason", "")).split()).strip(),
+        "objects": clean_objects,
+    }
 
 
 def _gemini_scene_graph(prompt: str) -> dict | None:
@@ -436,6 +598,27 @@ def backend_readiness() -> Dict[str, Any]:
     except Exception:
         pass
 
+    worker_urls = {
+        "sd35": os.environ.get("SD35_WORKER_URL", "http://127.0.0.1:8001").rstrip("/"),
+        "trellis": os.environ.get("TRELLIS_WORKER_URL", "http://127.0.0.1:8002").rstrip("/"),
+        "sam2_dino": os.environ.get("SAM2_DINO_WORKER_URL", "http://127.0.0.1:8003").rstrip("/"),
+    }
+    workers = {}
+    for name, url in worker_urls.items():
+        try:
+            response = requests.get(f"{url}/health", timeout=2)
+            response.raise_for_status()
+            payload = response.json()
+            workers[name] = {
+                "ready": bool(payload.get("ready")),
+                "error": payload.get("error"),
+                "device": payload.get("device"),
+                "lora_loaded": payload.get("lora_loaded") if name == "sd35" else None,
+                "lora_scale": payload.get("lora_scale") if name == "sd35" else None,
+            }
+        except Exception as exc:
+            workers[name] = {"ready": False, "error": str(exc)}
+
     checks = {
         "hf_token": bool(os.environ.get("HF_TOKEN", "").strip()),
         "gemini_api_key": bool(
@@ -444,12 +627,15 @@ def backend_readiness() -> Dict[str, Any]:
         "cuda": cuda_available,
         "files": files,
         "modules": modules,
+        "workers": workers,
+        "api_auth": bool(APP_API_KEY),
     }
     ready = (
         checks["hf_token"]
         and checks["cuda"]
         and all(files.values())
         and all(modules.values())
+        and all(worker.get("ready") for worker in workers.values())
     )
     return {
         "ready": ready,
@@ -458,22 +644,33 @@ def backend_readiness() -> Dict[str, Any]:
     }
 
 
-def run_trellis_job(job_id: str, crops: List[Dict[str, Any]]) -> None:
+def run_trellis_job(job_id: str, run_id: str, crops: List[Dict[str, Any]]) -> None:
     with trellis_jobs_lock:
         trellis_jobs[job_id]["status"] = "running"
+        trellis_jobs[job_id]["updated_at"] = time.time()
 
     try:
-        models = generate_3d_models(crops, MULTI_GLB_DIR)
+        paths = _run_paths(run_id)
+        models = generate_3d_models(
+            crops,
+            str(paths["models"]),
+            allowed_root=str(paths["root"]),
+            public_prefix=f"/runs/{run_id}/models",
+        )
         with trellis_jobs_lock:
             trellis_jobs[job_id] = {
                 "status": "completed",
                 "models": models,
+                "run_id": run_id,
+                "updated_at": time.time(),
             }
     except Exception as exc:
         with trellis_jobs_lock:
             trellis_jobs[job_id] = {
                 "status": "failed",
                 "error": str(exc),
+                "run_id": run_id,
+                "updated_at": time.time(),
             }
 
 
@@ -493,9 +690,9 @@ def get_trellis_queue_position(job_id: str) -> int:
 async def trellis_queue_worker() -> None:
     """Process queued TRELLIS jobs without blocking the FastAPI event loop."""
     while True:
-        job_id, crops = await trellis_queue.get()
+        job_id, run_id, crops = await trellis_queue.get()
         try:
-            await asyncio.to_thread(run_trellis_job, job_id, crops)
+            await asyncio.to_thread(run_trellis_job, job_id, run_id, crops)
         finally:
             trellis_queue.task_done()
 
@@ -534,23 +731,41 @@ def health_check():
     readiness = backend_readiness()
     return {
         "status": "ok",
-        "version": "1.1.0",
+        "version": "1.2.0",
         **readiness,
         "gemini_model": GEMINI_MODEL,
         "gemini_configured": readiness["checks"]["gemini_api_key"],
+        "auth_enabled": bool(APP_API_KEY),
     }
+
+
+@app.post("/api/runs")
+def api_create_run():
+    _cleanup_state()
+    run_id = uuid.uuid4().hex
+    paths = _run_paths(run_id, create=True)
+    (paths["root"] / "run.json").write_text(
+        json.dumps({"run_id": run_id, "created_at": time.time()}, indent=2),
+        encoding="utf-8",
+    )
+    return {"status": "created", "run_id": run_id}
 
 
 @app.post("/api/optimize_prompt")
 def api_optimize_prompt(request: PromptOptimizeRequest):
     try:
         return optimize_prompt_with_gemini(request.prompt)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/upload_image")
-async def api_upload_image(file: UploadFile = File(...)):
+async def api_upload_image(
+    run_id: str = Form(...),
+    file: UploadFile = File(...),
+):
     """Store a user image for the upload-to-3D branch of the pipeline."""
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=415, detail="Only image files are supported")
@@ -559,24 +774,28 @@ async def api_upload_image(file: UploadFile = File(...)):
     if len(raw) > 20 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image must be 20 MB or smaller")
 
+    paths = _run_paths(run_id)
     try:
         with Image.open(io.BytesIO(raw)) as image:
             image.verify()
         with Image.open(io.BytesIO(raw)) as image:
+            width, height = image.size
+            if width < 32 or height < 32 or width * height > 20_000_000:
+                raise ValueError("Image dimensions must be at least 32px and at most 20 megapixels")
             rgb = image.convert("RGB")
-            width, height = rgb.size
             filename = f"upload_{uuid.uuid4().hex}.png"
-            output_path = os.path.join(UPLOADS_DIR, filename)
+            output_path = paths["root"] / filename
             rgb.save(output_path, format="PNG")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid image: {exc}")
 
     # Keep the legacy path available for archive/download tooling.
-    shutil.copy2(output_path, os.path.join(KAGGLE_WORKING, "input.png"))
+    shutil.copy2(output_path, paths["input"])
     return {
         "status": "success",
         "mode": "uploaded",
-        "image_url": f"/uploads/{filename}",
+        "run_id": run_id,
+        "image_url": f"/runs/{run_id}/{filename}",
         "filename": filename,
         "width": width,
         "height": height,
@@ -587,6 +806,8 @@ async def api_upload_image(file: UploadFile = File(...)):
 def api_parse_scene_graph(request: TextPrompt):
     try:
         return parse_scene_graph_for_request(request.text)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -595,6 +816,8 @@ def api_parse_scene_graph(request: TextPrompt):
 def api_generate_layout(scene_graph: Dict[str, Any]):
     try:
         return compute_layout(scene_graph)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -602,6 +825,7 @@ def api_generate_layout(scene_graph: Dict[str, Any]):
 @app.post("/api/generate_image")
 def api_generate_image(request: ImageGenRequest):
     try:
+        paths = _run_paths(request.run_id)
         layout = dict(request.layout or {})
         objects = list(layout.get("objects", []))
         if not objects:
@@ -613,15 +837,17 @@ def api_generate_image(request: ImageGenRequest):
             request.prompt,
             objects,
             request.lora_scale,
+            object_image_dir=str(paths["objects"]),
+            manifest_path=str(paths["manifest"]),
         )
-        contact_sheet = os.path.join(OUT_DIR, "objectwise_2d.png")
-        create_object_contact_sheet(generated, contact_sheet)
-        shutil.copy2(contact_sheet, os.path.join(KAGGLE_WORKING, "input.png"))
+        contact_sheet = paths["outputs"] / "objectwise_2d.png"
+        create_object_contact_sheet(generated, str(contact_sheet))
+        shutil.copy2(contact_sheet, paths["input"])
         images = [
             {
                 "name": item["name"],
                 "label": item["label"],
-                "image_url": f"/object_images/{item['name']}.png",
+                "image_url": f"/runs/{request.run_id}/object_images/{item['name']}.png",
                 "detected_instances": item.get("detected_instances"),
                 "sanitized": bool(item.get("sanitized", False)),
                 "count_validation": item.get("count_validation", "unknown"),
@@ -632,10 +858,13 @@ def api_generate_image(request: ImageGenRequest):
         return {
             "status": "success",
             "mode": "objectwise",
-            "image_url": "/outputs/objectwise_2d.png",
+            "run_id": request.run_id,
+            "image_url": f"/runs/{request.run_id}/outputs/objectwise_2d.png",
             "images": images,
             "layout": layout,
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -643,15 +872,44 @@ def api_generate_image(request: ImageGenRequest):
 @app.post("/api/run_sam2")
 def api_run_sam2(request: Sam2Request):
     try:
+        paths = _run_paths(request.run_id)
         source_mode = str(request.mode or "objectwise").lower()
-        input_path = os.path.join(KAGGLE_WORKING, "input.png")
+        input_path = str(paths["input"])
+        image_analysis = None
+        worker_auto_detect = request.auto_detect
         if source_mode == "uploaded":
             upload_name = Path(urlparse(request.image_url).path).name
-            input_path = os.path.join(UPLOADS_DIR, upload_name)
-            if not upload_name or not os.path.isfile(input_path):
+            upload_path = (paths["root"] / upload_name).resolve()
+            if paths["root"] not in upload_path.parents or not upload_path.is_file():
                 raise FileNotFoundError("Uploaded image was not found on the backend")
+            input_path = str(upload_path)
         effective_layout = request.layout
         scene_graph = None
+
+        if source_mode == "uploaded" and request.auto_detect:
+            try:
+                image_analysis = analyze_uploaded_image_with_gemini(input_path)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Gemini could not analyze the uploaded image: {exc}",
+                ) from exc
+            if not image_analysis["reconstructable"]:
+                reason = image_analysis.get("reason") or "the image is not suitable for single-image 3D"
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Uploaded image is not suitable for 3D reconstruction: "
+                        f"{reason}. Use a clear photo or render of a complete physical object."
+                    ),
+                )
+            scene_graph = parse_scene_graph_from_objects(
+                request.prompt.strip() or "uploaded physical objects",
+                image_analysis["objects"],
+                parser_source="gemini_image_analysis",
+            )
+            effective_layout = compute_layout(scene_graph)
+            worker_auto_detect = False
 
         if (
             not effective_layout.get("layout")
@@ -663,28 +921,71 @@ def api_run_sam2(request: Sam2Request):
         crops = run_grounded_sam2(
             input_path,
             effective_layout,
-            CROPS_DIR,
+            str(paths["crops"]),
             source_mode=source_mode,
-            auto_detect=request.auto_detect,
+            auto_detect=worker_auto_detect,
+            manifest_path=str(paths["manifest"]),
         )
+        if source_mode == "uploaded":
+            failed = [
+                crop.get("label", crop.get("name", "object"))
+                for crop in crops
+                if crop.get("detector_fallback")
+            ]
+            if failed:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "GroundingDINO could not locate the requested object(s): "
+                        + ", ".join(map(str, failed))
+                        + ". Use a clearer image or enter a more precise label in the SAM2 node."
+                    ),
+                )
+        for crop in crops:
+            crop_path = Path(str(crop.get("crop_path", ""))).resolve()
+            if paths["crops"] not in crop_path.parents or not crop_path.is_file():
+                raise RuntimeError("Segmentation worker returned a crop outside the active run")
+            crop["crop_path"] = str(crop_path)
+            crop["crop_url"] = f"/runs/{request.run_id}/crops/{crop_path.name}"
         return {
             "status": "success",
             "mode": source_mode,
             "crops": crops,
             "scene_graph": scene_graph,
             "layout": effective_layout,
+            "image_analysis": image_analysis,
+            "run_id": request.run_id,
+            "preview_url": f"/runs/{request.run_id}/crops/sam2_visual.png",
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/generate_3d")
 async def api_generate_3d(request: TrellisRequest):
+    _cleanup_state()
+    paths = _run_paths(request.run_id)
+    if trellis_queue.qsize() >= MAX_TRELLIS_QUEUE:
+        raise HTTPException(status_code=429, detail="TRELLIS queue is full; try again later")
+    safe_crops = []
+    for crop in request.crops:
+        crop_path = Path(str(crop.get("crop_path", ""))).resolve()
+        if paths["crops"] not in crop_path.parents or not crop_path.is_file():
+            raise HTTPException(status_code=400, detail="Invalid crop path for this run")
+        safe_crops.append(dict(crop, crop_path=str(crop_path)))
     job_id = uuid.uuid4().hex
+    now = time.time()
     with trellis_jobs_lock:
-        trellis_jobs[job_id] = {"status": "queued"}
+        trellis_jobs[job_id] = {
+            "status": "queued",
+            "run_id": request.run_id,
+            "created_at": now,
+            "updated_at": now,
+        }
 
-    await trellis_queue.put((job_id, request.crops))
+    await trellis_queue.put((job_id, request.run_id, safe_crops))
     queue_position = get_trellis_queue_position(job_id)
 
     return {
@@ -710,40 +1011,43 @@ def api_generate_3d_status(job_id: str):
 @app.post("/api/combine_scene")
 def api_combine_scene(request: CombineRequest):
     try:
-        scene_path = os.path.join(OUT_DIR, "scene_combined.glb")
+        paths = _run_paths(request.run_id)
+        scene_path = paths["outputs"] / "scene_combined.glb"
         if not combine_scene_meshes(
             request.models,
-            scene_path,
+            str(scene_path),
             request.layout,
             request.scale_factor,
+            allowed_root=str(paths["models"]),
         ):
             raise RuntimeError("Scene combining failed")
 
-        zip_path = os.path.join(OUT_DIR, "scene_assets.zip")
+        zip_path = paths["outputs"] / "scene_assets.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            input_path = os.path.join(KAGGLE_WORKING, "input.png")
-            if os.path.exists(input_path):
-                archive.write(input_path, "input_image.png")
+            if paths["input"].exists():
+                archive.write(paths["input"], "input_image.png")
 
             for directory, archive_dir in (
-                (CROPS_DIR, "crops"),
-                (MULTI_GLB_DIR, "models"),
+                (paths["crops"], "crops"),
+                (paths["models"], "models"),
             ):
-                for filename in os.listdir(directory):
-                    file_path = os.path.join(directory, filename)
-                    if os.path.isfile(file_path):
+                for file_path in directory.iterdir():
+                    if file_path.is_file():
                         archive.write(
                             file_path,
-                            os.path.join(archive_dir, filename),
+                            os.path.join(archive_dir, file_path.name),
                         )
 
             archive.write(scene_path, "scene_combined.glb")
 
         return {
             "status": "success",
-            "scene_url": "/outputs/scene_combined.glb",
-            "zip_url": "/outputs/scene_assets.zip",
+            "run_id": request.run_id,
+            "scene_url": f"/runs/{request.run_id}/outputs/scene_combined.glb",
+            "zip_url": f"/runs/{request.run_id}/outputs/scene_assets.zip",
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

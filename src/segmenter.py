@@ -96,6 +96,7 @@ def run_grounded_sam2(
     crops_dir: str,
     source_mode: str = "objectwise",
     auto_detect: bool = False,
+    manifest_path: str = OBJECT_MANIFEST,
 ) -> list:
     """Segment generated object images or an uploaded scene via the worker."""
     if source_mode == "uploaded":
@@ -106,13 +107,13 @@ def run_grounded_sam2(
             auto_detect=auto_detect,
         )
 
-    if not os.path.isfile(OBJECT_MANIFEST):
+    if not os.path.isfile(manifest_path):
         raise FileNotFoundError(
             "Object images are missing. Run the SD3.5 object-wise stage first."
         )
 
     Path(crops_dir).mkdir(parents=True, exist_ok=True)
-    with open(OBJECT_MANIFEST, encoding="utf-8") as file:
+    with open(manifest_path, encoding="utf-8") as file:
         objects = json.load(file)
     if not objects:
         raise ValueError("The object image manifest is empty")

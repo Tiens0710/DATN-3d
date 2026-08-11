@@ -1,68 +1,94 @@
-# DATN: Automated Text-to-3D Room Scene Reconstruction
+# DATN SpatialFlow: Text/Image-to-3D Pipeline
 
-Đồ án tốt nghiệp xây dựng hệ thống tự động tái dựng cảnh phòng ngủ/phòng khách 3D từ mô tả văn bản tiếng Anh bằng cách kết hợp mô hình Sinh ảnh 2D, Phân mảnh vật thể và Dựng hình 3D thưa.
+Do an tot nghiep xay dung pipeline tao tai san 3D tu mo ta van ban tieng Viet/tieng Anh hoac anh dau vao. He thong dung giao dien node graph, backend FastAPI tren Kaggle GPU va cac worker mo hinh thuong tru.
 
-## 🌟 Công nghệ tích hợp
-*   **NLP Scene Graph**: Phân tích ngữ nghĩa câu bằng `spaCy` để trích xuất vật thể và quan hệ không gian.
-*   **2D Generation**: Sử dụng `SDXL base` tinh chỉnh bằng trọng số `LoRA` (chân thực hóa nội thất) kết hợp `ControlNet Segmentation`.
-*   **Phân mảnh tự động**: Tích hợp `GroundingDINO` (định vị) và `SAM2` (bóc tách nền pixel trong suốt).
-*   **Dựng 3D đơn vật thể**: Sinh mô hình 3D Mesh dạng `.glb` chất lượng cao từ ảnh 2D bằng `TRELLIS Image-to-3D`.
-*   **Ghép cảnh 3D**: Sử dụng thuật toán ánh xạ hình học 2D-to-3D thông qua thư viện `trimesh`.
+## Kien truc hien tai
 
----
+1. Gemini toi uu prompt va trich xuat scene graph mo.
+2. SD3.5 Medium + LoRA sinh rieng mot anh cho tung vat the.
+3. GroundingDINO + SAM2 dinh vi, tach nen va kiem tra so luong vat the.
+4. TRELLIS Image-to-3D sinh mot GLB cho tung crop.
+5. Trimesh dat cac GLB theo toan bo quan he trong scene graph va xuat scene.
 
-## 📁 Cấu trúc thư mục mã nguồn
+Nhanh anh dau vao bo qua prompt optimizer va SD3.5. Gemini Vision kiem tra anh co
+phu hop cho single-image 3D va nhan dien cac vat the tien canh; GroundingDINO +
+SAM2 sau do tach tung vat the rieng. Anh phang, tranh ve, khuon mat, anh cat qua
+nhieu hoac detection fallback se bi tu choi thay vi tao GLB phang/trung lap.
+
+## Co lap tung luot chay
+
+Frontend tao mot `run_id` moi cho moi lan bam Run. Tat ca tep cua luot chay duoc luu tai:
 
 ```text
-├── index.html          # Giao diện Web Node-Graph kéo thả (giống ComfyUI)
-├── server.py           # FastAPI Web Server (chạy trên GPU Kaggle)
-├── run_pipeline.py     # Script chạy tự động CLI tuần tự (chạy trên Kaggle)
-├── requirements.txt    # Danh sách các thư viện Python cần thiết
-└── README.md           # Hướng dẫn sử dụng
+/kaggle/working/runs/<run_id>/
+  input.png
+  object_images/
+  object_images_manifest.json
+  crops/
+  models/
+  outputs/
 ```
 
----
+Khong dung lai `input.png`, manifest, crop hay GLB cua luot truoc. Run cu duoc don theo `RUN_TTL_SECONDS` va `MAX_STORED_RUNS`.
 
-## ⚙️ Hướng dẫn cài đặt môi trường (Kaggle)
+## Cau hinh bat buoc tren Kaggle
 
-Tạo virtual environment Python 3.10 và cài các thư viện trong `requirements.txt`:
+Dung notebook [api-3d.ipynb](api-3d.ipynb) de tao Python 3.10 environment, cai CUDA extensions, tai checkpoint va khoi dong ba worker cung FastAPI.
+
+Secrets:
+
+```text
+HF_TOKEN
+GEMINI_API_KEY
+NGROK_TOKEN
+APP_API_KEY
+```
+
+Bien moi truong production nen dat:
+
+```text
+APP_API_KEY=<mot chuoi dai ngau nhien>
+ALLOWED_ORIGINS=https://<ten-du-an>.vercel.app
+MAX_TRELLIS_QUEUE=4
+JOB_TTL_SECONDS=21600
+RUN_TTL_SECONDS=21600
+MAX_STORED_RUNS=20
+SD35_LORA_SCALE=0.2
+```
+
+Nhap cung `APP_API_KEY` trong nut **Setup** cua giao dien. Khi `APP_API_KEY` duoc dat, moi API xu ly deu yeu cau header `X-API-Key`; health check van cong khai de ket noi.
+
+## Khoi dong
+
+1. Chay cac cell 1 den 10 trong `api-3d.ipynb`.
+2. Cho health cua `sd35`, `sam2_dino` va `trellis` deu bao `ready: true`.
+3. Mo frontend, nhap URL Ngrok va API key, sau do bam Connect.
+4. Chon nhanh Van ban hoac Hinh anh va bam Run.
+
+`/api/health` chi bao `ready: true` khi CUDA, checkpoint, module va ca ba worker deu san sang.
+
+## API chinh
+
+```text
+POST /api/runs
+POST /api/optimize_prompt
+POST /api/parse_scene_graph
+POST /api/generate_layout
+POST /api/generate_image
+POST /api/upload_image
+POST /api/run_sam2
+POST /api/generate_3d
+GET  /api/generate_3d/status/{job_id}
+POST /api/combine_scene
+GET  /api/health
+```
+
+Nhung endpoint tao file yeu cau `run_id`. Client khong duoc phep yeu cau backend doc crop hoac GLB nam ngoai thu muc cua run dang hoat dong.
+
+## Kiem thu
 
 ```bash
-# 1. Tạo môi trường ảo
-python3.10 -m venv /opt/venv310
-
-# 2. Kích hoạt và cài đặt dependencies
-/opt/venv310/bin/pip install -r requirements.txt
+python -m unittest discover -s tests -v
 ```
 
----
-
-## 🚀 Cách chạy chương trình
-
-Bạn có thể chạy thử nghiệm mã nguồn này theo 2 cách:
-
-### Cách 1: Chạy qua dòng lệnh (CLI Mode) - Tuần tự không giao diện
-Chạy trực tiếp script `run_pipeline.py` bằng Python 3.10 trên Kaggle:
-
-```bash
-/opt/venv310/bin/python run_pipeline.py \
-    --prompt "a wooden dining chair next to a small wooden table" \
-    --lora_scale 0.6 \
-    --scale_factor 0.01
-```
-
-*   **Kết quả đầu ra**: 
-    *   Ảnh 2D sinh ra lưu tại `/kaggle/working/outputs/trellis/input_2d.png`
-    *   Các ảnh vật thể cắt nền lưu tại `/kaggle/working/crops/`
-    *   Các file GLB đơn lẻ lưu tại `/kaggle/working/multi_object_glb/`
-    *   File 3D cảnh phòng hoàn chỉnh lưu tại `/kaggle/working/outputs/trellis/scene_combined.glb`
-
----
-
-### Cách 2: Chạy qua giao diện Web tương tác (Web UI Mode)
-1.  **Chạy Backend trên Kaggle**: Khởi động FastAPI server và tạo tunnel Ngrok để lấy Link API.
-    ```bash
-    /opt/venv310/bin/python server.py
-    ```
-2.  **Mở Frontend trên Máy tính**: Click đúp mở file `index.html` bằng trình duyệt Web, điền Link API Ngrok vào góc phải màn hình và nhấn **Connect**.
-3.  **Thực thi**: Nhập mô tả vào Node đầu vào và bấm **▶ Queue Prompt** để trải nghiệm chạy trực quan.
+Test tap trung vao so luong vat the, tham chieu khong bi dem lap, quan he lap lai va layout nhieu vat the.
