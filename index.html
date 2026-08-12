@@ -4536,6 +4536,73 @@
         }
         NodeSDXLGen.title = "🎨 SD3.5 Image Generator";
         NodeSDXLGen.title_color = "rgba(198, 40, 40, 0.85)";
+        NodeSDXLGen.prototype.loadPreviewImage = async function (rawUrl) {
+            if (!rawUrl) return;
+
+            const requestToken = (this._previewRequestToken || 0) + 1;
+            this._previewRequestToken = requestToken;
+            this._previewRequestedUrl = rawUrl;
+            this._previewState = "loading";
+            this._previewError = "";
+            this.setDirtyCanvas(true, true);
+
+            try {
+                const previewUrl = new URL(
+                    rawUrl,
+                    backendUrl || window.location.href
+                );
+                previewUrl.searchParams.set("ngrok-skip-browser-warning", "1");
+                previewUrl.searchParams.set("preview", Date.now().toString());
+
+                const response = await fetch(previewUrl.toString(), {
+                    headers: apiHeaders(),
+                    cache: "no-store"
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                if (requestToken !== this._previewRequestToken) return;
+
+                const objectUrl = URL.createObjectURL(blob);
+                const image = new Image();
+                image._rawUrl = rawUrl;
+
+                // Register callbacks before assigning src. Cached blobs can finish
+                // immediately, which used to leave the LiteGraph node blank.
+                image.onload = () => {
+                    if (requestToken !== this._previewRequestToken) {
+                        URL.revokeObjectURL(objectUrl);
+                        return;
+                    }
+                    if (this._previewObjectUrl) {
+                        URL.revokeObjectURL(this._previewObjectUrl);
+                    }
+                    this._previewObjectUrl = objectUrl;
+                    this._imageObj = image;
+                    this._previewState = "ready";
+                    this._previewError = "";
+                    this.setDirtyCanvas(true, true);
+                };
+                image.onerror = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    if (requestToken !== this._previewRequestToken) return;
+                    this._imageObj = null;
+                    this._previewState = "error";
+                    this._previewError = "Không đọc được ảnh preview";
+                    this.setDirtyCanvas(true, true);
+                };
+                image.src = objectUrl;
+            } catch (error) {
+                if (requestToken !== this._previewRequestToken) return;
+                this._imageObj = null;
+                this._previewState = "error";
+                this._previewError = error.message;
+                this.setDirtyCanvas(true, true);
+                console.error("Error loading SD3.5 preview:", error);
+            }
+        };
         NodeSDXLGen.prototype.onExecute = async function () {
             const prompt = this.getInputData(0);
             if (!prompt) {
@@ -4645,6 +4712,7 @@
                 this.properties.objectImages = [];
                 this._imageObj = null;
                 this.setOutputData(0, uploadedImageUrl);
+                this.loadPreviewImage(uploadedImageUrl);
                 writeLog(
                     `Đã chọn ảnh ${uploadedImageName || "upload"}; bỏ qua SD3.5 và dùng ảnh gốc.`,
                     "system",
@@ -4656,6 +4724,9 @@
             const requestKey = JSON.stringify({ runId: currentRunId, prompt, objectLayout });
             if (this._lastRequestKey === requestKey && this.properties.imageUrl) {
                 this.setOutputData(0, this.properties.imageUrl);
+                if (this._previewRequestedUrl !== this.properties.imageUrl) {
+                    this.loadPreviewImage(this.properties.imageUrl);
+                }
                 return;
             }
 
@@ -4682,6 +4753,7 @@
             this.properties.objectImages = data.images || [];
             this._imageObj = null;
             this.setOutputData(0, this.properties.imageUrl);
+            this.loadPreviewImage(this.properties.imageUrl);
             const correctedImages = this.properties.objectImages.filter(
                 (item) => Number(item.detected_instances || 0) > 1 && item.sanitized
             );
@@ -4705,27 +4777,28 @@
                 return;
             }
 
-            if (!this._imageObj || this._imageObj._rawUrl !== this.properties.imageUrl) {
-                this._imageObj = new Image();
-                this._imageObj._rawUrl = this.properties.imageUrl;
-                fetch(this.properties.imageUrl, {
-                    headers: { "ngrok-skip-browser-warning": "69420" }
-                })
-                .then(res => res.blob())
-                .then(blob => {
-                    this._imageObj.src = URL.createObjectURL(blob);
-                    this._imageObj.onload = () => this.setDirtyCanvas(true, true);
-                })
-                .catch(e => console.error("Error loading SDXL preview:", e));
+            if (this._previewRequestedUrl !== this.properties.imageUrl) {
+                this.loadPreviewImage(this.properties.imageUrl);
             }
 
-            try {
-                // Draw image preview inside node (Kích thước lớn hơn: 410x285)
+            if (
+                this._imageObj &&
+                this._imageObj.complete &&
+                this._imageObj.naturalWidth > 0
+            ) {
                 ctx.drawImage(this._imageObj, 15, 80, 410, 285);
                 ctx.strokeStyle = "rgba(255,255,255,0.08)";
                 ctx.lineWidth = 1;
                 ctx.strokeRect(15, 80, 410, 285);
-            } catch (e) { }
+                return;
+            }
+
+            ctx.fillStyle = this._previewState === "error" ? "#f87171" : "#a1a1aa";
+            ctx.font = "13px 'Outfit'";
+            const previewMessage = this._previewState === "error"
+                ? `Lỗi preview: ${this._previewError || "không xác định"}`
+                : "Đang tải ảnh preview...";
+            ctx.fillText(previewMessage, 20, 105);
         };
         LiteGraph.registerNodeType("datn/sdxl_gen", NodeSDXLGen);
 
