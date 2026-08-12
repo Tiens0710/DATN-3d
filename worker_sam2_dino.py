@@ -111,6 +111,7 @@ def _load_models() -> None:
         if missing:
             raise FileNotFoundError("Missing checkpoints: " + ", ".join(missing))
 
+        _patch_groundingdino_transformers_compat()
         from groundingdino.util.inference import (
             load_image,
             load_model,
@@ -137,6 +138,46 @@ def _load_models() -> None:
     except Exception as exc:
         load_error = f"{exc}\n{traceback.format_exc()}"
         print(f"SAM2 + GroundingDINO worker failed to load:\n{load_error}", flush=True)
+
+
+def _patch_groundingdino_transformers_compat() -> None:
+    """Patch the old GroundingDINO positional device argument once.
+
+    GroundingDINO's BertModelWarper passes ``device`` positionally to
+    Transformers' ``get_extended_attention_mask``.  Newer Transformers
+    versions can interpret that position as ``dtype``, which causes the
+    runtime error ``dtype=torch.device`` during every detection request.
+    """
+    import importlib.util
+
+    spec = importlib.util.find_spec("groundingdino")
+    if spec is None or not spec.submodule_search_locations:
+        return
+
+    package_root = Path(next(iter(spec.submodule_search_locations)))
+    bertwarper_path = (
+        package_root / "models" / "GroundingDINO" / "bertwarper.py"
+    )
+    if not bertwarper_path.is_file():
+        return
+
+    source = bertwarper_path.read_text(encoding="utf-8")
+    patched = re.sub(
+        r"self\.get_extended_attention_mask\(\s*"
+        r"attention_mask,\s*input_shape,\s*device\s*\)",
+        "self.get_extended_attention_mask("
+        "attention_mask, input_shape, device=device"
+        ")",
+        source,
+        count=1,
+        flags=re.DOTALL,
+    )
+    if patched != source:
+        bertwarper_path.write_text(patched, encoding="utf-8")
+        print(
+            "Patched GroundingDINO bertwarper for current Transformers.",
+            flush=True,
+        )
 
 
 @app.on_event("startup")
