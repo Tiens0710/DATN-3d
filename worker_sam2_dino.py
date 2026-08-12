@@ -30,6 +30,7 @@ DINO_CHECKPOINT = (
     "/kaggle/working/groundingdino_ckpt/groundingdino_swint_ogc.pth"
 )
 SAM2_CHECKPOINT = "/kaggle/working/sam2_ckpt/sam2_hiera_small.pt"
+DINO_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Used only when the upload workflow is in automatic mode. GroundingDINO is
 # open-vocabulary, but it still needs a text prompt; this broad furniture
@@ -45,7 +46,6 @@ app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.0")
 dino_model = None
 sam_predictor = None
 dino_load_image = None
-dino_predict = None
 load_error = None
 matting_session = None
 matting_remove = None
@@ -103,7 +103,7 @@ def _load_matting() -> None:
 
 
 def _load_models() -> None:
-    global dino_model, sam_predictor, dino_load_image, dino_predict, load_error
+    global dino_model, sam_predictor, dino_load_image, load_error
 
     try:
         required_files = [DINO_CONFIG, DINO_CHECKPOINT, SAM2_CHECKPOINT]
@@ -114,25 +114,23 @@ def _load_models() -> None:
         from groundingdino.util.inference import (
             load_image,
             load_model,
-            predict,
         )
         from sam2.build_sam import build_sam2
         from sam2.sam2_image_predictor import SAM2ImagePredictor
 
         print("Loading GroundingDINO and SAM2...", flush=True)
-        loaded_dino = load_model(DINO_CONFIG, DINO_CHECKPOINT, device="cuda")
+        loaded_dino = load_model(DINO_CONFIG, DINO_CHECKPOINT, device=DINO_DEVICE)
         loaded_sam = SAM2ImagePredictor(
             build_sam2(
                 "sam2_hiera_s.yaml",
                 SAM2_CHECKPOINT,
-                device="cuda",
+                device=DINO_DEVICE,
             )
         )
 
         dino_model = loaded_dino
         sam_predictor = loaded_sam
         dino_load_image = load_image
-        dino_predict = predict
         load_error = None
         print("SAM2 + GroundingDINO worker ready.", flush=True)
         _load_matting()
@@ -144,6 +142,49 @@ def _load_models() -> None:
 @app.on_event("startup")
 def startup_event() -> None:
     _load_models()
+
+
+def _predict_dino(
+    image_tensor: torch.Tensor,
+    caption: str,
+    box_threshold: float,
+    text_threshold: float,
+):
+    """Run GroundingDINO without the fragile utility wrapper.
+
+    Some Kaggle GroundingDINO installs expose a ``predict`` helper that
+    eventually passes a ``torch.device`` as a tensor dtype.  That produces
+    ``to(dtype=torch.device)`` and breaks every uploaded-image request.  The
+    model forward and official post-processing are small enough to keep here,
+    so the worker uses an explicit device move and never relies on that helper.
+    """
+    if dino_model is None:
+        raise RuntimeError("GroundingDINO model is not loaded")
+
+    from groundingdino.util.utils import get_phrases_from_posmap
+
+    normalized_caption = str(caption).lower().strip()
+    if not normalized_caption.endswith("."):
+        normalized_caption += "."
+
+    image = image_tensor.to(DINO_DEVICE)
+    with torch.no_grad():
+        outputs = dino_model(image[None], captions=[normalized_caption])
+
+    prediction_logits = outputs["pred_logits"].detach().sigmoid()[0].cpu()
+    prediction_boxes = outputs["pred_boxes"].detach()[0].cpu()
+    scores = prediction_logits.max(dim=1).values
+    keep = scores > float(box_threshold)
+    boxes = prediction_boxes[keep]
+    logits = prediction_logits[keep]
+
+    tokenizer = dino_model.tokenizer
+    tokenized = tokenizer(normalized_caption)
+    phrases = [
+        get_phrases_from_posmap(logit > float(text_threshold), tokenized, tokenizer)
+        for logit in logits
+    ]
+    return boxes, logits, phrases
 
 
 @app.get("/health")
@@ -425,9 +466,8 @@ def _detect_label_instances(
     image_source, image_tensor = dino_load_image(image_path)
     height, width = image_source.shape[:2]
     source_image = Image.open(image_path).convert("RGB")
-    boxes, logits, _ = dino_predict(
-        model=dino_model,
-        image=image_tensor,
+    boxes, logits, _ = _predict_dino(
+        image_tensor=image_tensor,
         caption=label.strip().lower() + ".",
         box_threshold=box_threshold,
         text_threshold=0.18,
@@ -655,9 +695,8 @@ def _segment_uploaded(
     sam_predictor.set_image(np.asarray(source_image))
 
     if auto_detect:
-        boxes, logits, phrases = dino_predict(
-            model=dino_model,
-            image=image_tensor,
+        boxes, logits, phrases = _predict_dino(
+            image_tensor=image_tensor,
             caption=AUTO_DETECTION_CAPTION,
             box_threshold=0.22,
             text_threshold=0.16,
@@ -775,9 +814,8 @@ def _segment_uploaded(
         )
 
         if label not in detection_cache:
-            boxes, logits, _ = dino_predict(
-                model=dino_model,
-                image=image_tensor,
+            boxes, logits, _ = _predict_dino(
+                image_tensor=image_tensor,
                 caption=label + ".",
                 box_threshold=0.25,
                 text_threshold=0.20,
@@ -894,7 +932,10 @@ def segment(payload: SegmentRequest) -> dict:
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
-                detail=f"Segmentation failed in {source_mode} mode: {exc}",
+                detail=(
+                    f"Segmentation failed in {source_mode} mode: {exc}\n"
+                    f"{traceback.format_exc()}"
+                ),
             ) from exc
         finally:
             torch.cuda.empty_cache()
