@@ -162,16 +162,27 @@ def _patch_groundingdino_transformers_compat() -> None:
         return
 
     source = bertwarper_path.read_text(encoding="utf-8")
-    patched = re.sub(
-        r"self\.get_extended_attention_mask\(\s*"
-        r"attention_mask,\s*input_shape,\s*device\s*\)",
-        "self.get_extended_attention_mask("
-        "attention_mask, input_shape, device=device"
-        ")",
-        source,
-        count=1,
-        flags=re.DOTALL,
+    old_calls = (
+        """extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(
+            attention_mask, input_shape, device
+        )""",
+        """extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape, device=device)""",
     )
+    replacement = """try:
+            extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(
+                attention_mask, input_shape, device=device
+            )
+        except TypeError as exc:
+            if "unexpected keyword argument 'device'" not in str(exc):
+                raise
+            extended_attention_mask = self.get_extended_attention_mask(
+                attention_mask,
+                input_shape,
+                dtype=self.embeddings.word_embeddings.weight.dtype,
+            )"""
+    patched = source
+    for old_call in old_calls:
+        patched = patched.replace(old_call, replacement, 1)
     if patched != source:
         bertwarper_path.write_text(patched, encoding="utf-8")
         print(
