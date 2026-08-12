@@ -3742,6 +3742,24 @@
         canvas.show_stats = false; // Hide default performance statistics
         canvas.background_image = null; // Background handled by CSS grid pattern
 
+        // LiteGraph 0.7.10 hides widget labels at scale <= 0.5. Preserve the
+        // real canvas transform, but expose a readable scale only while its
+        // widget painter decides whether text should be drawn.
+        const originalDrawNodeWidgets = LGraphCanvas.prototype.drawNodeWidgets;
+        LGraphCanvas.prototype.drawNodeWidgets = function () {
+            const actualScale = this.ds?.scale;
+            if (Number.isFinite(actualScale) && actualScale <= 0.5) {
+                this.ds.scale = 0.501;
+            }
+            try {
+                return originalDrawNodeWidgets.apply(this, arguments);
+            } finally {
+                if (Number.isFinite(actualScale)) {
+                    this.ds.scale = actualScale;
+                }
+            }
+        };
+
         // Keep custom DOM overlays aligned with LiteGraph after zooming,
         // resizing, and browser scaling.
         function graphToContainerPosition(point) {
