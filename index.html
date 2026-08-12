@@ -3784,7 +3784,7 @@
             );
             // Keep node titles, prompts and metrics readable. The minimap still
             // shows the full workflow when its bounds cannot fit at this scale.
-            const scale = Math.max(.62, Math.min(.82, geometricScale));
+            const scale = Math.max(.40, Math.min(.72, geometricScale));
 
             canvas.ds.scale = scale;
             canvas.ds.offset = [
@@ -3798,7 +3798,7 @@
             const parent = document.getElementById("canvas-container");
             if (!parent) return;
             const previousScale = canvas.ds.scale;
-            const nextScale = Math.max(.34, Math.min(1.35, previousScale * factor));
+            const nextScale = Math.max(.22, Math.min(1.35, previousScale * factor));
             const centerX = parent.clientWidth / 2;
             const centerY = parent.clientHeight / 2;
             const ratio = nextScale / previousScale;
@@ -5361,7 +5361,7 @@
             viewer.style.setProperty("--viewer-pad-x", `${Math.max(4, 8 * uiScale)}px`);
             viewer.style.setProperty("--viewer-button-pad-x", `${Math.max(3, 5 * uiScale)}px`);
             viewer.style.setProperty("--viewer-radius", `${Math.max(8, 16 * uiScale)}px`);
-            viewer.dataset.compact = scale < .72 ? "true" : "false";
+            viewer.dataset.compact = scale < .60 ? "true" : "false";
             viewer.style.display = this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE ? "none" : "block";
         };
 
@@ -5657,7 +5657,7 @@
             viewer.style.setProperty("--viewer-pad-x", `${Math.max(4, 8 * uiScale)}px`);
             viewer.style.setProperty("--viewer-button-pad-x", `${Math.max(3, 5 * uiScale)}px`);
             viewer.style.setProperty("--viewer-radius", `${Math.max(8, 16 * uiScale)}px`);
-            viewer.dataset.compact = scale < .72 ? "true" : "false";
+            viewer.dataset.compact = scale < .60 ? "true" : "false";
 
             // Prevent rendering when zoomed out excessively to optimize drawing performance
             if (this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE) {
