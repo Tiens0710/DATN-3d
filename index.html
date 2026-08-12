@@ -293,6 +293,13 @@
 
         /* 3D Viewer embedded in node */
         .node-3d-container {
+            --viewer-label-size: 11px;
+            --viewer-font-size: 10px;
+            --viewer-gap: 5px;
+            --viewer-bottom: 10px;
+            --viewer-pad-y: 5px;
+            --viewer-pad-x: 8px;
+            --viewer-radius: 16px;
             position: absolute;
             background-color: rgba(10, 10, 12, 0.7);
             backdrop-filter: var(--glass-blur);
@@ -334,7 +341,9 @@
             max-width: calc(100% - 20px);
             overflow: hidden;
             color: #e5e7eb;
-            font: 600 11px 'Outfit', sans-serif;
+            font-family: 'Outfit', sans-serif;
+            font-size: var(--viewer-label-size);
+            font-weight: 600;
             text-overflow: ellipsis;
             white-space: nowrap;
             pointer-events: none;
@@ -376,14 +385,15 @@
         .viewer-controls {
             position: absolute;
             z-index: 5;
-            bottom: 12px;
+            bottom: var(--viewer-bottom);
             left: 50%;
             transform: translateX(-50%);
             display: flex;
-            gap: 6px;
+            gap: var(--viewer-gap);
             background: rgba(255, 255, 255, 0.08);
-            padding: 6px 12px;
-            border-radius: 20px;
+            max-width: calc(100% - 8px);
+            padding: var(--viewer-pad-y) var(--viewer-pad-x);
+            border-radius: var(--viewer-radius);
             border: 1px solid rgba(255, 255, 255, 0.15);
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
@@ -395,14 +405,29 @@
             background: none;
             border: none;
             color: #ffffff;
-            font-size: 10px;
-            padding: 2px 8px;
+            min-width: 0;
+            font-size: var(--viewer-font-size);
+            line-height: 1.15;
+            padding: 2px var(--viewer-button-pad-x, 5px);
             cursor: pointer;
             border-radius: 4px;
             font-family: 'Outfit', sans-serif;
             box-shadow: none;
             transition: background 0.2s;
             font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .node-3d-container[data-compact="true"] .viewer-controls {
+            bottom: 3px;
+            gap: 2px;
+            padding: 3px 4px;
+            border-radius: 8px;
+        }
+
+        .node-3d-container[data-compact="true"] .viewer-btn {
+            font-size: 7px;
+            padding: 2px 3px;
         }
 
         .viewer-btn:hover {
@@ -3713,6 +3738,7 @@
         // Initialize LiteGraph
         const graph = new LGraph();
         const canvas = new LGraphCanvas("#graphcanvas", graph);
+        LiteGraph.NODE_TEXT_SIZE = 16;
         canvas.show_stats = false; // Hide default performance statistics
         canvas.background_image = null; // Background handled by CSS grid pattern
 
@@ -3752,10 +3778,13 @@
             const maxY = Math.max(...nodes.map((node) => node.pos[1] + node.size[1]));
             const graphWidth = Math.max(maxX - minX, 1);
             const graphHeight = Math.max(maxY - minY, 1);
-            const scale = Math.max(.24, Math.min(.62,
+            const geometricScale = Math.min(
                 (width - padding * 2) / graphWidth,
                 (height - padding * 2) / graphHeight
-            ));
+            );
+            // Keep node titles, prompts and metrics readable. The minimap still
+            // shows the full workflow when its bounds cannot fit at this scale.
+            const scale = Math.max(.62, Math.min(.82, geometricScale));
 
             canvas.ds.scale = scale;
             canvas.ds.offset = [
@@ -3769,7 +3798,7 @@
             const parent = document.getElementById("canvas-container");
             if (!parent) return;
             const previousScale = canvas.ds.scale;
-            const nextScale = Math.max(.2, Math.min(1.2, previousScale * factor));
+            const nextScale = Math.max(.34, Math.min(1.35, previousScale * factor));
             const centerX = parent.clientWidth / 2;
             const centerY = parent.clientHeight / 2;
             const ratio = nextScale / previousScale;
@@ -4143,11 +4172,11 @@
             textarea.style.top = `${y}px`;
             textarea.style.width = `${w}px`;
             textarea.style.height = `${h}px`;
-            textarea.style.fontSize = `${Math.max(9, 13 * scale)}px`;
-            textarea.style.padding = `${Math.max(3, 9 * scale)}px`;
+            textarea.style.fontSize = `${Math.max(10, Math.min(14, 13 * scale))}px`;
+            textarea.style.padding = `${Math.max(4, Math.min(9, 9 * scale))}px`;
             textarea.style.lineHeight = "1.35";
 
-            if (this.flags?.collapsed || scale < 0.45) {
+            if (this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE) {
                 textarea.style.display = "none";
             } else {
                 textarea.style.display = "block";
@@ -4155,7 +4184,7 @@
         };
 
         NodePrompt.prototype.onDrawForeground = function (ctx) {
-            if (canvas.ds.scale >= 0.45) return;
+            if (canvas.ds.scale >= GRAPH_COMPACT_SCALE) return;
 
             const prompt = this.properties.prompt || "";
             const x = 15;
@@ -5318,11 +5347,21 @@
             const viewer = document.getElementById(`trellis-viewer-${this.id}`);
             if (!viewer) return;
             const scale = canvas.ds.scale || 1;
+            const uiScale = Math.max(.62, Math.min(1, scale));
             const screenPos = graphToContainerPosition([this.pos[0] + 10, this.pos[1] + 72]);
             viewer.style.left = `${screenPos[0]}px`;
             viewer.style.top = `${screenPos[1]}px`;
-            viewer.style.width = `${Math.max(120, (this.size[0] - 20) * scale)}px`;
-            viewer.style.height = `${Math.max(90, (this.size[1] - 84) * scale)}px`;
+            viewer.style.width = `${Math.max(92, (this.size[0] - 20) * scale)}px`;
+            viewer.style.height = `${Math.max(72, (this.size[1] - 84) * scale)}px`;
+            viewer.style.setProperty("--viewer-label-size", `${Math.max(7, 11 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-font-size", `${Math.max(7, 10 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-gap", `${Math.max(2, 5 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-bottom", `${Math.max(3, 10 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-pad-y", `${Math.max(3, 5 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-pad-x", `${Math.max(4, 8 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-button-pad-x", `${Math.max(3, 5 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-radius", `${Math.max(8, 16 * uiScale)}px`);
+            viewer.dataset.compact = scale < .72 ? "true" : "false";
             viewer.style.display = this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE ? "none" : "block";
         };
 
@@ -5609,6 +5648,16 @@
             viewer.style.top = `${y}px`;
             viewer.style.width = `${w}px`;
             viewer.style.height = `${h}px`;
+            const uiScale = Math.max(.62, Math.min(1, scale));
+            viewer.style.setProperty("--viewer-label-size", `${Math.max(7, 11 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-font-size", `${Math.max(7, 10 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-gap", `${Math.max(2, 5 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-bottom", `${Math.max(3, 10 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-pad-y", `${Math.max(3, 5 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-pad-x", `${Math.max(4, 8 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-button-pad-x", `${Math.max(3, 5 * uiScale)}px`);
+            viewer.style.setProperty("--viewer-radius", `${Math.max(8, 16 * uiScale)}px`);
+            viewer.dataset.compact = scale < .72 ? "true" : "false";
 
             // Prevent rendering when zoomed out excessively to optimize drawing performance
             if (this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE) {
