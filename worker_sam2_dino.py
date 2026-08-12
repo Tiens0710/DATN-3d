@@ -64,14 +64,14 @@ MATTING_ENABLED = os.environ.get("ENABLE_MATTING", "1").lower() not in {
 MATTING_MODEL = os.environ.get("MATTING_MODEL", "isnet-general-use")
 MATTING_MAX_SIDE = int(os.environ.get("MATTING_MAX_SIDE", "1024"))
 MASK_MIN_COMPONENT_RATIO = float(
-    os.environ.get("MASK_MIN_COMPONENT_RATIO", "0.00002")
+    os.environ.get("MASK_MIN_COMPONENT_RATIO", "0.000005")
 )
 SAM_BOX_PADDING_RATIO = float(
-    os.environ.get("SAM_BOX_PADDING_RATIO", "0.05")
+    os.environ.get("SAM_BOX_PADDING_RATIO", "0.08")
 )
-SAM_BOX_PADDING_MAX = int(os.environ.get("SAM_BOX_PADDING_MAX", "96"))
+SAM_BOX_PADDING_MAX = int(os.environ.get("SAM_BOX_PADDING_MAX", "128"))
 SAM_ALPHA_BLUR_SIGMA = float(
-    os.environ.get("SAM_ALPHA_BLUR_SIGMA", "0.35")
+    os.environ.get("SAM_ALPHA_BLUR_SIGMA", "0.15")
 )
 
 
@@ -419,7 +419,10 @@ def _mask_alpha(masks, scores, box: list[int]) -> tuple[np.ndarray, int]:
         )
         fill_labels = np.where(hole_sizes <= max(32, mask.size // 500))[0] + 1
         mask = np.logical_or(mask, np.isin(hole_labels, fill_labels))
-    alpha = ndimage.gaussian_filter(mask.astype(np.float32) * 255.0, sigma=0.65)
+    alpha = ndimage.gaussian_filter(
+        mask.astype(np.float32) * 255.0,
+        sigma=max(0.0, SAM_ALPHA_BLUR_SIGMA),
+    )
     return np.clip(alpha, 0, 255).astype(np.uint8), best
 
 
