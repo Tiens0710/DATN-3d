@@ -31,6 +31,10 @@ DINO_CHECKPOINT = (
 )
 SAM2_CHECKPOINT = "/kaggle/working/sam2_ckpt/sam2_hiera_small.pt"
 DINO_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# The legacy GroundingDINO BERT wrapper can keep an unregistered child on CPU.
+# Keep the fallback device after the first mismatch instead of moving the model
+# back to CUDA on every request.
+DINO_RUNTIME_DEVICE = DINO_DEVICE
 
 # Used only when the upload workflow is in automatic mode. GroundingDINO is
 # open-vocabulary, but it still needs a text prompt; this broad furniture
@@ -191,6 +195,64 @@ def _patch_groundingdino_transformers_compat() -> None:
         )
 
 
+def _prepare_dino_model() -> None:
+    """Keep every registered and wrapped DINO module on one device."""
+    global DINO_RUNTIME_DEVICE
+
+    if dino_model is None:
+        raise RuntimeError("GroundingDINO model is not loaded")
+
+    dino_model.to(DINO_RUNTIME_DEVICE)
+    dino_model.eval()
+
+    # Older GroundingDINO builds wrap BERT in a custom module.  Explicitly
+    # moving common submodules handles builds whose wrapper is not traversed
+    # correctly by the parent module's .to() call.
+    for name in (
+        "bert",
+        "backbone",
+        "transformer",
+        "input_proj",
+        "feat_map",
+        "class_embed",
+        "bbox_embed",
+    ):
+        child = getattr(dino_model, name, None)
+        if child is not None and hasattr(child, "to"):
+            child.to(DINO_RUNTIME_DEVICE)
+
+
+def _dino_forward(image_tensor: torch.Tensor, caption: str):
+    """Forward DINO and recover from partially-device-mapped legacy builds."""
+    global DINO_RUNTIME_DEVICE
+
+    _prepare_dino_model()
+    normalized_caption = str(caption).lower().strip()
+    if not normalized_caption.endswith("."):
+        normalized_caption += "."
+
+    try:
+        image = image_tensor.to(DINO_RUNTIME_DEVICE)
+        with torch.no_grad():
+            return dino_model(image[None], captions=[normalized_caption])
+    except RuntimeError as exc:
+        if "same device" not in str(exc).lower():
+            raise
+
+        # Some old GroundingDINO wrappers keep an unregistered BERT child on
+        # CPU. Moving the complete model to CPU makes all tensors consistent
+        # and keeps the API usable instead of returning HTTP 500.
+        print(
+            "GroundingDINO device mismatch; retrying the complete model on CPU.",
+            flush=True,
+        )
+        DINO_RUNTIME_DEVICE = "cpu"
+        dino_model.to("cpu")
+        dino_model.eval()
+        with torch.no_grad():
+            return dino_model(image_tensor.to("cpu")[None], captions=[normalized_caption])
+
+
 @app.on_event("startup")
 def startup_event() -> None:
     _load_models()
@@ -219,9 +281,7 @@ def _predict_dino(
     if not normalized_caption.endswith("."):
         normalized_caption += "."
 
-    image = image_tensor.to(DINO_DEVICE)
-    with torch.no_grad():
-        outputs = dino_model(image[None], captions=[normalized_caption])
+    outputs = _dino_forward(image_tensor, normalized_caption)
 
     prediction_logits = outputs["pred_logits"].detach().sigmoid()[0].cpu()
     prediction_boxes = outputs["pred_boxes"].detach()[0].cpu()
