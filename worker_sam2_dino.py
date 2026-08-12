@@ -66,6 +66,13 @@ MATTING_MAX_SIDE = int(os.environ.get("MATTING_MAX_SIDE", "1024"))
 MASK_MIN_COMPONENT_RATIO = float(
     os.environ.get("MASK_MIN_COMPONENT_RATIO", "0.00002")
 )
+SAM_BOX_PADDING_RATIO = float(
+    os.environ.get("SAM_BOX_PADDING_RATIO", "0.05")
+)
+SAM_BOX_PADDING_MAX = int(os.environ.get("SAM_BOX_PADDING_MAX", "96"))
+SAM_ALPHA_BLUR_SIGMA = float(
+    os.environ.get("SAM_ALPHA_BLUR_SIGMA", "0.35")
+)
 
 
 class SegmentRequest(BaseModel):
@@ -339,7 +346,10 @@ def _clean_alpha(alpha: np.ndarray, box: list[int]) -> np.ndarray:
         support = np.isin(labels, keep_labels)
         alpha = np.where(support, alpha, 0).astype(np.uint8)
 
-    alpha = ndimage.gaussian_filter(alpha.astype(np.float32), sigma=0.65)
+    alpha = ndimage.gaussian_filter(
+        alpha.astype(np.float32),
+        sigma=max(0.0, SAM_ALPHA_BLUR_SIGMA),
+    )
     alpha[alpha < 24] = 0
     return np.clip(alpha, 0, 255).astype(np.uint8)
 
@@ -491,7 +501,16 @@ def _predict_refined_alpha(
     """Predict SAM2 structure and optionally refine the boundary with matting."""
     width, height = image.size
     x1, y1, x2, y2 = [int(value) for value in box]
-    padding = max(12, int(min(width, height) * 0.035))
+    # GroundingDINO boxes are semantic proposals, not pixel-perfect masks.
+    # A small adaptive margin helps SAM2 recover thin legs and chair rails while
+    # the cap prevents the prompt box from absorbing a nearby object.
+    padding = max(
+        16,
+        min(
+            SAM_BOX_PADDING_MAX,
+            int(max(width, height) * SAM_BOX_PADDING_RATIO),
+        ),
+    )
     sam_box = np.array(
         [
             max(0, x1 - padding),
@@ -578,11 +597,28 @@ def _detect_label_instances(
     image_source, image_tensor = dino_load_image(image_path)
     height, width = image_source.shape[:2]
     source_image = Image.open(image_path).convert("RGB")
+    normalized_label = label.strip().lower()
+    # COCO's couch and dining-table wording is not always the strongest query
+    # for GroundingDINO. Use short, object-specific aliases while keeping the
+    # reported label unchanged.
+    query_label = {
+        "couch": "sofa",
+        "dining table": "table",
+    }.get(normalized_label, normalized_label)
+    label_thresholds = {
+        "chair": (0.18, 0.14),
+        "couch": (0.18, 0.14),
+        "dining table": (0.20, 0.15),
+    }
+    box_threshold, text_threshold = label_thresholds.get(
+        normalized_label,
+        (box_threshold, 0.18),
+    )
     boxes, logits, _ = _predict_dino(
         image_tensor=image_tensor,
-        caption=label.strip().lower() + ".",
+        caption=query_label + ".",
         box_threshold=box_threshold,
-        text_threshold=0.18,
+        text_threshold=text_threshold,
     )
 
     candidates = []
@@ -926,11 +962,28 @@ def _segment_uploaded(
         )
 
         if label not in detection_cache:
+            label_thresholds = {
+                "chair": (0.20, 0.16),
+                "dining chair": (0.20, 0.16),
+                "sofa": (0.20, 0.16),
+                "couch": (0.20, 0.16),
+                "table": (0.22, 0.17),
+                "dining table": (0.22, 0.17),
+            }
+            query_label = {
+                "couch": "sofa",
+                "dining chair": "chair",
+                "dining table": "table",
+            }.get(label, label)
+            box_threshold, text_threshold = label_thresholds.get(
+                label,
+                (0.25, 0.20),
+            )
             boxes, logits, _ = _predict_dino(
                 image_tensor=image_tensor,
-                caption=label + ".",
-                box_threshold=0.25,
-                text_threshold=0.20,
+                caption=query_label + ".",
+                box_threshold=box_threshold,
+                text_threshold=text_threshold,
             )
             scores = logits.detach().cpu()
             if scores.ndim > 1:
