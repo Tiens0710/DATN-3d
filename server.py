@@ -137,6 +137,7 @@ class CombineRequest(BaseModel):
 
 trellis_jobs: Dict[str, Dict[str, Any]] = {}
 trellis_jobs_lock = threading.Lock()
+cancelled_runs: set[str] = set()
 # One worker processes GPU-heavy TRELLIS jobs in FIFO order.
 # Blocking inference runs outside the event loop via asyncio.to_thread().
 trellis_queue = asyncio.Queue()
@@ -154,6 +155,17 @@ def _validate_run_id(run_id: str) -> str:
     if not RUN_ID_PATTERN.fullmatch(clean):
         raise HTTPException(status_code=400, detail="Invalid run_id")
     return clean
+
+
+def _is_run_cancelled(run_id: str) -> bool:
+    clean = _validate_run_id(run_id)
+    with trellis_jobs_lock:
+        return clean in cancelled_runs
+
+
+def _raise_if_run_cancelled(run_id: str) -> None:
+    if _is_run_cancelled(run_id):
+        raise HTTPException(status_code=409, detail="Pipeline run was cancelled")
 
 
 def _run_paths(run_id: str, create: bool = False) -> Dict[str, Path]:
@@ -702,6 +714,10 @@ def backend_readiness() -> Dict[str, Any]:
 
 def run_trellis_job(job_id: str, run_id: str, crops: List[Dict[str, Any]]) -> None:
     with trellis_jobs_lock:
+        if run_id in cancelled_runs:
+            trellis_jobs[job_id]["status"] = "cancelled"
+            trellis_jobs[job_id]["updated_at"] = time.time()
+            return
         trellis_jobs[job_id]["status"] = "running"
         trellis_jobs[job_id]["updated_at"] = time.time()
 
@@ -715,15 +731,15 @@ def run_trellis_job(job_id: str, run_id: str, crops: List[Dict[str, Any]]) -> No
         )
         with trellis_jobs_lock:
             trellis_jobs[job_id] = {
-                "status": "completed",
-                "models": models,
+                "status": "cancelled" if run_id in cancelled_runs else "completed",
+                "models": [] if run_id in cancelled_runs else models,
                 "run_id": run_id,
                 "updated_at": time.time(),
             }
     except Exception as exc:
         with trellis_jobs_lock:
             trellis_jobs[job_id] = {
-                "status": "failed",
+                "status": "cancelled" if run_id in cancelled_runs else "failed",
                 "error": str(exc),
                 "run_id": run_id,
                 "updated_at": time.time(),
@@ -800,12 +816,71 @@ def health_check():
 def api_create_run():
     _cleanup_state()
     run_id = uuid.uuid4().hex
+    with trellis_jobs_lock:
+        cancelled_runs.discard(run_id)
     paths = _run_paths(run_id, create=True)
     (paths["root"] / "run.json").write_text(
         json.dumps({"run_id": run_id, "created_at": time.time()}, indent=2),
         encoding="utf-8",
     )
     return {"status": "created", "run_id": run_id}
+
+
+@app.delete("/api/runs/{run_id}")
+def api_delete_run(run_id: str):
+    """Delete a finished pipeline run before starting a fresh one."""
+    clean_run_id = _validate_run_id(run_id)
+    run_path = (Path(RUNS_DIR) / clean_run_id).resolve()
+    runs_root = Path(RUNS_DIR).resolve()
+    if runs_root not in run_path.parents:
+        raise HTTPException(status_code=400, detail="Invalid run path")
+    if not run_path.is_dir():
+        return {"status": "already_deleted", "run_id": clean_run_id}
+
+    with trellis_jobs_lock:
+        was_cancelled = clean_run_id in cancelled_runs
+        active_jobs = [
+            job_id
+            for job_id, job in trellis_jobs.items()
+            if job.get("run_id") == clean_run_id
+            and job.get("status") in {"queued", "running"}
+        ]
+        if active_jobs and not was_cancelled:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot delete a run while its TRELLIS job is still active",
+            )
+        if active_jobs and was_cancelled:
+            return {"status": "deletion_deferred", "run_id": clean_run_id}
+        for job_id, job in list(trellis_jobs.items()):
+            if job.get("run_id") == clean_run_id:
+                trellis_jobs.pop(job_id, None)
+
+    shutil.rmtree(run_path, ignore_errors=False)
+    with trellis_jobs_lock:
+        cancelled_runs.discard(clean_run_id)
+    return {"status": "deleted", "run_id": clean_run_id}
+
+
+@app.post("/api/runs/{run_id}/cancel")
+def api_cancel_run(run_id: str):
+    """Mark a pipeline run as cancelled and prevent queued work from starting."""
+    clean_run_id = _validate_run_id(run_id)
+    run_path = (Path(RUNS_DIR) / clean_run_id).resolve()
+    runs_root = Path(RUNS_DIR).resolve()
+    if runs_root not in run_path.parents:
+        raise HTTPException(status_code=400, detail="Invalid run path")
+    if not run_path.is_dir():
+        return {"status": "already_deleted", "run_id": clean_run_id}
+
+    now = time.time()
+    with trellis_jobs_lock:
+        cancelled_runs.add(clean_run_id)
+        for job in trellis_jobs.values():
+            if job.get("run_id") == clean_run_id and job.get("status") == "queued":
+                job["status"] = "cancelled"
+                job["updated_at"] = now
+    return {"status": "cancelled", "run_id": clean_run_id}
 
 
 @app.post("/api/optimize_prompt")
@@ -824,6 +899,7 @@ async def api_upload_image(
     file: UploadFile = File(...),
 ):
     """Store a user image for the upload-to-3D branch of the pipeline."""
+    _raise_if_run_cancelled(run_id)
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=415, detail="Only image files are supported")
 
@@ -882,6 +958,7 @@ def api_generate_layout(scene_graph: Dict[str, Any]):
 @app.post("/api/generate_image")
 def api_generate_image(request: ImageGenRequest):
     try:
+        _raise_if_run_cancelled(request.run_id)
         paths = _run_paths(request.run_id)
         layout = dict(request.layout or {})
         objects = list(layout.get("objects", []))
@@ -897,6 +974,7 @@ def api_generate_image(request: ImageGenRequest):
             object_image_dir=str(paths["objects"]),
             manifest_path=str(paths["manifest"]),
         )
+        _raise_if_run_cancelled(request.run_id)
         contact_sheet = paths["outputs"] / "objectwise_2d.png"
         create_object_contact_sheet(generated, str(contact_sheet))
         shutil.copy2(contact_sheet, paths["input"])
@@ -940,6 +1018,7 @@ def api_generate_image(request: ImageGenRequest):
 @app.post("/api/run_sam2")
 def api_run_sam2(request: Sam2Request):
     try:
+        _raise_if_run_cancelled(request.run_id)
         paths = _run_paths(request.run_id)
         source_mode = str(request.mode or "objectwise").lower()
         input_path = str(paths["input"])
@@ -994,6 +1073,7 @@ def api_run_sam2(request: Sam2Request):
             auto_detect=worker_auto_detect,
             manifest_path=str(paths["manifest"]),
         )
+        _raise_if_run_cancelled(request.run_id)
         if source_mode == "uploaded":
             failed = [
                 crop.get("label", crop.get("name", "object"))
@@ -1046,6 +1126,7 @@ def api_run_sam2(request: Sam2Request):
 @app.post("/api/generate_3d")
 async def api_generate_3d(request: TrellisRequest):
     _cleanup_state()
+    _raise_if_run_cancelled(request.run_id)
     paths = _run_paths(request.run_id)
     if trellis_queue.qsize() >= MAX_TRELLIS_QUEUE:
         raise HTTPException(status_code=429, detail="TRELLIS queue is full; try again later")
@@ -1091,6 +1172,7 @@ def api_generate_3d_status(job_id: str):
 @app.post("/api/combine_scene")
 def api_combine_scene(request: CombineRequest):
     try:
+        _raise_if_run_cancelled(request.run_id)
         paths = _run_paths(request.run_id)
         scene_path = paths["outputs"] / "scene_combined.glb"
         if not combine_scene_meshes(
@@ -1101,6 +1183,7 @@ def api_combine_scene(request: CombineRequest):
             allowed_root=str(paths["models"]),
         ):
             raise RuntimeError("Scene combining failed")
+        _raise_if_run_cancelled(request.run_id)
 
         _write_run_metadata(
             paths,

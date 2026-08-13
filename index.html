@@ -187,6 +187,17 @@
             filter: brightness(0.95);
         }
 
+        #btn-run[aria-busy="true"] {
+            background: linear-gradient(135deg, #b84f63, #d66b77);
+            border-color: rgba(255, 190, 198, 0.72);
+            box-shadow: 0 8px 22px rgba(184, 79, 99, 0.28);
+        }
+
+        #btn-run[aria-busy="true"]:hover {
+            background: linear-gradient(135deg, #c65a6e, #e07883);
+            border-color: rgba(255, 215, 220, 0.88);
+        }
+
         /* Status Indicator */
         .status-dot {
             width: 8px;
@@ -437,26 +448,54 @@
         /* Liquid Glass Textarea */
         .node-textarea {
             position: absolute;
-            background: rgba(0, 0, 0, 0.45);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #ffffff;
-            border-radius: 6px;
-            padding: 10px;
-            font-family: 'Outfit', sans-serif;
-            font-size: 13px;
+            background: linear-gradient(180deg, rgba(25, 30, 38, .96), rgba(14, 18, 24, .96));
+            border: 1px solid rgba(111, 132, 158, .42);
+            color: #e8edf4;
+            border-radius: 7px;
+            padding: 8px;
+            font-family: Inter, 'Segoe UI', sans-serif;
+            font-size: 12px;
+            font-weight: 400;
             resize: none;
             outline: none;
             box-sizing: border-box;
-            transition: border-color 0.2s, box-shadow 0.2s;
+            overflow: auto;
+            transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
             z-index: 5;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.035), inset 0 0 0 1px rgba(0,0,0,.16);
+            scrollbar-width: thin;
+            scrollbar-color: #59677a transparent;
         }
 
         .node-textarea:focus {
-            border-color: rgba(255, 255, 255, 0.35);
-            box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), inset 0 2px 4px rgba(0, 0, 0, 0.3);
+            border-color: rgba(143, 132, 245, .9);
+            background: linear-gradient(180deg, rgba(30, 34, 45, .98), rgba(15, 18, 27, .98));
+            box-shadow: 0 0 0 2px rgba(122, 108, 234, .16), inset 0 1px 0 rgba(255,255,255,.05);
+        }
+
+        .node-textarea::placeholder {
+            color: #718096;
+            opacity: 1;
+        }
+
+        .node-textarea::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .node-textarea::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .node-textarea::-webkit-scrollbar-thumb {
+            border: 1px solid transparent;
+            border-radius: 999px;
+            background: #59677a;
+            background-clip: padding-box;
+        }
+
+        .node-textarea::-webkit-scrollbar-thumb:hover {
+            background: #7b8ba2;
+            background-clip: padding-box;
         }
 
         /* ================================================================
@@ -847,15 +886,6 @@
             border-color: #3a3c40 !important;
             border-radius: 4px;
             box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
-            backdrop-filter: none;
-            -webkit-backdrop-filter: none;
-        }
-
-        .node-textarea {
-            background: #161719;
-            border-color: #3b3d41;
-            border-radius: 3px;
-            box-shadow: none;
             backdrop-filter: none;
             -webkit-backdrop-filter: none;
         }
@@ -2697,6 +2727,34 @@
             }
         }
 
+        /* Scene viewport is an independent floating window. It must not own a
+           grid column because resizing it would resize the LiteGraph canvas
+           and make every workflow node appear to shrink or stretch. */
+        @media (min-width: 861px) {
+            .workspace-shell.spatial-workspace {
+                position: relative;
+                grid-template-columns: 176px minmax(0, 1fr);
+                --viewport-width: min(46vw, 760px);
+            }
+
+            .viewport-panel {
+                position: absolute;
+                z-index: 30;
+                top: 8px;
+                right: 8px;
+                bottom: 8px;
+                width: var(--viewport-width);
+                min-width: 280px;
+                max-width: calc(100% - 184px);
+                margin: 0;
+                box-shadow: 0 18px 48px rgba(0, 0, 0, .42);
+            }
+
+            .workspace-shell.spatial-workspace.viewport-hidden .graph-panel {
+                grid-column: 2;
+            }
+        }
+
         /* Readable execution log panel. */
         .right-sidebar {
             width: min(520px, calc(100vw - 40px));
@@ -3183,6 +3241,8 @@
         let uploadedImageUrl = "";
         let uploadedImageName = "";
         let currentRunId = "";
+        let activePipelineController = null;
+        let pipelineStopRequested = false;
         let appApiKey = localStorage.getItem("datn-app-api-key") || "";
         // Keep a local preview while the file is waiting for the backend.
         // The blob URL must never be sent to the Kaggle API.
@@ -3199,11 +3259,86 @@
             return headers;
         }
 
+        function pipelineFetch(input, options = {}) {
+            const signal = options.signal || activePipelineController?.signal;
+            return fetch(input, signal ? { ...options, signal } : options);
+        }
+
+        function assertPipelineActive() {
+            if (pipelineStopRequested || activePipelineController?.signal.aborted) {
+                const error = new DOMException("Pipeline stopped by user", "AbortError");
+                throw error;
+            }
+        }
+
+        function isPipelineStopError(error) {
+            return pipelineStopRequested || error?.name === "AbortError";
+        }
+
+        function waitForPipeline(milliseconds) {
+            assertPipelineActive();
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    activePipelineController?.signal.removeEventListener("abort", onAbort);
+                    resolve();
+                }, milliseconds);
+                const onAbort = () => {
+                    clearTimeout(timer);
+                    activePipelineController?.signal.removeEventListener("abort", onAbort);
+                    reject(new DOMException("Pipeline stopped by user", "AbortError"));
+                };
+                activePipelineController?.signal.addEventListener("abort", onAbort, { once: true });
+            });
+        }
+
+        async function stopPipelineExecution() {
+            if (!isExecuting) return;
+            pipelineStopRequested = true;
+            activePipelineController?.abort();
+            const stoppedRunId = currentRunId;
+            if (stoppedRunId && backendUrl) {
+                try {
+                    await fetch(`${backendUrl}/api/runs/${encodeURIComponent(stoppedRunId)}/cancel`, {
+                        method: "POST",
+                        headers: apiHeaders(),
+                    });
+                } catch (error) {
+                    // The request may already be aborted; the local stop still works.
+                    console.warn("Could not notify backend about pipeline cancellation:", error);
+                }
+            }
+            clearRunBoundNodeCache();
+            writeLog("⏹ Đã dừng pipeline theo yêu cầu.", "warning");
+            canvas.draw(true, true);
+        }
+
         async function createPipelineRun(mode = "text") {
             if (!backendUrl || !isConnected) {
                 throw new Error("Backend is not connected");
             }
-            const response = await fetch(`${backendUrl}/api/runs`, {
+            const previousRunId = currentRunId;
+            if (previousRunId) {
+                try {
+                    const cleanupResponse = await pipelineFetch(
+                        `${backendUrl}/api/runs/${encodeURIComponent(previousRunId)}`,
+                        {
+                            method: "DELETE",
+                            headers: apiHeaders(),
+                        },
+                    );
+                    if (!cleanupResponse.ok && cleanupResponse.status !== 404) {
+                        const detail = await cleanupResponse.text();
+                        throw new Error(
+                            `Cannot delete previous pipeline run: ${cleanupResponse.status} - ${detail}`,
+                        );
+                    }
+                    writeLog(`Đã xóa dữ liệu run cũ ${previousRunId.slice(0, 8)}.`, "system");
+                } catch (error) {
+                    writeLog(`⚠️ Không thể xóa run cũ: ${error.message}`, "warning");
+                    throw error;
+                }
+            }
+            const response = await pipelineFetch(`${backendUrl}/api/runs`, {
                 method: "POST",
                 headers: apiHeaders(),
             });
@@ -3218,6 +3353,8 @@
 
         function clearRunBoundNodeCache() {
             graph?._nodes?.forEach((node) => {
+                delete node._lastPrompt;
+                delete node._lastGraph;
                 delete node._lastRequestKey;
                 delete node._lastSegmentationKey;
                 delete node._lastCrops;
@@ -3238,6 +3375,7 @@
                 } else if (node.type === "datn/scene_combiner") {
                     node.properties.sceneUrl = "";
                     node.properties.zipUrl = "";
+                    node.properties.models = [];
                     document.getElementById(`viewer-${node.id}`)?.remove();
                 }
             });
@@ -3452,6 +3590,34 @@
             setViewportWidth(currentWidth + (event.key === "ArrowLeft" ? 24 : -24));
         });
 
+        function setModelViewerAutoRotate(viewer, enabled) {
+            if (!viewer) return;
+            const shouldRotate = Boolean(enabled);
+
+            // Use the model-viewer property as the source of truth. Toggling
+            // only the HTML attribute can stop the first animation but fail to
+            // restart it when the attribute is added again.
+            viewer.autoRotate = shouldRotate;
+            if (shouldRotate) {
+                viewer.setAttribute("auto-rotate", "");
+            } else {
+                viewer.removeAttribute("auto-rotate");
+            }
+        }
+
+        function toggleModelViewerAutoRotate(viewer, button, labels = {}) {
+            if (!viewer) return;
+            const isRotating = Boolean(viewer.autoRotate || viewer.hasAttribute("auto-rotate"));
+            const nextState = !isRotating;
+            setModelViewerAutoRotate(viewer, nextState);
+            if (button) {
+                button.innerHTML = nextState
+                    ? `<i data-lucide="pause"></i>${labels.stop || "Stop rotate"}`
+                    : `<i data-lucide="rotate-3d"></i>${labels.start || "Auto rotate"}`;
+                window.lucide?.createIcons();
+            }
+        }
+
         window.addEventListener("resize", () => {
             if (window.innerWidth <= 860 || !viewportPanel) return;
             const currentWidth = viewportPanel.getBoundingClientRect().width;
@@ -3460,14 +3626,7 @@
 
         document.getElementById("btn-view-spin")?.addEventListener("click", (event) => {
             if (!spatialViewer) return;
-            if (spatialViewer.hasAttribute("auto-rotate")) {
-                spatialViewer.removeAttribute("auto-rotate");
-                event.currentTarget.innerHTML = '<i data-lucide="rotate-3d"></i>Auto rotate';
-            } else {
-                spatialViewer.setAttribute("auto-rotate", "");
-                event.currentTarget.innerHTML = '<i data-lucide="pause"></i>Stop rotate';
-            }
-            window.lucide?.createIcons();
+            toggleModelViewerAutoRotate(spatialViewer, event.currentTarget);
         });
         document.getElementById("btn-view-reset")?.addEventListener("click", () => {
             if (!spatialViewer) return;
@@ -3742,24 +3901,6 @@
         canvas.show_stats = false; // Hide default performance statistics
         canvas.background_image = null; // Background handled by CSS grid pattern
 
-        // LiteGraph 0.7.10 hides widget labels at scale <= 0.5. Preserve the
-        // real canvas transform, but expose a readable scale only while its
-        // widget painter decides whether text should be drawn.
-        const originalDrawNodeWidgets = LGraphCanvas.prototype.drawNodeWidgets;
-        LGraphCanvas.prototype.drawNodeWidgets = function () {
-            const actualScale = this.ds?.scale;
-            if (Number.isFinite(actualScale) && actualScale <= 0.5) {
-                this.ds.scale = 0.501;
-            }
-            try {
-                return originalDrawNodeWidgets.apply(this, arguments);
-            } finally {
-                if (Number.isFinite(actualScale)) {
-                    this.ds.scale = actualScale;
-                }
-            }
-        };
-
         // Keep custom DOM overlays aligned with LiteGraph after zooming,
         // resizing, and browser scaling.
         function graphToContainerPosition(point) {
@@ -3816,7 +3957,7 @@
             const parent = document.getElementById("canvas-container");
             if (!parent) return;
             const previousScale = canvas.ds.scale;
-            const nextScale = Math.max(.22, Math.min(1.35, previousScale * factor));
+            const nextScale = Math.max(.40, Math.min(1.35, previousScale * factor));
             const centerX = parent.clientWidth / 2;
             const centerY = parent.clientHeight / 2;
             const ratio = nextScale / previousScale;
@@ -3826,10 +3967,13 @@
             canvas.draw(true, true);
         }
 
-        // Never permanently collapse nodes just because the user zoomed out.
-        // LiteGraph's collapsed state hides the actual node content and used
-        // to make zooming back in look like the cards had disappeared.
-        const GRAPH_COMPACT_SCALE = 0.34;
+        function keepDomNodeElementReadable(element, scale) {
+            if (!element) return;
+            const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+            element.style.transformOrigin = "top left";
+            element.style.transform = `scale(${1 / safeScale})`;
+        }
+
         function syncGraphZoomDensity() {
             (graph._nodes || []).forEach((node) => {
                 if (node._spatialAutoCollapsed) {
@@ -3972,7 +4116,7 @@
                 await createPipelineRun("image");
                 clearRunBoundNodeCache();
                 formData.append("run_id", currentRunId);
-                const response = await fetch(`${backendUrl}/api/upload_image`, {
+                const response = await pipelineFetch(`${backendUrl}/api/upload_image`, {
                     method: "POST",
                     headers: apiHeaders(),
                     body: formData,
@@ -4035,6 +4179,8 @@
         LiteGraph.NODE_SUBTEXT_SIZE = 10;
         LiteGraph.NODE_TITLE_FONT = "600 12px Inter, 'Segoe UI', sans-serif";
         LiteGraph.NODE_LABEL_FONT = "normal 11px Inter, 'Segoe UI', sans-serif";
+        canvas.title_text_font = "600 13px Inter, 'Segoe UI', sans-serif";
+        canvas.inner_text_font = "11px Inter, 'Segoe UI', sans-serif";
 
         // ComfyUI wire colors by slot type
         LGraphCanvas.link_type_colors = {
@@ -4183,73 +4329,31 @@
             const screenPos = graphToContainerPosition([this.pos[0] + 15, this.pos[1] + 45]);
             const x = screenPos[0];
             const y = screenPos[1];
-            const w = (this.size[0] - 30) * scale;
-            const h = (this.size[1] - 60) * scale;
+            const w = Math.max(110, (this.size[0] - 30) * scale);
+            const h = Math.max(56, (this.size[1] - 60) * scale);
 
             textarea.style.left = `${x}px`;
             textarea.style.top = `${y}px`;
             textarea.style.width = `${w}px`;
             textarea.style.height = `${h}px`;
-            textarea.style.fontSize = `${Math.max(10, Math.min(14, 13 * scale))}px`;
-            textarea.style.padding = `${Math.max(4, Math.min(9, 9 * scale))}px`;
+            textarea.style.fontSize = `${Math.max(10, Math.min(13, 13 * scale))}px`;
+            textarea.style.padding = `${Math.max(5, Math.min(9, 9 * scale))}px`;
             textarea.style.lineHeight = "1.35";
+            // The prompt editor must stay inside its node. Do not apply the
+            // inverse zoom transform used by the read-only 3D viewers.
+            textarea.style.transformOrigin = "top left";
+            textarea.style.transform = "none";
 
-            if (this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE) {
+            if (this.flags?.collapsed) {
                 textarea.style.display = "none";
             } else {
                 textarea.style.display = "block";
             }
         };
 
-        NodePrompt.prototype.onDrawForeground = function (ctx) {
-            if (canvas.ds.scale >= GRAPH_COMPACT_SCALE) return;
-
-            const prompt = this.properties.prompt || "";
-            const x = 15;
-            const y = 45;
-            const width = this.size[0] - 30;
-            const height = this.size[1] - 60;
-
-            ctx.save();
-            ctx.fillStyle = "#161719";
-            ctx.strokeStyle = "#3b3d41";
-            ctx.lineWidth = 1;
-            ctx.fillRect(x, y, width, height);
-            ctx.strokeRect(x, y, width, height);
-
-            ctx.beginPath();
-            ctx.rect(x + 6, y + 5, width - 12, height - 10);
-            ctx.clip();
-
-            ctx.fillStyle = "#e7e7e7";
-            ctx.font = "12px Inter, 'Segoe UI', sans-serif";
-
-            const words = prompt.split(/\s+/);
-            const lines = [];
-            let line = "";
-
-            for (const word of words) {
-                const candidate = line ? `${line} ${word}` : word;
-                if (ctx.measureText(candidate).width > width - 20) {
-                    if (line) lines.push(line);
-                    line = word;
-                } else {
-                    line = candidate;
-                }
-            }
-
-            if (line) lines.push(line);
-
-            lines.slice(0, 4).forEach((text, index) => {
-                ctx.fillText(text, x + 10, y + 20 + index * 16);
-            });
-
-            if (lines.length > 4) {
-                ctx.fillText("…", x + 10, y + height - 8);
-            }
-
-            ctx.restore();
-        };
+        // The prompt is rendered by the real textarea at every zoom level.
+        // Do not replace it with a shortened canvas-only preview.
+        NodePrompt.prototype.onDrawForeground = function () {};
 
         NodePrompt.prototype.onRemoved = function () {
             const textareaId = `prompt-input-${this.id}`;
@@ -4294,7 +4398,7 @@
             writeLog("Gửi prompt phân tích quan hệ cú pháp không gian (Scene Graph)...", "system");
 
             try {
-                const res = await fetch(`${backendUrl}/api/parse_scene_graph`, {
+            const res = await pipelineFetch(`${backendUrl}/api/parse_scene_graph`, {
                     method: "POST",
                     headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({ text: inputPrompt })
@@ -4314,12 +4418,7 @@
             }
         };
         NodeSceneGraph.prototype.onDrawForeground = function (ctx) {
-            if (!this.properties.graphData) {
-                ctx.fillStyle = "#52525b";
-                ctx.font = "italic 13px 'Outfit'";
-                ctx.fillText("Chờ dữ liệu prompt...", 20, 60);
-                return;
-            }
+            if (!this.properties.graphData) return;
 
             ctx.fillStyle = "#818cf8";
             ctx.font = "bold 13px 'Outfit'";
@@ -4382,7 +4481,7 @@
             writeLog("Tính toán bố cục lưới Bounding Box 2D...", "system");
 
             try {
-                const res = await fetch(`${backendUrl}/api/generate_layout`, {
+                const res = await pipelineFetch(`${backendUrl}/api/generate_layout`, {
                     method: "POST",
                     headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify(graphData)
@@ -4402,12 +4501,7 @@
             }
         };
         NodeLayout2D.prototype.onDrawForeground = function (ctx) {
-            if (!this.properties.layoutData) {
-                ctx.fillStyle = "#52525b";
-                ctx.font = "italic 13px 'Outfit'";
-                ctx.fillText("Chờ cấu trúc Graph...", 20, 60);
-                return;
-            }
+            if (!this.properties.layoutData) return;
 
             const boxes = this.properties.layoutData.layout || {};
 
@@ -4501,7 +4595,7 @@
             this._lastPrompt = prompt;
             writeLog("Đang tối ưu prompt bằng Gemini 3.1 Flash-Lite...", "system");
 
-            const res = await fetch(`${backendUrl}/api/optimize_prompt`, {
+            const res = await pipelineFetch(`${backendUrl}/api/optimize_prompt`, {
                 method: "POST",
                 headers: apiHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({ prompt })
@@ -4523,12 +4617,14 @@
             this.setDirtyCanvas(true, true);
         };
         NodePromptOptimizer.prototype.onDrawForeground = function (ctx) {
+            if (!this.properties.optimizedPrompt) return;
             ctx.save();
             ctx.fillStyle = "#d7e3ff";
-            ctx.font = "11px Inter, 'Segoe UI', sans-serif";
+            const zoom = Math.max(getCanvasRenderScale(), .40);
+            const textFont = Math.max(12, 11 / zoom);
+            ctx.font = `${textFont}px Inter, 'Segoe UI', sans-serif`;
 
-            const text = this.properties.optimizedPrompt ||
-                "Chờ tối ưu prompt...";
+            const text = this.properties.optimizedPrompt;
             const maxWidth = this.size[0] - 30;
             const lines = [];
             let line = "";
@@ -4544,8 +4640,9 @@
             }
             if (line) lines.push(line);
 
+            const lineHeight = Math.max(16, 15 / zoom);
             lines.slice(0, 7).forEach((item, index) => {
-                ctx.fillText(item, 15, 72 + index * 16);
+                ctx.fillText(item, 15, 72 + index * lineHeight);
             });
 
             ctx.restore();
@@ -4720,7 +4817,7 @@
                     "system"
                 );
 
-                const res = await fetch(`${backendUrl}/api/generate_image`, {
+                const res = await pipelineFetch(`${backendUrl}/api/generate_image`, {
                     method: "POST",
                     headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({
@@ -4780,7 +4877,7 @@
             this._lastRequestKey = requestKey;
             writeLog("Chạy mô hình khuếch tán SD3.5 mặc định...", "system");
 
-            const res = await fetch(`${backendUrl}/api/generate_image`, {
+            const res = await pipelineFetch(`${backendUrl}/api/generate_image`, {
                 method: "POST",
                 headers: apiHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify({
@@ -4817,12 +4914,7 @@
 
         NodeSDXLGen.prototype.onDrawBackground = function (ctx) {
             if (this.flags?.collapsed) return;
-            if (!this.properties.imageUrl) {
-                ctx.fillStyle = "#52525b";
-                ctx.font = "italic 13px 'Outfit'";
-                ctx.fillText("Chờ xử lý pipeline...", 20, 95);
-                return;
-            }
+            if (!this.properties.imageUrl) return;
 
             if (this._previewRequestedUrl !== this.properties.imageUrl) {
                 this.loadPreviewImage(this.properties.imageUrl);
@@ -4976,7 +5068,7 @@
             writeLog("Chạy GroundingDINO nhận diện & SAM2 cắt tách nền vật thể...", "system");
 
             try {
-                const res = await fetch(`${backendUrl}/api/run_sam2`, {
+                const res = await pipelineFetch(`${backendUrl}/api/run_sam2`, {
                     method: "POST",
                     headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({
@@ -5019,19 +5111,16 @@
                     throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
-                writeLog(`❌ Lỗi Grounded-SAM2: ${e.message}`, "error");
+                if (!isPipelineStopError(e)) {
+                    writeLog(`❌ Lỗi Grounded-SAM2: ${e.message}`, "error");
+                }
                 throw e;
             }
         };
         NodeGroundedSAM2.prototype.onDrawBackground = function (ctx) {
             if (this.flags?.collapsed) return;
             const imageUrl = activeUploadedImageUrl() || this.getInputData(0);
-            if (!imageUrl) {
-                ctx.fillStyle = "#52525b";
-                ctx.font = "italic 13px 'Outfit'";
-                ctx.fillText("Chờ nhận diện ảnh...", 20, 80);
-                return;
-            }
+            if (!imageUrl) return;
 
             // 1. Draw input image (cached)
             let previewUrl = imageUrl;
@@ -5082,10 +5171,6 @@
                     const score = crop.mask_score ? Math.round(crop.mask_score * 100) : 100;
                     ctx.fillText(`Conf: ${conf}% | Mask: ${score}%`, 242, y + 16);
                 });
-            } else {
-                ctx.fillStyle = "#52525b";
-                ctx.font = "italic 11px 'Outfit'";
-                ctx.fillText("(Chờ kết quả GroundingDINO)", 230, 115);
             }
 
             // 4. Render thumbnails of the crops at the bottom
@@ -5124,10 +5209,6 @@
                         ctx.drawImage(img, tx, 320, 80, 80);
                     } catch (e) {}
                 });
-            } else {
-                ctx.fillStyle = "#52525b";
-                ctx.font = "italic 11px 'Outfit'";
-                ctx.fillText("Chờ xử lý SAM2 segment...", 15, 335);
             }
         };
         LiteGraph.registerNodeType("datn/grounded_sam2", NodeGroundedSAM2);
@@ -5187,7 +5268,7 @@
             writeLog("Chạy khuếch tán 3D TRELLIS Image-to-3D (Mất khoảng 2-3 phút, vui lòng đợi)...", "system");
 
             try {
-                const res = await fetch(`${backendUrl}/api/generate_3d`, {
+                const res = await pipelineFetch(`${backendUrl}/api/generate_3d`, {
                     method: "POST",
                     headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({ run_id: currentRunId, crops: cropsData })
@@ -5202,9 +5283,9 @@
                         let finished = false;
 
                         for (let attempt = 0; attempt < 240; attempt++) {
-                            await new Promise(resolve => setTimeout(resolve, 5000));
+                            await waitForPipeline(5000);
 
-                            const statusRes = await fetch(
+                            const statusRes = await pipelineFetch(
                                 `${backendUrl}/api/generate_3d/status/${jobId}`,
                                 {
                                     headers: apiHeaders()
@@ -5263,17 +5344,14 @@
                     throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
-                writeLog(`❌ Lỗi chạy TRELLIS: ${e.message}`, "error");
+                if (!isPipelineStopError(e)) {
+                    writeLog(`❌ Lỗi chạy TRELLIS: ${e.message}`, "error");
+                }
                 throw e;
             }
         };
         NodeTrellis3D.prototype.onDrawForeground = function (ctx) {
-            if (!this.properties.models || this.properties.models.length === 0) {
-                ctx.fillStyle = "#52525b";
-                ctx.font = "italic 13px 'Outfit'";
-                ctx.fillText("Chờ xử lý mô hình 3D...", 20, 60);
-                return;
-            }
+            if (!this.properties.models || this.properties.models.length === 0) return;
 
             ctx.fillStyle = "#818cf8";
             ctx.font = "bold 13px 'Outfit'";
@@ -5337,13 +5415,10 @@
             const modelViewer = viewer.querySelector("model-viewer");
             viewer.querySelector('[data-action="spin"]').onclick = (event) => {
                 event.stopPropagation();
-                if (modelViewer.hasAttribute("auto-rotate")) {
-                    modelViewer.removeAttribute("auto-rotate");
-                    event.currentTarget.innerText = "Auto Spin";
-                } else {
-                    modelViewer.setAttribute("auto-rotate", "");
-                    event.currentTarget.innerText = "Stop Spin";
-                }
+                toggleModelViewerAutoRotate(modelViewer, event.currentTarget, {
+                    stop: "Stop Spin",
+                    start: "Auto Spin",
+                });
             };
             viewer.querySelector('[data-action="reset"]').onclick = (event) => {
                 event.stopPropagation();
@@ -5364,23 +5439,23 @@
         NodeTrellis3D.prototype.position3DViewer = function () {
             const viewer = document.getElementById(`trellis-viewer-${this.id}`);
             if (!viewer) return;
-            const scale = canvas.ds.scale || 1;
-            const uiScale = Math.max(.62, Math.min(1, scale));
+            const scale = getCanvasRenderScale();
             const screenPos = graphToContainerPosition([this.pos[0] + 10, this.pos[1] + 72]);
             viewer.style.left = `${screenPos[0]}px`;
             viewer.style.top = `${screenPos[1]}px`;
             viewer.style.width = `${Math.max(92, (this.size[0] - 20) * scale)}px`;
             viewer.style.height = `${Math.max(72, (this.size[1] - 84) * scale)}px`;
-            viewer.style.setProperty("--viewer-label-size", `${Math.max(7, 11 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-font-size", `${Math.max(7, 10 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-gap", `${Math.max(2, 5 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-bottom", `${Math.max(3, 10 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-pad-y", `${Math.max(3, 5 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-pad-x", `${Math.max(4, 8 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-button-pad-x", `${Math.max(3, 5 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-radius", `${Math.max(8, 16 * uiScale)}px`);
-            viewer.dataset.compact = scale < .60 ? "true" : "false";
-            viewer.style.display = this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE ? "none" : "block";
+            viewer.style.setProperty("--viewer-label-size", "11px");
+            viewer.style.setProperty("--viewer-font-size", "10px");
+            viewer.style.setProperty("--viewer-gap", "5px");
+            viewer.style.setProperty("--viewer-bottom", "10px");
+            viewer.style.setProperty("--viewer-pad-y", "5px");
+            viewer.style.setProperty("--viewer-pad-x", "8px");
+            viewer.style.setProperty("--viewer-button-pad-x", "5px");
+            viewer.style.setProperty("--viewer-radius", "16px");
+            viewer.dataset.compact = "false";
+            keepDomNodeElementReadable(viewer, scale);
+            viewer.style.display = this.flags?.collapsed ? "none" : "block";
         };
 
         LiteGraph.registerNodeType("datn/trellis_3d", NodeTrellis3D);
@@ -5440,7 +5515,7 @@
             writeLog("Trimesh đang căn chỉnh tọa độ và đóng gói file Scene 3D...", "system");
 
             try {
-                const res = await fetch(`${backendUrl}/api/combine_scene`, {
+                const res = await pipelineFetch(`${backendUrl}/api/combine_scene`, {
                     method: "POST",
                     headers: apiHeaders({ "Content-Type": "application/json" }),
                     body: JSON.stringify({
@@ -5468,6 +5543,9 @@
                     throw new Error(`API error: ${res.status} - ${errText}`);
                 }
             } catch (e) {
+                if (isPipelineStopError(e)) {
+                    throw e;
+                }
                 this.properties.status = "Scene failed";
                 this.properties.error = e.message || String(e);
                 writeLog(`❌ Lỗi ghép cảnh: ${e.message}`, "error");
@@ -5476,26 +5554,30 @@
         };
 
         NodeSceneCombiner.prototype.onDrawForeground = function (ctx) {
-            const scale = canvas.ds.scale || 1;
+            const scale = getCanvasRenderScale();
+            const zoom = Math.max(scale, .40);
             const status = this.properties.status || "Waiting for models...";
             const hasScene = Boolean(this.properties.sceneUrl);
-            const color = hasScene ? "#34d399" : (this.properties.error ? "#f09a9f" : "#a1a1aa");
+            const hasError = Boolean(this.properties.error);
+            const hasModels = Number(this.properties.modelCount || 0) > 0;
+            if (!hasScene && !hasError && !hasModels) return;
+            const color = hasScene ? "#34d399" : (hasError ? "#f09a9f" : "#a1a1aa");
 
             ctx.fillStyle = color;
-            ctx.font = `bold ${Math.max(11, 13 * scale)}px Outfit`;
-            ctx.fillText(hasScene ? "✓ 3D scene ready" : status, 18, 174);
+            ctx.font = `600 ${Math.max(13, 11 / zoom)}px Inter, 'Segoe UI', sans-serif`;
+            ctx.fillText(hasScene ? "✓ 3D scene ready" : (hasError ? "Scene failed" : status), 18, 174);
 
             ctx.fillStyle = "#a1a1aa";
-            ctx.font = `${Math.max(10, 11 * scale)}px Outfit`;
+            ctx.font = `${Math.max(12, 10 / zoom)}px Inter, 'Segoe UI', sans-serif`;
             ctx.fillText(`Models: ${this.properties.modelCount || 0}`, 18, 196);
 
             if (hasScene) {
                 ctx.fillStyle = "#71717a";
-                ctx.font = `${Math.max(9, 10 * scale)}px Fira Code`;
+                ctx.font = `${Math.max(11, 9 / zoom)}px 'Fira Code', monospace`;
                 ctx.fillText("scene_combined.glb", 18, 218);
             } else if (this.properties.error) {
                 ctx.fillStyle = "#f09a9f";
-                ctx.font = `${Math.max(9, 10 * scale)}px Outfit`;
+                ctx.font = `${Math.max(11, 9 / zoom)}px Inter, 'Segoe UI', sans-serif`;
                 ctx.fillText(String(this.properties.error).slice(0, 58), 18, 218);
             }
         };
@@ -5563,13 +5645,10 @@
 
                     viewer.querySelector(`#btn-spin-${this.id}`).onclick = (e) => {
                         e.stopPropagation();
-                        if (modelViewer.hasAttribute("auto-rotate")) {
-                            modelViewer.removeAttribute("auto-rotate");
-                            e.currentTarget.innerText = "Auto Spin";
-                        } else {
-                            modelViewer.setAttribute("auto-rotate", "");
-                            e.currentTarget.innerText = "Stop Spin";
-                        }
+                        toggleModelViewerAutoRotate(modelViewer, e.currentTarget, {
+                            stop: "Stop Spin",
+                            start: "Auto Spin",
+                        });
                     };
 
                     viewer.querySelector(`#btn-reset-${this.id}`).onclick = (e) => {
@@ -5666,28 +5745,78 @@
             viewer.style.top = `${y}px`;
             viewer.style.width = `${w}px`;
             viewer.style.height = `${h}px`;
-            const uiScale = Math.max(.62, Math.min(1, scale));
-            viewer.style.setProperty("--viewer-label-size", `${Math.max(7, 11 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-font-size", `${Math.max(7, 10 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-gap", `${Math.max(2, 5 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-bottom", `${Math.max(3, 10 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-pad-y", `${Math.max(3, 5 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-pad-x", `${Math.max(4, 8 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-button-pad-x", `${Math.max(3, 5 * uiScale)}px`);
-            viewer.style.setProperty("--viewer-radius", `${Math.max(8, 16 * uiScale)}px`);
-            viewer.dataset.compact = scale < .60 ? "true" : "false";
+            viewer.style.setProperty("--viewer-label-size", "11px");
+            viewer.style.setProperty("--viewer-font-size", "10px");
+            viewer.style.setProperty("--viewer-gap", "5px");
+            viewer.style.setProperty("--viewer-bottom", "10px");
+            viewer.style.setProperty("--viewer-pad-y", "5px");
+            viewer.style.setProperty("--viewer-pad-x", "8px");
+            viewer.style.setProperty("--viewer-button-pad-x", "5px");
+            viewer.style.setProperty("--viewer-radius", "16px");
+            viewer.dataset.compact = "false";
+            keepDomNodeElementReadable(viewer, scale);
 
-            // Prevent rendering when zoomed out excessively to optimize drawing performance
-            if (this.flags?.collapsed || scale < GRAPH_COMPACT_SCALE) {
+            if (this.flags?.collapsed) {
                 viewer.style.display = "none";
             } else {
                 viewer.style.display = "block";
             }
         };
 
+        // Keep serialized/legacy nodes on the same readable title as the
+        // registered node type. Older workflow files may persist `title` as
+        // the internal type name (for example `scene_graph`).
+        const WORKFLOW_NODE_TITLES = Object.freeze({
+            "datn/image_input": "🖼️ Input Image",
+            "datn/input_prompt": "✏️ Input Text Prompt",
+            "datn/scene_graph": "🧠 Scene Graph Parser",
+            "datn/layout_2d": "📐 2D Layout Generator",
+            "datn/prompt_optimizer": "Gemini 3.1 Flash-Lite Prompt Optimizer",
+            "datn/sdxl_gen": "🎨 SD3.5 Image Generator",
+            "datn/grounded_sam2": "✂️ Grounded-SAM2 Segment",
+            "datn/trellis_3d": "🧊 TRELLIS 3D Generator",
+            "datn/scene_combiner": "🌐 3D Scene Combiner",
+        });
+
+        function normalizeWorkflowNodeTitles() {
+            (graph._nodes || []).forEach((node) => {
+                const title = WORKFLOW_NODE_TITLES[node.type];
+                if (title) node.title = title;
+            });
+        }
+
+        function getCanvasRenderScale() {
+            return Number.isFinite(canvas._trueRenderScale)
+                ? canvas._trueRenderScale
+                : (canvas.ds.scale || 1);
+        }
+
+        // LiteGraph hides node titles, slot labels and widget text in its
+        // low-quality path below 60% zoom. Keep that optimization local to
+        // geometry while still rendering the card text.
+        const originalDrawNode = LGraphCanvas.prototype.drawNode;
+        LGraphCanvas.prototype.drawNode = function () {
+            const actualScale = this.ds?.scale;
+            if (Number.isFinite(actualScale) && actualScale < .6) {
+                this._trueRenderScale = actualScale;
+                this.ds.scale = .6;
+                try {
+                    return originalDrawNode.apply(this, arguments);
+                } finally {
+                    this.ds.scale = actualScale;
+                    this._trueRenderScale = null;
+                }
+            }
+            return originalDrawNode.apply(this, arguments);
+        };
+
         // Auto align overlays when zooming or dragging canvas
         const originalDraw = LGraphCanvas.prototype.draw;
         LGraphCanvas.prototype.draw = function () {
+            normalizeWorkflowNodeTitles();
+            if (Number.isFinite(this.ds?.scale)) {
+                this.ds.scale = Math.max(.40, Math.min(1.35, this.ds.scale));
+            }
             syncGraphZoomDensity();
             originalDraw.apply(this, arguments);
 
@@ -5867,21 +5996,28 @@
 
         let isExecuting = false;
         document.getElementById("btn-run").onclick = async () => {
-            if (isExecuting) return;
+            if (isExecuting) {
+                void stopPipelineExecution();
+                return;
+            }
             if (!isConnected) {
                 writeLog("Vui lòng kết nối tới server GPU Kaggle bằng Ngrok trước!", "warning");
                 return;
             }
             
             isExecuting = true;
+            pipelineStopRequested = false;
+            activePipelineController = new AbortController();
             const btnRun = document.getElementById("btn-run");
             const originalHTML = btnRun.innerHTML;
             resetPipelineProgress();
             document.getElementById("scene-meta-status").innerText = "RUNNING";
-            btnRun.disabled = true;
-            btnRun.style.opacity = "0.6";
-            btnRun.style.cursor = "not-allowed";
-            btnRun.innerHTML = `<span class="icon-label"><i data-lucide="loader-circle"></i><span class="button-copy">Running</span></span>`;
+            btnRun.disabled = false;
+            btnRun.style.opacity = "1";
+            btnRun.style.cursor = "pointer";
+            btnRun.title = "Stop pipeline";
+            btnRun.setAttribute("aria-busy", "true");
+            btnRun.innerHTML = `<span class="icon-label"><i data-lucide="square"></i><span class="button-copy">Stop</span></span>`;
             window.lucide?.createIcons();
             
             writeLog("🏁 Bắt đầu thực thi toàn bộ quy trình (Queue Prompt)...", "system");
@@ -5903,11 +6039,18 @@
                 canvas.draw(true, true);
                 writeLog(`⏳ Đang thực thi: ${nodeName}...`, "system");
                 try {
+                    assertPipelineActive();
                     await node.onExecute();
+                    assertPipelineActive();
                     setPipelineStage(stage, "done");
                     node.boxcolor = "#394554";
                     canvas.draw(true, true);
                 } catch (err) {
+                    if (isPipelineStopError(err)) {
+                        node.boxcolor = "#394554";
+                        canvas.draw(true, true);
+                        throw err;
+                    }
                     setPipelineStage(stage, "error");
                     node.boxcolor = "#e56f76";
                     canvas.draw(true, true);
@@ -5956,14 +6099,22 @@
                 writeLog("🎉 Thực thi toàn bộ quy trình pipeline THÀNH CÔNG!", "success");
                 document.getElementById("scene-meta-status").innerText = "READY";
             } catch (err) {
-                writeLog("❌ Quy trình dừng lại do lỗi: " + err.message, "error");
-                document.getElementById("scene-meta-status").innerText = "ERROR";
+                if (isPipelineStopError(err)) {
+                    document.getElementById("scene-meta-status").innerText = "IDLE";
+                } else {
+                    writeLog("❌ Quy trình dừng lại do lỗi: " + err.message, "error");
+                    document.getElementById("scene-meta-status").innerText = "ERROR";
+                }
             } finally {
                 isExecuting = false;
+                activePipelineController = null;
+                pipelineStopRequested = false;
                 btnRun.disabled = false;
                 btnRun.style.opacity = "1";
                 btnRun.style.cursor = "pointer";
+                btnRun.removeAttribute("aria-busy");
                 btnRun.innerHTML = originalHTML;
+                btnRun.title = inputMode === "image" ? "Run image workflow" : "Run text workflow";
                 window.lucide?.createIcons();
             }
         };
@@ -5996,12 +6147,16 @@
             if (endIndex < 0) return;
 
             isExecuting = true;
+            pipelineStopRequested = false;
+            activePipelineController = new AbortController();
             const btnRun = document.getElementById("btn-run");
             const originalHTML = btnRun.innerHTML;
 
-            btnRun.disabled = true;
-            btnRun.innerHTML = "⏳ Running...";
-
+            btnRun.disabled = false;
+            btnRun.title = "Stop pipeline";
+            btnRun.setAttribute("aria-busy", "true");
+            btnRun.innerHTML = `<span class="icon-label"><i data-lucide="square"></i><span class="button-copy">Stop</span></span>`;
+            window.lucide?.createIcons();
             try {
                 if (inputMode === "text") {
                     await createPipelineRun("text");
@@ -6015,23 +6170,31 @@
                     throw new Error("Choose an input image before running the image workflow");
                 }
                 for (let i = 0; i <= endIndex; i++) {
+                    assertPipelineActive();
                     const [node, name] = nodes[i];
                     if (!node) continue;
                     node.boxcolor = "#00ff00";
                     canvas.draw(true, true);
                     writeLog(`⏳ Đang thực thi: ${name}...`, "system");
                     await node.onExecute();
+                    assertPipelineActive();
                     node.boxcolor = "rgba(255, 255, 255, 0.1)";
                     canvas.draw(true, true);
                 }
 
                 writeLog(`✅ Hoàn tất đến node: ${nodes[endIndex][1]}.`, "success");
             } catch (error) {
-                writeLog(`❌ Quy trình dừng lại do lỗi: ${error.message}`, "error");
+                if (!isPipelineStopError(error)) {
+                    writeLog(`❌ Quy trình dừng lại do lỗi: ${error.message}`, "error");
+                }
             } finally {
                 isExecuting = false;
+                activePipelineController = null;
+                pipelineStopRequested = false;
                 btnRun.disabled = false;
+                btnRun.removeAttribute("aria-busy");
                 btnRun.innerHTML = originalHTML;
+                btnRun.title = inputMode === "image" ? "Run image workflow" : "Run text workflow";
                 canvas.draw(true, true);
             }
         }
