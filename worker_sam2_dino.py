@@ -73,6 +73,11 @@ SAM_BOX_PADDING_MAX = int(os.environ.get("SAM_BOX_PADDING_MAX", "96"))
 SAM_ALPHA_BLUR_SIGMA = float(
     os.environ.get("SAM_ALPHA_BLUR_SIGMA", "0.35")
 )
+SAM_POINT_REFINEMENT = os.environ.get("SAM_POINT_REFINEMENT", "1").lower() not in {
+    "0",
+    "false",
+    "no",
+}
 
 
 class SegmentRequest(BaseModel):
@@ -366,37 +371,39 @@ def _mask_extent(mask: np.ndarray) -> tuple[int, int, int, int] | None:
     )
 
 
-def _select_complete_mask(masks, scores, box: list[int]) -> int:
-    """Prefer a complete object mask over a high-score partial component."""
+def _mask_completeness(mask, sam_score: float, box: list[int]) -> float:
+    """Rank SAM candidates by score and object extent, not score alone."""
     x1, y1, x2, y2 = [int(value) for value in box]
     box_width = max(1, x2 - x1)
     box_height = max(1, y2 - y1)
     box_area = box_width * box_height
-    ranked = []
+    support = mask.astype(bool)
+    extent = _mask_extent(support)
+    if extent is None:
+        return -1.0
 
-    for index, candidate in enumerate(masks):
-        support = candidate.astype(bool)
-        extent = _mask_extent(support)
-        if extent is None:
-            ranked.append((-1.0, index))
-            continue
+    mx1, my1, mx2, my2 = extent
+    width_coverage = min(1.0, (mx2 - mx1) / box_width)
+    height_coverage = min(1.0, (my2 - my1) / box_height)
+    area_ratio = float(support.sum() / max(1, box_area))
+    plausible_area = 1.0 if 0.035 <= area_ratio <= 1.05 else 0.0
 
-        mx1, my1, mx2, my2 = extent
-        width_coverage = min(1.0, (mx2 - mx1) / box_width)
-        height_coverage = min(1.0, (my2 - my1) / box_height)
-        area_ratio = float(support.sum() / max(1, box_area))
-        plausible_area = 1.0 if 0.035 <= area_ratio <= 1.05 else 0.0
-        sam_score = float(scores[index])
+    # Thin furniture often has a lower raw SAM score than a seat-only or
+    # tabletop-only mask. Extent coverage therefore carries more weight.
+    return (
+        float(sam_score)
+        + 0.42 * height_coverage
+        + 0.28 * width_coverage
+        + 0.08 * plausible_area
+    )
 
-        # Thin furniture often has a lower raw SAM score than a seat-only or
-        # tabletop-only mask. Extent coverage therefore carries more weight.
-        completeness = (
-            sam_score
-            + 0.42 * height_coverage
-            + 0.28 * width_coverage
-            + 0.08 * plausible_area
-        )
-        ranked.append((completeness, index))
+
+def _select_complete_mask(masks, scores, box: list[int]) -> int:
+    """Prefer a complete object mask over a high-score partial component."""
+    ranked = [
+        (_mask_completeness(candidate, float(scores[index]), box), index)
+        for index, candidate in enumerate(masks)
+    ]
 
     return max(ranked)[1]
 
@@ -500,18 +507,29 @@ def _matting_alpha(image: Image.Image, box: list[int]) -> np.ndarray | None:
 def _predict_refined_alpha(
     image: Image.Image,
     box: list[int],
+    label: str = "",
 ) -> tuple[np.ndarray, int, float, str]:
     """Predict SAM2 structure and optionally refine the boundary with matting."""
     width, height = image.size
     x1, y1, x2, y2 = [int(value) for value in box]
-    # GroundingDINO boxes are semantic proposals, not pixel-perfect masks.
-    # A small adaptive margin helps SAM2 recover thin legs and chair rails while
-    # the cap prevents the prompt box from absorbing a nearby object.
+    normalized_label = str(label).strip().lower()
+    # Tables need a tighter prompt box because the COCO scene often contains
+    # floor/wall regions close to the tabletop. Chairs and sofas keep a wider
+    # margin so SAM2 can recover thin legs, arms, and rails.
+    label_padding = {
+        "table": (0.035, 64),
+        "dining table": (0.035, 64),
+        "chair": (0.045, 88),
+        "dining chair": (0.045, 88),
+        "sofa": (0.05, 96),
+        "couch": (0.05, 96),
+    }.get(normalized_label, (SAM_BOX_PADDING_RATIO, SAM_BOX_PADDING_MAX))
+    padding_ratio, padding_max = label_padding
     padding = max(
         16,
         min(
-            SAM_BOX_PADDING_MAX,
-            int(max(width, height) * SAM_BOX_PADDING_RATIO),
+            padding_max,
+            int(max(width, height) * padding_ratio),
         ),
     )
     sam_box = np.array(
@@ -529,11 +547,60 @@ def _predict_refined_alpha(
         box=sam_box,
         multimask_output=True,
     )
-    sam_alpha, best_mask = _mask_alpha(masks, scores, [int(value) for value in sam_box])
+    sam_box_values = [int(value) for value in sam_box]
+    best_mask = _select_complete_mask(masks, scores, sam_box_values)
+    initial_quality = _mask_completeness(
+        masks[best_mask],
+        float(scores[best_mask]),
+        sam_box_values,
+    )
+
+    # A positive point at the deepest interior location helps SAM2 choose the
+    # whole object when the box-only candidates prefer a tabletop or seat.
+    # Keep the box-only result as a fallback when point refinement loses extent.
+    selected_masks = masks
+    selected_scores = scores
+    if SAM_POINT_REFINEMENT:
+        initial_support = masks[best_mask].astype(bool)
+        distance = ndimage.distance_transform_edt(initial_support)
+        if distance.size and float(distance.max()) > 0:
+            point_y, point_x = np.unravel_index(int(distance.argmax()), distance.shape)
+        else:
+            point_x = int((sam_box[0] + sam_box[2]) / 2)
+            point_y = int((sam_box[1] + sam_box[3]) / 2)
+        try:
+            refined_masks, refined_scores, _ = sam_predictor.predict(
+                point_coords=np.asarray([[point_x, point_y]], dtype=np.float32),
+                point_labels=np.asarray([1], dtype=np.int32),
+                box=sam_box,
+                multimask_output=True,
+            )
+            refined_best = _select_complete_mask(
+                refined_masks,
+                refined_scores,
+                sam_box_values,
+            )
+            refined_quality = _mask_completeness(
+                refined_masks[refined_best],
+                float(refined_scores[refined_best]),
+                sam_box_values,
+            )
+            if refined_quality >= initial_quality - 0.03:
+                selected_masks = refined_masks
+                selected_scores = refined_scores
+                best_mask = refined_best
+        except Exception as exc:
+            print(f"SAM2 point refinement skipped: {exc}", flush=True)
+
+    sam_alpha, best_mask = _mask_alpha(
+        selected_masks,
+        selected_scores,
+        sam_box_values,
+    )
     alpha = sam_alpha
     method = "sam2"
 
-    refined = _matting_alpha(image, [int(value) for value in sam_box])
+    refined = _matting_alpha(image, sam_box_values)
     if refined is not None:
         sam_support = sam_alpha >= 32
         refined_support = refined >= 32
@@ -564,7 +631,7 @@ def _predict_refined_alpha(
     # The detector box is a semantic guardrail: matting must not pull in a
     # neighboring chair/table even when the source image contains duplicates.
     allowed = np.zeros_like(alpha)
-    sx1, sy1, sx2, sy2 = [int(value) for value in sam_box]
+    sx1, sy1, sx2, sy2 = sam_box_values
     allowed[sy1:sy2, sx1:sx2] = 255
     alpha = _clean_alpha(alpha, [sx1, sy1, sx2, sy2])
     final_extent = _mask_extent(alpha >= 32)
@@ -711,6 +778,7 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
         alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
             source_image,
             [x1, y1, x2, y2],
+            label=label,
         )
         alpha_image = Image.fromarray(alpha)
         content_box = alpha_image.getbbox() or (x1, y1, x2, y2)
@@ -779,6 +847,7 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
         alpha, best, mask_score, segmentation_method = _predict_refined_alpha(
             image,
             box_values,
+            label=label,
         )
 
         rgba = image.convert("RGBA")
@@ -920,6 +989,7 @@ def _segment_uploaded(
             alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
                 source_image,
                 [x1, y1, x2, y2],
+                label=str(candidate.get("label", "object")),
             )
             rgba = source_image.convert("RGBA")
             rgba.putalpha(Image.fromarray(alpha))
@@ -1034,6 +1104,7 @@ def _segment_uploaded(
         alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
             source_image,
             [x1, y1, x2, y2],
+            label=label,
         )
         rgba = source_image.convert("RGBA")
         rgba.putalpha(Image.fromarray(alpha))

@@ -12,7 +12,11 @@ def load_mask_helpers():
         node
         for node in module.body
         if isinstance(node, ast.FunctionDef)
-        and node.name in {"_mask_extent", "_select_complete_mask"}
+        and node.name in {
+            "_mask_extent",
+            "_mask_completeness",
+            "_select_complete_mask",
+        }
     ]
     namespace = {"np": np}
     exec(compile(ast.Module(body=selected, type_ignores=[]), "mask_helpers", "exec"), namespace)
