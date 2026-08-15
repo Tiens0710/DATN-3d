@@ -3244,6 +3244,9 @@
         let activePipelineController = null;
         let pipelineStopRequested = false;
         let appApiKey = localStorage.getItem("datn-app-api-key") || "";
+        let heartbeatTimer = null;
+        let heartbeatInFlight = false;
+        let heartbeatFailureLogged = false;
         // Keep a local preview while the file is waiting for the backend.
         // The blob URL must never be sent to the Kaggle API.
         let uploadedPreviewUrl = "";
@@ -3262,6 +3265,84 @@
         function pipelineFetch(input, options = {}) {
             const signal = options.signal || activePipelineController?.signal;
             return fetch(input, signal ? { ...options, signal } : options);
+        }
+
+        function setConnectionOffline(reason = "Kaggle API không phản hồi") {
+            const wasConnected = isConnected;
+            isConnected = false;
+            document.getElementById("status-indicator")?.classList.remove("connected");
+            const label = document.getElementById("connection-label");
+            const detail = document.getElementById("connection-detail");
+            if (label) label.innerText = "Offline";
+            if (detail) detail.innerText = reason;
+
+            const connectButton = document.getElementById("btn-connect");
+            if (connectButton) {
+                connectButton.innerHTML =
+                    '<span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Connect</span></span>';
+                window.lucide?.createIcons();
+            }
+
+            if (wasConnected && !heartbeatFailureLogged) {
+                writeLog(
+                    `⚠️ ${reason}. Hãy kiểm tra hoặc khởi động lại cell FastAPI trên Kaggle rồi Connect lại.`,
+                    "warning"
+                );
+                heartbeatFailureLogged = true;
+            }
+        }
+
+        async function checkBackendHeartbeat() {
+            if (!backendUrl || heartbeatInFlight) return;
+
+            heartbeatInFlight = true;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000);
+            try {
+                const response = await fetch(`${backendUrl}/api/health?heartbeat=${Date.now()}`, {
+                    method: "GET",
+                    headers: apiHeaders(),
+                    cache: "no-store",
+                    signal: controller.signal,
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const data = await response.json();
+                if (data.ready === false) {
+                    throw new Error("Backend chưa sẵn sàng");
+                }
+
+                if (!isConnected) {
+                    isConnected = true;
+                    document.getElementById("status-indicator")?.classList.add("connected");
+                    document.getElementById("connection-label").innerText = "GPU ready";
+                    document.getElementById("btn-connect").innerHTML =
+                        '<span class="icon-label"><i data-lucide="check"></i><span class="button-copy">Connected</span></span>';
+                    window.lucide?.createIcons();
+                }
+                document.getElementById("connection-detail").innerText = data.version || "API online";
+                heartbeatFailureLogged = false;
+            } catch (error) {
+                setConnectionOffline(
+                    error.name === "AbortError" ? "Heartbeat timeout" : "Kaggle API disconnected"
+                );
+            } finally {
+                clearTimeout(timeout);
+                heartbeatInFlight = false;
+            }
+        }
+
+        function startBackendHeartbeat() {
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            heartbeatFailureLogged = false;
+            void checkBackendHeartbeat();
+            heartbeatTimer = setInterval(checkBackendHeartbeat, 3 * 60 * 1000);
+        }
+
+        function stopBackendHeartbeat() {
+            if (heartbeatTimer) clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+            heartbeatInFlight = false;
         }
 
         function assertPipelineActive() {
@@ -3814,6 +3895,7 @@
 
         // Test API connection
         document.getElementById("btn-connect").onclick = async () => {
+            stopBackendHeartbeat();
             let url = document.getElementById("ngrok-url").value.trim();
             if (!url) {
                 writeLog("Vui lòng nhập đường dẫn Ngrok!", "error");
@@ -3858,6 +3940,7 @@
                     document.getElementById("btn-connect").innerHTML =
                         '<span class="icon-label"><i data-lucide="check"></i><span class="button-copy">Connected</span></span>';
                     window.lucide?.createIcons();
+                    startBackendHeartbeat();
                     localStorage.setItem("datn-ngrok-url", url);
                     if (data.auth_enabled && !appApiKey) {
                         writeLog("Backend requires an API key. Enter it in Setup before running.", "warning");
@@ -3878,6 +3961,7 @@
                     );
                 }
             } catch (e) {
+                backendUrl = "";
                 isConnected = false;
                 localStorage.removeItem("datn-ngrok-url");
                 document.getElementById("status-indicator").classList.remove("connected");
