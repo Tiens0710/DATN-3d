@@ -3483,26 +3483,73 @@
                 delete node._lastCrops;
                 delete node._lastModels;
                 delete node._lastTrellisViewerUrl;
-                if (node.type === "datn/sdxl_gen") {
+                delete node._lastGLBUrl;
+                const clearOutput = (index) => node.setOutputData?.(index, null);
+
+                if (node.type === "datn/scene_graph") {
+                    node.properties.graphData = null;
+                    clearOutput(0);
+                } else if (node.type === "datn/layout_2d") {
+                    node.properties.layoutData = null;
+                    clearOutput(0);
+                } else if (node.type === "datn/prompt_optimizer") {
+                    node.properties.optimizedPrompt = "";
+                    clearOutput(0);
+                } else if (node.type === "datn/sdxl_gen") {
                     node.properties.imageUrl = "";
                     node.properties.objectImages = [];
+                    node.properties.optimizedPrompt = "";
                     node._imageObj = null;
+                    node._previewRequestedUrl = "";
+                    node._previewState = "";
+                    node._previewError = "";
+                    node._previewRequestToken = (node._previewRequestToken || 0) + 1;
+                    if (node._previewObjectUrl) {
+                        URL.revokeObjectURL(node._previewObjectUrl);
+                        node._previewObjectUrl = "";
+                    }
+                    clearOutput(0);
                 } else if (node.type === "datn/grounded_sam2") {
                     node.properties.crops = [];
                     node.properties.previewUrl = "";
                     node.properties.detectedLayout = {};
                     node._cropImages = [];
+                    node._inputImageObj = null;
+                    clearOutput(0);
+                    clearOutput(1);
                 } else if (node.type === "datn/trellis_3d") {
                     node.properties.models = [];
-                    document.getElementById(`trellis-viewer-${node.id}`)?.remove();
+                    node.properties.viewerModelIndex = 0;
+                    const trellisViewer = document.getElementById(`trellis-viewer-${node.id}`);
+                    const trellisModelViewer = trellisViewer?.querySelector("model-viewer");
+                    if (typeof stopModelViewerSpin === "function") stopModelViewerSpin(trellisModelViewer);
+                    trellisViewer?.remove();
+                    clearOutput(0);
                 } else if (node.type === "datn/scene_combiner") {
                     node.properties.sceneUrl = "";
                     node.properties.zipUrl = "";
                     node.properties.models = [];
-                    document.getElementById(`viewer-${node.id}`)?.remove();
+                    node.properties.modelCount = 0;
+                    node.properties.status = "Waiting for models...";
+                    node.properties.error = "";
+                    if (node._objectUrl) {
+                        URL.revokeObjectURL(node._objectUrl);
+                        node._objectUrl = "";
+                    }
+                    const sceneViewer = document.getElementById(`viewer-${node.id}`);
+                    const sceneModelViewer = sceneViewer?.querySelector("model-viewer");
+                    if (typeof stopModelViewerSpin === "function") stopModelViewerSpin(sceneModelViewer);
+                    sceneViewer?.remove();
+                    clearOutput(0);
+                } else if (node.type === "datn/input_prompt" || node.type === "datn/image_input") {
+                    // Keep the user's current prompt or selected image, but clear
+                    // the value travelling through the graph until this run starts.
+                    clearOutput(0);
                 }
+                node.setDirtyCanvas?.(true, true);
             });
             const globalViewer = document.getElementById("spatial-global-viewer");
+            if (typeof stopModelViewerSpin === "function") stopModelViewerSpin(globalViewer);
             const previousObjectUrl = globalViewer?.dataset?.objectUrl;
             if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
             if (globalViewer) {
@@ -3518,6 +3565,19 @@
             if (sceneStatus) sceneStatus.textContent = "IDLE";
             const objectCount = document.getElementById("scene-meta-objects");
             if (objectCount) objectCount.textContent = "0";
+            spatialLatestSceneUrl = "";
+            spatialLatestZipUrl = "";
+        }
+
+        function resetWorkflowForFreshRun() {
+            clearRunBoundNodeCache();
+            resetPipelineProgress();
+            document.getElementById("log-content").innerHTML = "";
+            graph?._nodes?.forEach((node) => {
+                node.boxcolor = "rgba(255, 255, 255, 0.1)";
+            });
+            canvas.draw(true, true);
+            writeLog("🔄 Đã reset dữ liệu run cũ. Bắt đầu một phiên mới...", "system");
         }
         window.lucide?.createIcons({
             attrs: {
@@ -4479,7 +4539,7 @@
         function NodePrompt() {
             this.addOutput("prompt", "string");
             this.properties = {
-                prompt: "một chiếc bàn ăn bằng gỗ có hoa văn chạm khắc nhẹ ở viền mặt bàn và một chiếc ghế ăn bằng gỗ có họa tiết ở tựa lưng, đặt cạnh nhau"
+                prompt: "Một phòng khách gồm một ghế sofa gỗ bọc nệm màu kem, một bàn trà gỗ hình chữ nhật và một đèn sàn. Hãy bố trí các vật thể theo vị trí sử dụng tự nhiên trong phòng khách."
             };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
@@ -6198,7 +6258,8 @@
                 writeLog("Vui lòng kết nối tới server GPU Kaggle bằng Ngrok trước!", "warning");
                 return;
             }
-            
+
+            resetWorkflowForFreshRun();
             isExecuting = true;
             pipelineStopRequested = false;
             activePipelineController = new AbortController();
@@ -6340,6 +6401,7 @@
             const endIndex = nodes.findIndex(([node]) => node === targetNode);
             if (endIndex < 0) return;
 
+            resetWorkflowForFreshRun();
             isExecuting = true;
             pipelineStopRequested = false;
             activePipelineController = new AbortController();
