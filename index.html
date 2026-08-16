@@ -2805,6 +2805,47 @@
             }
         }
 
+        /* Let the graph and viewport reclaim the left rail when it is hidden. */
+        .workspace-shell.spatial-workspace.rail-hidden {
+            grid-template-columns: 0 minmax(0, 1fr);
+        }
+
+        .workspace-shell.spatial-workspace.rail-hidden .app-rail {
+            width: 0;
+            min-width: 0;
+            padding: 0;
+            border-width: 0;
+            opacity: 0;
+            visibility: hidden;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .workspace-shell.spatial-workspace.rail-hidden .viewport-panel {
+            max-width: calc(100% - 16px);
+        }
+
+        /* Keep 3D viewer actions compact even when the graph is zoomed out. */
+        .node-3d-container .viewer-controls {
+            gap: 3px;
+            max-width: calc(100% - 16px);
+            padding: 4px 6px;
+            border-radius: 10px;
+            transform: translateX(-50%) scale(var(--viewer-ui-scale, 1));
+            transform-origin: center bottom;
+        }
+
+        .node-3d-container .viewer-btn {
+            min-width: 0;
+            min-height: 22px !important;
+            height: 22px;
+            padding: 2px 6px !important;
+            font-size: 10px !important;
+            line-height: 1.1;
+            letter-spacing: 0;
+            font-weight: 500;
+        }
+
         /* Compact Blender-style 360° orientation gizmo. */
         .orientation-widget {
             position: absolute;
@@ -3052,6 +3093,7 @@
                         <span class="panel-badge" id="graph-node-count">8 nodes</span>
                     </div>
                     <div class="panel-actions">
+                        <button class="panel-icon-btn" id="btn-toggle-app-rail" type="button" title="Ẩn thanh sidebar" aria-label="Ẩn thanh sidebar" aria-pressed="false"><i data-lucide="panel-left-close"></i></button>
                         <button class="panel-icon-btn" id="btn-panel-library" type="button" title="Node library"><i data-lucide="panel-left-open"></i></button>
                         <button class="panel-icon-btn" id="btn-panel-logs" type="button" title="Execution logs"><i data-lucide="terminal-square"></i></button>
                     </div>
@@ -3545,6 +3587,7 @@
             globalViewer.cameraOrbit = "30deg 72deg 78%";
             globalViewer.fieldOfView = "35deg";
             globalViewer.hidden = false;
+            setModelViewerAutoRotate(globalViewer, true);
             if (emptyState) emptyState.style.display = "none";
             const finalScene = Boolean(sceneUrl);
             if (stateLabel) stateLabel.textContent = finalScene ? "Scene ready" : "3D mesh preview";
@@ -3584,9 +3627,36 @@
         const viewportResizer = document.getElementById("viewport-resizer");
         const viewportToggleButton = document.getElementById("btn-toggle-viewport");
         const viewportRailButton = document.getElementById("btn-rail-viewport");
+        const appRailToggleButton = document.getElementById("btn-toggle-app-rail");
         const viewportResizeMin = 280;
         const viewportResizeMax = 900;
         let viewportResizeState = null;
+
+        function setAppRailVisibility(hidden, persist = true) {
+            if (!spatialWorkspace) return;
+            spatialWorkspace.classList.toggle("rail-hidden", hidden);
+
+            if (appRailToggleButton) {
+                appRailToggleButton.setAttribute("aria-pressed", String(hidden));
+                appRailToggleButton.setAttribute("title", hidden ? "Hiện thanh sidebar" : "Ẩn thanh sidebar");
+                appRailToggleButton.setAttribute("aria-label", hidden ? "Hiện thanh sidebar" : "Ẩn thanh sidebar");
+                appRailToggleButton.innerHTML = `<i data-lucide="${hidden ? "panel-left-open" : "panel-left-close"}"></i>`;
+            }
+            window.lucide?.createIcons();
+            if (persist) localStorage.setItem("datn-app-rail-hidden", hidden ? "1" : "0");
+
+            requestAnimationFrame(() => {
+                resizeCanvas();
+                canvas.draw(true, true);
+            });
+        }
+
+        appRailToggleButton?.addEventListener("click", () => {
+            setAppRailVisibility(!spatialWorkspace?.classList.contains("rail-hidden"));
+        });
+
+        const savedAppRailHidden = localStorage.getItem("datn-app-rail-hidden") === "1";
+        setAppRailVisibility(savedAppRailHidden, false);
 
         function setViewportVisibility(hidden, persist = true) {
             if (!spatialWorkspace) return;
@@ -3671,24 +3741,61 @@
             setViewportWidth(currentWidth + (event.key === "ArrowLeft" ? 24 : -24));
         });
 
+        const modelViewerSpinStates = new WeakMap();
+
+        function stopModelViewerSpin(viewer) {
+            const state = modelViewerSpinStates.get(viewer);
+            if (!state) return;
+            state.running = false;
+            if (state.raf) cancelAnimationFrame(state.raf);
+            modelViewerSpinStates.delete(viewer);
+        }
+
         function setModelViewerAutoRotate(viewer, enabled) {
             if (!viewer) return;
             const shouldRotate = Boolean(enabled);
+            stopModelViewerSpin(viewer);
 
-            // Use the model-viewer property as the source of truth. Toggling
-            // only the HTML attribute can stop the first animation but fail to
-            // restart it when the attribute is added again.
-            viewer.autoRotate = shouldRotate;
-            if (shouldRotate) {
-                viewer.setAttribute("auto-rotate", "");
-            } else {
-                viewer.removeAttribute("auto-rotate");
-            }
+            // Disable the built-in flag and use a small camera-orbit loop. This
+            // reliably resumes after the user manually drags the model.
+            viewer.autoRotate = false;
+            viewer.removeAttribute("auto-rotate");
+            viewer.dataset.autoRotate = String(shouldRotate);
+            if (!shouldRotate) return;
+
+            const state = { running: true, raf: 0, lastTimestamp: 0 };
+            modelViewerSpinStates.set(viewer, state);
+            const rotationSpeed = 0.45;
+
+            const tick = (timestamp) => {
+                if (!state.running || !viewer.isConnected) return;
+                if (!state.lastTimestamp) state.lastTimestamp = timestamp;
+                const delta = Math.min(0.1, Math.max(0, timestamp - state.lastTimestamp) / 1000);
+                state.lastTimestamp = timestamp;
+
+                if (typeof viewer.getCameraOrbit === "function") {
+                    const orbit = viewer.getCameraOrbit();
+                    if (
+                        orbit
+                        && Number.isFinite(orbit.theta)
+                        && Number.isFinite(orbit.phi)
+                        && Number.isFinite(orbit.radius)
+                    ) {
+                        viewer.cameraOrbit = `${orbit.theta + delta * rotationSpeed}rad ${orbit.phi}rad ${orbit.radius}m`;
+                    }
+                }
+                state.raf = requestAnimationFrame(tick);
+            };
+
+            state.raf = requestAnimationFrame(tick);
         }
 
         function toggleModelViewerAutoRotate(viewer, button, labels = {}) {
             if (!viewer) return;
-            const isRotating = Boolean(viewer.autoRotate || viewer.hasAttribute("auto-rotate"));
+            const state = modelViewerSpinStates.get(viewer);
+            const isRotating = state
+                ? state.running
+                : viewer.dataset.autoRotate === "true";
             const nextState = !isRotating;
             setModelViewerAutoRotate(viewer, nextState);
             if (button) {
@@ -4056,6 +4163,7 @@
             const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
             element.style.transformOrigin = "top left";
             element.style.transform = `scale(${1 / safeScale})`;
+            element.style.setProperty("--viewer-ui-scale", String(safeScale));
         }
 
         function syncGraphZoomDensity() {
@@ -5497,6 +5605,7 @@
             `;
 
             const modelViewer = viewer.querySelector("model-viewer");
+            setModelViewerAutoRotate(modelViewer, true);
             viewer.querySelector('[data-action="spin"]').onclick = (event) => {
                 event.stopPropagation();
                 toggleModelViewerAutoRotate(modelViewer, event.currentTarget, {
@@ -5726,6 +5835,7 @@
                     `;
 
                     const modelViewer = viewer.querySelector("model-viewer");
+                    setModelViewerAutoRotate(modelViewer, true);
 
                     viewer.querySelector(`#btn-spin-${this.id}`).onclick = (e) => {
                         e.stopPropagation();
