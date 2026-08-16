@@ -214,11 +214,37 @@ def _move_pipeline(device: str) -> None:
         return
 
     print(f"Moving SD3.5 pipeline to {device}...", flush=True)
-    pipeline.to(device)
+    try:
+        pipeline.to(device)
+    except Exception:
+        # A failed CUDA transfer can leave some modules moved and makes the
+        # cached device flag unreliable.  Mark it unknown so recovery always
+        # attempts a real CPU transfer instead of skipping cleanup.
+        pipeline_device = None
+        raise
     pipeline_device = device
     if device == "cpu":
         _safe_cuda_cleanup()
     print(f"SD3.5 pipeline is now on {device}.", flush=True)
+
+
+def _force_offload_pipeline() -> None:
+    """Move the pipeline to CPU even after a partially failed CUDA transfer."""
+    global pipeline_device
+
+    if pipeline is None:
+        return
+    try:
+        if pipeline_device != "cpu":
+            pipeline.to("cpu")
+        pipeline_device = "cpu"
+    finally:
+        _safe_cuda_cleanup()
+
+
+def _is_cuda_memory_error(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return "out of memory" in message or "cuda out of memory" in message
 
 
 def _load_pipeline() -> None:
@@ -322,23 +348,36 @@ def generate(payload: GenerateRequest) -> dict:
 
     with inference_lock:
         try:
-            _move_pipeline("cuda")
-            with torch.inference_mode():
-                for job in jobs:
+            for attempt in range(2):
+                try:
+                    _safe_cuda_cleanup()
+                    _move_pipeline("cuda")
+                    with torch.inference_mode():
+                        for job in jobs:
+                            print(
+                                f"Generating isolated object: {job['name']} {job['label']}",
+                                flush=True,
+                            )
+                            image = pipeline(
+                                prompt=job["prompt"],
+                                negative_prompt=job["negative_prompt"],
+                                num_inference_steps=SD35_NUM_INFERENCE_STEPS,
+                                guidance_scale=SD35_GUIDANCE_SCALE,
+                                generator=torch.Generator("cuda").manual_seed(job["seed"]),
+                                width=SD35_IMAGE_SIZE,
+                                height=SD35_IMAGE_SIZE,
+                            ).images[0]
+                            image.save(job["image_path"])
+                    break
+                except RuntimeError as exc:
+                    if attempt or not _is_cuda_memory_error(exc):
+                        raise
                     print(
-                        f"Generating isolated object: {job['name']} {job['label']}",
+                        "SD3.5 CUDA out-of-memory; resetting the pipeline to CPU "
+                        "and retrying the complete object batch once.",
                         flush=True,
                     )
-                    image = pipeline(
-                        prompt=job["prompt"],
-                        negative_prompt=job["negative_prompt"],
-                        num_inference_steps=SD35_NUM_INFERENCE_STEPS,
-                        guidance_scale=SD35_GUIDANCE_SCALE,
-                        generator=torch.Generator("cuda").manual_seed(job["seed"]),
-                        width=SD35_IMAGE_SIZE,
-                        height=SD35_IMAGE_SIZE,
-                    ).images[0]
-                    image.save(job["image_path"])
+                    _force_offload_pipeline()
 
         except Exception as exc:
             raise HTTPException(
@@ -347,7 +386,7 @@ def generate(payload: GenerateRequest) -> dict:
             ) from exc
         finally:
             try:
-                _move_pipeline("cpu")
+                _force_offload_pipeline()
             except Exception as cleanup_exc:
                 print(
                     f"Failed to offload SD3.5 pipeline after generation: "

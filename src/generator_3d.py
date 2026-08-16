@@ -12,6 +12,17 @@ TRELLIS_WORKER_URL = os.environ.get(
 TRELLIS_WORKER_TIMEOUT = float(
     os.environ.get("TRELLIS_WORKER_TIMEOUT", "1200")
 )
+SD35_WORKER_URL = os.environ.get(
+    "SD35_WORKER_URL",
+    "http://127.0.0.1:8001",
+).rstrip("/")
+SAM2_DINO_WORKER_URL = os.environ.get(
+    "SAM2_DINO_WORKER_URL",
+    "http://127.0.0.1:8003",
+).rstrip("/")
+WORKER_OFFLOAD_TIMEOUT = float(
+    os.environ.get("WORKER_OFFLOAD_TIMEOUT", "600")
+)
 
 
 def _response_error_detail(response) -> str:
@@ -41,6 +52,21 @@ def _check_worker_ready() -> None:
     if not health.get("ready"):
         detail = health.get("error") or "model is still loading"
         raise RuntimeError(f"TRELLIS worker is not ready: {detail}")
+
+
+def _offload_worker(url: str, label: str) -> None:
+    try:
+        response = requests.post(
+            f"{url}/offload",
+            timeout=WORKER_OFFLOAD_TIMEOUT,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        detail = _response_error_detail(exc.response)
+        raise RuntimeError(
+            f"{label} worker could not release GPU memory at {url}: "
+            f"{detail or exc}"
+        ) from exc
 
 
 def _path_within(path: str, root: str) -> Path:
@@ -77,6 +103,10 @@ def generate_3d_models(
 
     os.makedirs(multi_glb_dir, exist_ok=True)
     _check_worker_ready()
+    # TRELLIS is the active GPU model in this phase.  Release the previous
+    # diffusion and segmentation models first to avoid a second-run CUDA OOM.
+    _offload_worker(SD35_WORKER_URL, "SD3.5")
+    _offload_worker(SAM2_DINO_WORKER_URL, "SAM2/DINO")
 
     models = []
     for crop in crops:

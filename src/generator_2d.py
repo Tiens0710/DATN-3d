@@ -13,12 +13,19 @@ SD35_WORKER_URL = os.environ.get(
     "http://127.0.0.1:8001",
 ).rstrip("/")
 SD35_WORKER_TIMEOUT = float(os.environ.get("SD35_WORKER_TIMEOUT", "1500"))
+TRELLIS_WORKER_URL = os.environ.get(
+    "TRELLIS_WORKER_URL",
+    "http://127.0.0.1:8002",
+).rstrip("/")
 SAM2_DINO_WORKER_URL = os.environ.get(
     "SAM2_DINO_WORKER_URL",
     "http://127.0.0.1:8003",
 ).rstrip("/")
 OBJECT_SANITIZE_TIMEOUT = float(
     os.environ.get("OBJECT_SANITIZE_TIMEOUT", "600")
+)
+WORKER_OFFLOAD_TIMEOUT = float(
+    os.environ.get("WORKER_OFFLOAD_TIMEOUT", "600")
 )
 
 
@@ -228,6 +235,35 @@ def build_object_jobs(
     return jobs
 
 
+def _response_error_detail(response) -> str:
+    if response is None:
+        return ""
+    try:
+        payload = response.json()
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        if detail:
+            return str(detail)
+    except ValueError:
+        pass
+    return response.text.strip()
+
+
+def _offload_worker(url: str, label: str) -> None:
+    """Release another resident model before claiming the shared GPU."""
+    try:
+        response = requests.post(
+            f"{url}/offload",
+            timeout=WORKER_OFFLOAD_TIMEOUT,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        detail = _response_error_detail(exc.response)
+        raise RuntimeError(
+            f"{label} worker could not release GPU memory at {url}: "
+            f"{detail or exc}"
+        ) from exc
+
+
 def _check_worker_ready() -> None:
     try:
         response = requests.get(f"{SD35_WORKER_URL}/health", timeout=5)
@@ -281,6 +317,11 @@ def generate_object_images(
         raise ValueError("The object-wise generator received no objects")
 
     _check_worker_ready()
+    # SD3.5 is the active GPU model in this phase.  TRELLIS and SAM2/DINO are
+    # resident workers too, so explicitly move both to CPU before loading the
+    # diffusion pipeline back onto CUDA.
+    _offload_worker(TRELLIS_WORKER_URL, "TRELLIS")
+    _offload_worker(SAM2_DINO_WORKER_URL, "SAM2/DINO")
     try:
         response = requests.post(
             f"{SD35_WORKER_URL}/generate",
@@ -295,7 +336,7 @@ def generate_object_images(
         response.raise_for_status()
         jobs = response.json().get("jobs", [])
     except requests.RequestException as exc:
-        detail = getattr(exc.response, "text", "") if exc.response else ""
+        detail = _response_error_detail(exc.response)
         raise RuntimeError(
             f"SD3.5 worker generation failed: {detail or exc}"
         ) from exc

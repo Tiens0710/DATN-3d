@@ -1,6 +1,7 @@
 """Resident SAM2 + GroundingDINO segmentation worker."""
 
 import argparse
+import gc
 import io
 import json
 import os
@@ -35,6 +36,7 @@ DINO_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # Keep the fallback device after the first mismatch instead of moving the model
 # back to CUDA on every request.
 DINO_RUNTIME_DEVICE = DINO_DEVICE
+DINO_CPU_FALLBACK = False
 
 # Used only when the upload workflow is in automatic mode. GroundingDINO is
 # open-vocabulary, but it still needs a text prompt; this broad furniture
@@ -234,9 +236,63 @@ def _prepare_dino_model() -> None:
             child.to(DINO_RUNTIME_DEVICE)
 
 
+def _cuda_memory() -> str:
+    try:
+        if not torch.cuda.is_available():
+            return "CUDA unavailable"
+        gib = 1024 ** 3
+        free_bytes, total_bytes = torch.cuda.mem_get_info()
+        return (
+            f"allocated={torch.cuda.memory_allocated() / gib:.2f} GiB, "
+            f"reserved={torch.cuda.memory_reserved() / gib:.2f} GiB, "
+            f"free={free_bytes / gib:.2f}/{total_bytes / gib:.2f} GiB"
+        )
+    except Exception as exc:
+        return f"CUDA memory query failed: {type(exc).__name__}: {exc}"
+
+
+def _safe_cuda_cleanup() -> None:
+    gc.collect()
+    try:
+        torch.cuda.empty_cache()
+    except Exception as exc:
+        print(f"CUDA cleanup skipped: {exc}", flush=True)
+
+
+def _preferred_inference_device() -> str:
+    if DINO_CPU_FALLBACK or not torch.cuda.is_available():
+        return "cpu"
+    return "cuda"
+
+
+def _move_models(device: str) -> None:
+    """Move both segmentation models together so they do not pin VRAM."""
+    global DINO_RUNTIME_DEVICE
+
+    if dino_model is None or sam_predictor is None:
+        raise RuntimeError("Segmentation models are not loaded")
+
+    target = "cpu" if device == "cpu" else _preferred_inference_device()
+    DINO_RUNTIME_DEVICE = target
+
+    if target == "cpu":
+        reset_predictor = getattr(sam_predictor, "reset_predictor", None)
+        if callable(reset_predictor):
+            reset_predictor()
+
+    _prepare_dino_model()
+    sam_model = getattr(sam_predictor, "model", None)
+    if sam_model is not None and hasattr(sam_model, "to"):
+        sam_model.to(target)
+        sam_model.eval()
+
+    if target == "cpu":
+        _safe_cuda_cleanup()
+
+
 def _dino_forward(image_tensor: torch.Tensor, caption: str):
     """Forward DINO and recover from partially-device-mapped legacy builds."""
-    global DINO_RUNTIME_DEVICE
+    global DINO_RUNTIME_DEVICE, DINO_CPU_FALLBACK
 
     _prepare_dino_model()
     normalized_caption = str(caption).lower().strip()
@@ -259,6 +315,7 @@ def _dino_forward(image_tensor: torch.Tensor, caption: str):
             flush=True,
         )
         DINO_RUNTIME_DEVICE = "cpu"
+        DINO_CPU_FALLBACK = True
         dino_model.to("cpu")
         dino_model.eval()
         with torch.no_grad():
@@ -316,9 +373,34 @@ def health() -> dict:
     return {
         "ready": dino_model is not None and sam_predictor is not None,
         "error": load_error,
+        "device": DINO_RUNTIME_DEVICE,
+        "cuda_memory": _cuda_memory(),
         "matting_ready": matting_session is not None and matting_remove is not None,
         "matting_model": MATTING_MODEL if MATTING_ENABLED else None,
         "matting_error": matting_error,
+    }
+
+
+@app.post("/offload")
+def offload() -> dict:
+    if dino_model is None or sam_predictor is None:
+        raise HTTPException(
+            status_code=503,
+            detail=load_error or "Segmentation models are still loading",
+        )
+
+    with inference_lock:
+        try:
+            _move_models("cpu")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to offload SAM2/DINO models: {exc}",
+            ) from exc
+    return {
+        "ready": True,
+        "device": DINO_RUNTIME_DEVICE,
+        "cuda_memory": _cuda_memory(),
     }
 
 
@@ -891,12 +973,21 @@ def sanitize(payload: SanitizeRequest) -> dict:
 
     with inference_lock:
         try:
+            _move_models(_preferred_inference_device())
             jobs = _sanitize_object_images(payload.objects)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
                 detail=f"Generated-object sanitization failed: {exc}",
             ) from exc
+        finally:
+            try:
+                _move_models("cpu")
+            except Exception as cleanup_exc:
+                print(
+                    f"Failed to offload SAM2/DINO after sanitization: {cleanup_exc}",
+                    flush=True,
+                )
     return {"jobs": jobs}
 
 
@@ -1150,6 +1241,7 @@ def segment(payload: SegmentRequest) -> dict:
 
     with inference_lock:
         try:
+            _move_models(_preferred_inference_device())
             if source_mode == "uploaded":
                 results = _segment_uploaded(
                     payload.input_image_path,
@@ -1177,7 +1269,13 @@ def segment(payload: SegmentRequest) -> dict:
                 ),
             ) from exc
         finally:
-            torch.cuda.empty_cache()
+            try:
+                _move_models("cpu")
+            except Exception as cleanup_exc:
+                print(
+                    f"Failed to offload SAM2/DINO after segmentation: {cleanup_exc}",
+                    flush=True,
+                )
 
     return {"results": results}
 

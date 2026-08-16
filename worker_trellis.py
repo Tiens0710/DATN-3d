@@ -1,6 +1,7 @@
 """Resident TRELLIS image-to-3D worker for the Kaggle GPU session."""
 
 import argparse
+import gc
 import os
 import sys
 import threading
@@ -29,6 +30,7 @@ from pydantic import BaseModel
 
 app = FastAPI(title="DATN TRELLIS Worker", version="1.1.0")
 pipeline = None
+pipeline_device = None
 postprocessing_utils = None
 load_error = None
 inference_lock = threading.Lock()
@@ -75,6 +77,7 @@ def _log(message: str) -> None:
 
 
 def _safe_empty_cache(name: str) -> None:
+    gc.collect()
     try:
         torch.cuda.empty_cache()
     except Exception as exc:
@@ -84,9 +87,29 @@ def _safe_empty_cache(name: str) -> None:
         )
 
 
+def _move_pipeline(device: str) -> None:
+    global pipeline_device
+
+    if pipeline is None:
+        raise RuntimeError("TRELLIS pipeline is not loaded")
+    if pipeline_device == device:
+        return
+
+    _log(f"Moving TRELLIS pipeline to {device}...")
+    try:
+        pipeline.to(device)
+    except Exception:
+        pipeline_device = None
+        raise
+    pipeline_device = device
+    if device == "cpu":
+        _safe_empty_cache("pipeline offload")
+    _log(f"TRELLIS pipeline is now on {device}; {_cuda_memory()}")
+
+
 def _load_pipeline() -> None:
     """Load once and keep failures observable through /health."""
-    global pipeline, postprocessing_utils, load_error
+    global pipeline, pipeline_device, postprocessing_utils, load_error
 
     try:
         if not os.path.isdir(os.path.join(TRELLIS_ROOT, "trellis")):
@@ -138,6 +161,7 @@ def _load_pipeline() -> None:
         )
         loaded_pipeline.to("cuda")
         pipeline = loaded_pipeline
+        pipeline_device = "cuda"
         postprocessing_utils = loaded_postprocessing
         load_error = None
         _log(
@@ -162,6 +186,8 @@ def health() -> dict:
     return {
         "ready": pipeline is not None,
         "error": load_error,
+        "device": pipeline_device,
+        "cuda_memory": _cuda_memory(),
         "profile": {
             "sparse_steps": TRELLIS_SPARSE_STEPS,
             "slat_steps": TRELLIS_SLAT_STEPS,
@@ -171,6 +197,29 @@ def health() -> dict:
             "bake_resolution": TRELLIS_BAKE_RESOLUTION,
             "fill_holes": TRELLIS_FILL_HOLES,
         },
+    }
+
+
+@app.post("/offload")
+def offload() -> dict:
+    if pipeline is None:
+        raise HTTPException(
+            status_code=503,
+            detail=load_error or "TRELLIS model is still loading",
+        )
+
+    with inference_lock:
+        try:
+            _move_pipeline("cpu")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to offload TRELLIS pipeline: {exc}",
+            ) from exc
+    return {
+        "ready": True,
+        "device": pipeline_device,
+        "cuda_memory": _cuda_memory(),
     }
 
 
@@ -196,6 +245,7 @@ def generate(payload: GenerateRequest) -> dict:
     with inference_lock:
         started_at = time.perf_counter()
         try:
+            _move_pipeline("cuda")
             if torch.cuda.is_available():
                 torch.cuda.reset_peak_memory_stats()
             _log(f"Request {name}: crop={crop_path}; {_cuda_memory()}")
@@ -282,6 +332,16 @@ def generate(payload: GenerateRequest) -> dict:
                 detail=f"TRELLIS generation failed for {name}: {detail}",
             ) from exc
         finally:
+            # These objects can retain large CUDA tensors until the function
+            # returns.  Release them before empty_cache so the next worker can
+            # safely claim the GPU.
+            if "outputs" in locals():
+                del outputs
+            if "glb" in locals():
+                del glb
+            if "image" in locals():
+                del image
+            gc.collect()
             _safe_empty_cache(name)
             _log(f"{name}: request cleanup; {_cuda_memory()}")
 
