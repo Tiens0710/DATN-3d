@@ -81,6 +81,43 @@ class SceneGraphTests(unittest.TestCase):
             ],
         )
 
+    def test_layout_preview_uses_explicit_xz_placements(self):
+        graph = parse_scene_graph_from_objects(
+            "a sofa with a coffee table in front and a floor lamp beside it",
+            [{"label": "sofa"}, {"label": "coffee table"}, {"label": "floor lamp"}],
+            relations=[
+                {"subject": 1, "relation": "in_front_of", "object": 0},
+                {"subject": 2, "relation": "right_of", "object": 0},
+            ],
+            placements=[
+                {"object": 0, "position_xyz": [0, 0, 0]},
+                {"object": 1, "position_xyz": [0, 0, -1.1]},
+                {"object": 2, "position_xyz": [1.3, 0, 0]},
+            ],
+        )
+        layout = compute_layout(graph)["layout"]
+
+        self.assertGreater(layout["coffee_table_2"]["y"], layout["sofa_1"]["y"])
+        self.assertGreater(layout["floor_lamp_3"]["x"], layout["sofa_1"]["x"])
+
+    def test_layout_preview_infers_different_axes_for_bedroom_objects(self):
+        graph = parse_scene_graph_from_objects(
+            "one bed, one bedside table, and one wardrobe",
+            [
+                {"label": "bed"},
+                {"label": "bedside table"},
+                {"label": "wardrobe"},
+            ],
+            relations=[
+                {"subject": 1, "relation": "next_to", "object": 0},
+                {"subject": 2, "relation": "next_to", "object": 0},
+            ],
+        )
+        layout = compute_layout(graph)["layout"]
+
+        self.assertGreater(layout["bedside_table_2"]["x"], layout["bed_1"]["x"])
+        self.assertNotEqual(layout["wardrobe_3"]["y"], layout["bed_1"]["y"])
+
 
 if __name__ == "__main__":
     unittest.main()

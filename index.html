@@ -4756,41 +4756,82 @@
             if (!this.properties.layoutData) return;
 
             const boxes = this.properties.layoutData.layout || {};
+            const relations = this.properties.layoutData.relations || [];
+            const previewSize = 200;
+            const previewLeft = 15;
+            const previewTop = 45;
+            const previewScale = previewSize / 512;
+            const colors = ["#818cf8", "#34d399", "#fb7185", "#fbbf24", "#38bdf8", "#c084fc"];
+            const colorById = {};
+            Object.keys(boxes).forEach((nid, index) => {
+                colorById[nid] = colors[index % colors.length];
+            });
 
-            // Render canvas container inside node (Kích thước lớn hơn: 200x200)
             ctx.save();
             ctx.fillStyle = "#09090b";
-            ctx.fillRect(15, 45, 200, 200);
+            ctx.fillRect(previewLeft, previewTop, previewSize, previewSize);
             ctx.strokeStyle = "#27272a";
             ctx.lineWidth = 1.5;
-            ctx.strokeRect(15, 45, 200, 200);
+            ctx.strokeRect(previewLeft, previewTop, previewSize, previewSize);
 
-            // Draw grid lines inside preview
             ctx.strokeStyle = "rgba(255,255,255,0.02)";
             ctx.lineWidth = 1;
             for (let i = 1; i < 4; i++) {
                 ctx.beginPath();
-                ctx.moveTo(15 + (i * 50), 45);
-                ctx.lineTo(15 + (i * 50), 245);
+                ctx.moveTo(previewLeft + (i * 50), previewTop);
+                ctx.lineTo(previewLeft + (i * 50), previewTop + previewSize);
                 ctx.stroke();
                 ctx.beginPath();
-                ctx.moveTo(15, 45 + (i * 50));
-                ctx.lineTo(215, 45 + (i * 50));
+                ctx.moveTo(previewLeft, previewTop + (i * 50));
+                ctx.lineTo(previewLeft + previewSize, previewTop + (i * 50));
                 ctx.stroke();
             }
 
-            const colors = ["#818cf8", "#34d399", "#fb7185", "#fbbf24"];
-            let colorIdx = 0;
+            // Draw semantic relation arrows before the object footprints.
+            const centerOf = (box) => ({
+                x: previewLeft + (box.x + box.w / 2) * previewScale,
+                y: previewTop + (box.y + box.h / 2) * previewScale,
+            });
+            const drawArrow = (from, to, color) => {
+                const dx = to.x - from.x;
+                const dy = to.y - from.y;
+                const length = Math.hypot(dx, dy);
+                if (length < 5) return;
+                const ux = dx / length;
+                const uy = dy / length;
+                const start = { x: from.x + ux * 8, y: from.y + uy * 8 };
+                const end = { x: to.x - ux * 8, y: to.y - uy * 8 };
+                ctx.strokeStyle = `${color}bb`;
+                ctx.fillStyle = `${color}dd`;
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 3]);
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                ctx.moveTo(end.x, end.y);
+                ctx.lineTo(end.x - ux * 7 - uy * 4, end.y - uy * 7 + ux * 4);
+                ctx.lineTo(end.x - ux * 7 + uy * 4, end.y - uy * 7 - ux * 4);
+                ctx.closePath();
+                ctx.fill();
+            };
+            for (const edge of relations) {
+                const subject = boxes[edge.subject];
+                const target = boxes[edge.object];
+                if (subject && target) {
+                    drawArrow(centerOf(subject), centerOf(target), colorById[edge.subject] || "#94a3b8");
+                }
+            }
 
             for (const [nid, box] of Object.entries(boxes)) {
-                const scale = 200 / 512;
-                const bx = 15 + (box.x * scale);
-                const by = 45 + (box.y * scale);
-                const bw = box.w * scale;
-                const bh = box.h * scale;
-
-                const color = colors[colorIdx % colors.length];
-                ctx.fillStyle = color + "20"; // 12% opacity fill
+                const bx = previewLeft + (box.x * previewScale);
+                const by = previewTop + (box.y * previewScale);
+                const bw = Math.max(9, box.w * previewScale);
+                const bh = Math.max(9, box.h * previewScale);
+                const color = colorById[nid] || "#94a3b8";
+                ctx.fillStyle = `${color}30`;
                 ctx.fillRect(bx, by, bw, bh);
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 2;
@@ -4798,18 +4839,24 @@
 
                 ctx.fillStyle = color;
                 ctx.font = "bold 10px 'Outfit'";
-                ctx.fillText(nid, bx + 4, by + 14);
-                colorIdx++;
+                const label = nid.replace(/_\d+$/, "");
+                ctx.fillText(label.slice(0, 14), bx + 3, by + 12);
             }
+
+            ctx.fillStyle = "#64748b";
+            ctx.font = "9px 'Fira Code'";
+            ctx.fillText("TOP VIEW · X/Z", previewLeft + 5, previewTop + previewSize - 6);
+            ctx.fillText("front", previewLeft + previewSize - 27, previewTop + previewSize - 6);
 
             ctx.fillStyle = "#e4e4e7";
             ctx.font = "bold 13px 'Outfit'";
-            ctx.fillText("Bố cục Bounding Box (px):", 230, 55);
+            ctx.fillText("Bố cục vật thể (top view):", 230, 55);
             let textY = 75;
             for (const [nid, box] of Object.entries(boxes)) {
-                ctx.fillStyle = colors[(colorIdx - 1) % colors.length];
+                ctx.fillStyle = colorById[nid] || "#94a3b8";
                 ctx.font = "12px 'Fira Code'";
-                ctx.fillText(`${nid}:`, 230, textY);
+                const label = nid.replace(/_\d+$/, "");
+                ctx.fillText(`${label}:`, 230, textY);
                 ctx.fillStyle = "#a1a1aa";
                 ctx.fillText(`x=${box.x}, y=${box.y}`, 240, textY + 16);
                 ctx.fillText(`w=${box.w}, h=${box.h}`, 240, textY + 30);
