@@ -65,6 +65,7 @@ _GLOBAL_PROMPT_MARKERS = (
     "full objects visible",
     "clean neutral studio background",
     "clean white studio background",
+    "neutral gray studio background",
     "soft even lighting",
     "sharp focus",
     "realistic materials",
@@ -184,13 +185,14 @@ def _object_prompt(
         f"Product photo of exactly one standalone {descriptor}. "
         f"{geometry_instruction}"
         f"{detail_instruction}"
-        "Centered, fully visible, 70 percent of frame, white studio background, "
-        "soft even light, realistic material, accurate proportions."
+        "Centered, fully visible, 70 percent of frame, neutral medium-gray studio background "
+        "with clear foreground contrast, soft even light, realistic material, accurate proportions."
     )
     negative = (
         f"extra object, duplicate {label}, pair, set, {excluded}, cropped, close-up, "
         "top-down, extreme perspective, malformed geometry, fused parts, floating parts, "
-        "missing legs, extra legs, black silhouette, clutter, text, watermark"
+        "missing legs, extra legs, black silhouette, pure white background, no-contrast background, "
+        "clutter, text, watermark"
     )
     if detail_requested:
         negative += ", missing requested carving, blank decorative area"

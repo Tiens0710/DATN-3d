@@ -604,6 +604,12 @@ def _matting_alpha(image: Image.Image, box: list[int]) -> np.ndarray | None:
         return None
 
 
+def _full_image_matting_alpha(image: Image.Image) -> np.ndarray | None:
+    """Use matting on the whole generated object image as a DINO fallback."""
+    width, height = image.size
+    return _matting_alpha(image, [0, 0, width, height])
+
+
 def _predict_refined_alpha(
     image: Image.Image,
     box: list[int],
@@ -856,32 +862,63 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
             raise FileNotFoundError(image_path or "Missing generated object image")
 
         source_image, candidates = _detect_label_instances(image_path, label)
-        job["detected_instances"] = len(candidates)
-        job["count_validation"] = "detected" if candidates else "undetected"
-
-        if not candidates:
-            if label in {"chair", "dining chair", "table", "dining table", "sofa", "bed"}:
-                raise ValueError(
-                    f"GroundingDINO could not verify the generated '{label}'. "
-                    "Regenerate the 2D object instead of forwarding an unchecked image."
-                )
-            # Preserve uncommon open-vocabulary objects that DINO cannot name;
-            # the later segmentation stage can still process the original image.
-            job["sanitized"] = False
-            job["segmentation_method"] = "not-detected"
-            sanitized_jobs.append(job)
-            continue
-
-        selected = candidates[0]
         width, height = source_image.size
-        x1, y1, x2, y2 = selected["box"]
-        alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
-            source_image,
-            [x1, y1, x2, y2],
-            label=label,
-        )
+        detector_fallback = False
+        if candidates:
+            selected = candidates[0]
+            selected_box = selected["box"]
+            confidence = selected["confidence"]
+            try:
+                alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
+                    source_image,
+                    selected_box,
+                    label=label,
+                )
+            except Exception as sam_exc:
+                # A white object can produce a weak/partial SAM2 mask even
+                # when DINO found its box.  Since generated object images are
+                # expected to contain one object, matting the whole image is a
+                # safer fallback than forwarding a broken mask to TRELLIS.
+                fallback_alpha = _full_image_matting_alpha(source_image)
+                if fallback_alpha is None:
+                    raise sam_exc
+                alpha = fallback_alpha
+                selected_box = list(_mask_extent(alpha >= 32) or selected_box)
+                confidence = selected["confidence"]
+                mask_score = 0.0
+                segmentation_method = f"{MATTING_MODEL}-fallback"
+                detector_fallback = True
+            job["detected_instances"] = len(candidates)
+            job["count_validation"] = "detected"
+        else:
+            # GroundingDINO can miss a low-contrast white object on a white
+            # background.  The generated image is object-wise and is expected
+            # to contain exactly one object, so use the semantic matting model
+            # on the full image before rejecting the job.
+            alpha = _full_image_matting_alpha(source_image)
+            if alpha is None:
+                if label in {"chair", "dining chair", "table", "dining table", "sofa", "bed"}:
+                    raise ValueError(
+                        f"GroundingDINO and {MATTING_MODEL} could not isolate the generated '{label}'. "
+                        "Use a contrasting background or regenerate the 2D object."
+                    )
+                # Preserve uncommon open-vocabulary objects that neither
+                # detector can name; the later stage can still process them.
+                job["sanitized"] = False
+                job["segmentation_method"] = "not-detected"
+                job["count_validation"] = "undetected"
+                sanitized_jobs.append(job)
+                continue
+            selected_box = list(_mask_extent(alpha >= 32) or [0, 0, width, height])
+            confidence = 0.0
+            mask_score = 0.0
+            segmentation_method = f"{MATTING_MODEL}-fallback"
+            detector_fallback = True
+            job["detected_instances"] = 0
+            job["count_validation"] = "matting_fallback"
+
         alpha_image = Image.fromarray(alpha)
-        content_box = alpha_image.getbbox() or (x1, y1, x2, y2)
+        content_box = alpha_image.getbbox() or tuple(selected_box)
 
         rgba = source_image.convert("RGBA")
         rgba.putalpha(alpha_image)
@@ -902,11 +939,12 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
         job.update(
             {
                 "sanitized": True,
-                "kept_box": selected["box"],
-                "kept_confidence": selected["confidence"],
+                "kept_box": selected_box,
+                "kept_confidence": confidence,
                 "mask_score": mask_score,
                 "segmentation_method": segmentation_method,
                 "alpha_preserved": True,
+                "detector_fallback": detector_fallback,
             }
         )
         sanitized_jobs.append(job)
