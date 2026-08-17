@@ -2596,6 +2596,42 @@
             gap: 6px;
         }
 
+        .variant-editor-divider {
+            height: 1px;
+            margin: 5px 0 2px;
+            background: rgba(114, 128, 146, .24);
+        }
+
+        #variant-prompt {
+            width: 100%;
+            min-height: 56px;
+            resize: vertical;
+            padding: 6px 7px;
+            border: 1px solid #3a4655;
+            border-radius: 5px;
+            background: #151b23;
+            color: #e7ebf1;
+            font: 10px/1.35 "Fira Code", monospace;
+        }
+
+        #variant-prompt:focus {
+            outline: none;
+            border-color: #9184e8;
+            box-shadow: 0 0 0 2px rgba(145, 132, 232, .14);
+        }
+
+        #variant-prompt:disabled {
+            cursor: not-allowed;
+            opacity: .45;
+        }
+
+        #variant-editor-status {
+            display: block;
+            color: #7f8b9b;
+            font-size: 9px;
+            line-height: 1.35;
+        }
+
         .material-action-btn {
             min-height: 27px;
             padding: 4px 7px;
@@ -3347,6 +3383,20 @@
                             <button class="material-action-btn primary" id="btn-material-download" type="button" disabled>Tải GLB đã chỉnh</button>
                         </div>
                         <small id="material-editor-status">Chưa có mô hình 3D.</small>
+                        <div class="variant-editor-divider"></div>
+                        <div class="control-title">TRELLIS 1 variant</div>
+                        <label class="material-field">
+                            <span>Model gốc</span>
+                            <select id="variant-source" disabled>
+                                <option value="">Chưa có model riêng</option>
+                            </select>
+                        </label>
+                        <label class="material-field">
+                            <span>Mô tả thay đổi</span>
+                            <textarea id="variant-prompt" rows="3" placeholder="Ví dụ: dark walnut wood with a soft cream fabric seat" disabled></textarea>
+                        </label>
+                        <button class="material-action-btn primary" id="btn-trellis-variant" type="button" disabled>Tạo biến thể 3D</button>
+                        <small id="variant-editor-status">Giữ hình dáng tổng thể, tạo lại chi tiết theo prompt.</small>
                     </div>
 
                     <div class="scene-telemetry" aria-label="Scene telemetry">
@@ -3809,6 +3859,7 @@
             if (stateLabel) stateLabel.textContent = finalScene ? "Scene ready" : "3D mesh preview";
             if (sceneStatus) sceneStatus.textContent = finalScene ? "READY" : "PREVIEW";
             const trellisNode = graph?.findNodesByType?.("datn/trellis_3d")?.[0];
+            refreshVariantSourceOptions(trellisNode?.properties?.models || []);
             if (objectCount) {
                 objectCount.textContent = String(trellisNode?.properties?.models?.length || 0);
             }
@@ -3869,6 +3920,10 @@
                 reset: document.getElementById("btn-material-reset"),
                 download: document.getElementById("btn-material-download"),
                 status: document.getElementById("material-editor-status"),
+                variantSource: document.getElementById("variant-source"),
+                variantPrompt: document.getElementById("variant-prompt"),
+                variantButton: document.getElementById("btn-trellis-variant"),
+                variantStatus: document.getElementById("variant-editor-status"),
             };
         }
 
@@ -3884,6 +3939,56 @@
             [target, color, roughness, metallic, reset, download].forEach((element) => {
                 if (element) element.disabled = !enabled;
             });
+        }
+
+        function setVariantEditorStatus(message, isError = false) {
+            const { variantStatus } = getMaterialEditorElements();
+            if (!variantStatus) return;
+            variantStatus.textContent = message;
+            variantStatus.style.color = isError ? "#f09a9f" : "#7f8b9b";
+        }
+
+        function modelUrlToRunFile(modelUrl) {
+            const marker = `/runs/${currentRunId || ""}/`;
+            const raw = String(modelUrl || "");
+            const markerIndex = raw.indexOf(marker);
+            if (markerIndex < 0) return "";
+            try {
+                return decodeURIComponent(raw.slice(markerIndex + marker.length));
+            } catch (error) {
+                return raw.slice(markerIndex + marker.length);
+            }
+        }
+
+        function refreshVariantSourceOptions(models = []) {
+            const { variantSource, variantPrompt, variantButton } = getMaterialEditorElements();
+            if (!variantSource || !variantPrompt || !variantButton) return;
+            const previous = variantSource.value;
+            const validModels = (Array.isArray(models) ? models : [])
+                .filter((model) => model?.model_url && modelUrlToRunFile(model.model_url));
+            variantSource.innerHTML = "";
+            if (!validModels.length || !currentRunId) {
+                variantSource.innerHTML = '<option value="">Chưa có model riêng</option>';
+                variantSource.disabled = true;
+                variantPrompt.disabled = true;
+                variantButton.disabled = true;
+                setVariantEditorStatus("Chạy xong TRELLIS để tạo biến thể.");
+                return;
+            }
+
+            validModels.forEach((model, index) => {
+                const option = document.createElement("option");
+                option.value = modelUrlToRunFile(model.model_url);
+                option.textContent = `${index + 1}. ${model.label || model.name || "Model"}`;
+                variantSource.appendChild(option);
+            });
+            if (validModels.some((model) => modelUrlToRunFile(model.model_url) === previous)) {
+                variantSource.value = previous;
+            }
+            variantSource.disabled = false;
+            variantPrompt.disabled = false;
+            variantButton.disabled = false;
+            setVariantEditorStatus("Giữ hình dáng tổng thể, tạo lại chi tiết theo prompt.");
         }
 
         function cloneMaterialValue(value) {
@@ -3989,6 +4094,7 @@
             if (target) target.innerHTML = "<option value=\"all\">All materials</option>";
             setMaterialEditorEnabled(false);
             setMaterialEditorStatus("Chưa có mô hình 3D.");
+            refreshVariantSourceOptions([]);
         }
 
         function applyMaterialEditorValues() {
@@ -4173,6 +4279,98 @@
                 if (button) {
                     button.disabled = false;
                     button.textContent = originalText;
+                }
+            }
+        }
+
+        async function createTrellisVariant() {
+            const { variantSource, variantPrompt, variantButton } = getMaterialEditorElements();
+            const sourceFile = variantSource?.value || "";
+            const prompt = String(variantPrompt?.value || "").trim();
+            if (!backendUrl || !currentRunId) {
+                setVariantEditorStatus("Chưa kết nối backend hoặc chưa có run.", true);
+                return;
+            }
+            if (!sourceFile) {
+                setVariantEditorStatus("Chưa chọn model gốc.", true);
+                return;
+            }
+            if (!prompt) {
+                setVariantEditorStatus("Nhập mô tả thay đổi trước khi chạy.", true);
+                variantPrompt?.focus();
+                return;
+            }
+
+            const originalText = variantButton?.textContent || "Tạo biến thể 3D";
+            try {
+                if (variantButton) {
+                    variantButton.disabled = true;
+                    variantButton.textContent = "Đang tạo...";
+                }
+                setVariantEditorStatus("Đang xếp hàng TRELLIS variant...");
+                writeLog("🧬 Tạo biến thể TRELLIS 1: giữ cấu trúc model và thay đổi theo prompt...", "system");
+                const response = await pipelineFetch(`${backendUrl}/api/edit_3d_variant`, {
+                    method: "POST",
+                    headers: apiHeaders({ "Content-Type": "application/json" }),
+                    body: JSON.stringify({
+                        run_id: currentRunId,
+                        source_file: sourceFile,
+                        prompt,
+                    }),
+                });
+                if (!response.ok) {
+                    const detail = await response.text();
+                    throw new Error(`Variant API error: ${response.status} - ${detail}`);
+                }
+
+                let data = await response.json();
+                const jobId = data.job_id;
+                if (jobId) {
+                    let finished = false;
+                    for (let attempt = 0; attempt < 240; attempt++) {
+                        await waitForPipeline(5000);
+                        const statusResponse = await pipelineFetch(
+                            `${backendUrl}/api/generate_3d/status/${jobId}`,
+                            { headers: apiHeaders() }
+                        );
+                        if (!statusResponse.ok) {
+                            throw new Error(`Variant status error: ${statusResponse.status}`);
+                        }
+                        data = await statusResponse.json();
+                        if (data.status === "completed") {
+                            finished = true;
+                            break;
+                        }
+                        if (data.status === "failed") {
+                            throw new Error(data.error || "TRELLIS variant failed");
+                        }
+                        if (attempt % 6 === 0) {
+                            setVariantEditorStatus(
+                                data.status === "queued"
+                                    ? `Đang xếp hàng GPU (vị trí ${data.queue_position || "?"})...`
+                                    : `TRELLIS đang tạo biến thể (${Math.round((attempt + 1) * 5 / 60)} phút)...`
+                            );
+                        }
+                    }
+                    if (!finished) throw new Error("TRELLIS variant quá thời gian chờ 20 phút");
+                }
+
+                const variantModel = data.models?.[0];
+                if (!variantModel?.model_url) throw new Error("Backend không trả về model biến thể");
+                const variantUrl = `${backendUrl}${variantModel.model_url}`;
+                await previewBackendGlb(variantUrl, "", data.zip_url ? `${backendUrl}${data.zip_url}` : spatialLatestZipUrl);
+                if (data.zip_url) spatialLatestZipUrl = `${backendUrl}${data.zip_url}`;
+                writeLog("✅ TRELLIS đã tạo biến thể, giữ cấu trúc model gốc.", "success");
+                setVariantEditorStatus("Đã tạo xong. Model biến thể đang hiển thị trong viewport.");
+            } catch (error) {
+                if (!isPipelineStopError(error)) {
+                    writeLog(`❌ Lỗi tạo biến thể TRELLIS: ${error.message}`, "error");
+                }
+                setVariantEditorStatus(error.message, true);
+            } finally {
+                if (variantButton) {
+                    variantButton.disabled = false;
+                    variantButton.textContent = originalText;
                 }
             }
         }
@@ -4403,6 +4601,7 @@
         getMaterialEditorElements().metallic?.addEventListener("input", applyMaterialEditorValues);
         getMaterialEditorElements().reset?.addEventListener("click", restoreMaterialEditorValues);
         getMaterialEditorElements().download?.addEventListener("click", downloadEditedMaterialGlb);
+        getMaterialEditorElements().variantButton?.addEventListener("click", createTrellisVariant);
         document.getElementById("btn-spatial-download")?.addEventListener("click", async () => {
             if (!spatialLatestZipUrl) {
                 writeLog("Chưa có gói kết quả đầy đủ để tải.", "error");

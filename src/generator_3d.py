@@ -162,3 +162,67 @@ def generate_3d_models(
         )
 
     return models
+
+
+def generate_3d_variant(
+    base_model_path: str,
+    prompt: str,
+    output_dir: str,
+    name: str,
+    allowed_root: str | None = None,
+    public_prefix: str = "/multi_object_glb",
+) -> dict:
+    """Create a TRELLIS 1 text-conditioned variant from an existing GLB."""
+    clean_prompt = " ".join(str(prompt or "").split()).strip()
+    if not clean_prompt:
+        raise ValueError("Variant prompt must not be empty")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", name):
+        raise ValueError(f"Invalid variant name: {name}")
+
+    base_path = Path(base_model_path)
+    if allowed_root:
+        base_path = _path_within(str(base_path), allowed_root)
+    if base_path.suffix.lower() != ".glb" or not base_path.is_file():
+        raise FileNotFoundError(f"Base GLB not found: {base_path}")
+
+    os.makedirs(output_dir, exist_ok=True)
+    _check_worker_ready()
+    # The variant worker lazily swaps the image pipeline for TRELLIS-text-base;
+    # release the other GPU workers before asking it to do that swap.
+    _offload_worker(SD35_WORKER_URL, "SD3.5")
+    _offload_worker(SAM2_DINO_WORKER_URL, "SAM2/DINO")
+
+    try:
+        response = requests.post(
+            f"{TRELLIS_WORKER_URL}/variant",
+            json={
+                "base_mesh_path": str(base_path),
+                "prompt": clean_prompt,
+                "name": name,
+                "output_dir": output_dir,
+            },
+            timeout=TRELLIS_WORKER_TIMEOUT,
+        )
+        response.raise_for_status()
+        result = response.json()
+    except requests.RequestException as exc:
+        detail = _response_error_detail(exc.response)
+        raise RuntimeError(
+            f"TRELLIS variant worker failed for {name}: {detail or exc}"
+        ) from exc
+
+    model_path = result.get("model_path")
+    if not model_path or not Path(model_path).is_file():
+        raise FileNotFoundError(
+            f"TRELLIS variant worker returned a missing model for {name}: {model_path}"
+        )
+
+    return {
+        "name": name,
+        "label": f"Variant: {clean_prompt[:72]}",
+        "model_url": f"{public_prefix.rstrip('/')}/{name}.glb",
+        "model_path": model_path,
+        "base_model_path": str(base_path),
+        "prompt": clean_prompt,
+        "mode": "variant",
+    }

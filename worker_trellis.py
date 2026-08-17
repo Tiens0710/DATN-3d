@@ -28,14 +28,23 @@ from PIL import Image
 from pydantic import BaseModel
 
 
-app = FastAPI(title="DATN TRELLIS Worker", version="1.1.0")
+app = FastAPI(title="DATN TRELLIS Worker", version="1.2.0")
 pipeline = None
 pipeline_device = None
+variant_pipeline = None
+variant_pipeline_device = None
 postprocessing_utils = None
 load_error = None
+variant_load_error = None
 inference_lock = threading.Lock()
 TRELLIS_SPARSE_STEPS = int(os.environ.get("TRELLIS_SPARSE_STEPS", "16"))
 TRELLIS_SLAT_STEPS = int(os.environ.get("TRELLIS_SLAT_STEPS", "16"))
+TRELLIS_VARIANT_MODEL = os.environ.get(
+    "TRELLIS_VARIANT_MODEL", "microsoft/TRELLIS-text-base"
+)
+TRELLIS_VARIANT_SLAT_STEPS = int(
+    os.environ.get("TRELLIS_VARIANT_SLAT_STEPS", str(TRELLIS_SLAT_STEPS))
+)
 TRELLIS_TEXTURE_SIZE = int(os.environ.get("TRELLIS_TEXTURE_SIZE", "1024"))
 TRELLIS_SIMPLIFY = float(os.environ.get("TRELLIS_SIMPLIFY", "0.98"))
 TRELLIS_TEXTURE_MODE = os.environ.get("TRELLIS_TEXTURE_MODE", "opt").lower()
@@ -57,6 +66,13 @@ class GenerateRequest(BaseModel):
     output_dir: str
 
 
+class VariantRequest(BaseModel):
+    base_mesh_path: str
+    prompt: str
+    name: str
+    output_dir: str
+
+
 def _cuda_memory() -> str:
     try:
         if not torch.cuda.is_available():
@@ -74,6 +90,34 @@ def _cuda_memory() -> str:
 
 def _log(message: str) -> None:
     print(f"[TRELLIS] {message}", flush=True)
+
+
+def _load_trellis_input(path: Path) -> Image.Image:
+    """Load a crop without flattening a segmentation alpha mask.
+
+    White furniture is valid input, but a white RGB background is ambiguous to
+    TRELLIS' own background remover.  The SAM2 worker now preserves RGBA crops;
+    pass those through unchanged and reject an unusable alpha mask early.
+    """
+    with Image.open(path) as opened_image:
+        has_alpha = "A" in opened_image.getbands() or "transparency" in opened_image.info
+        image = opened_image.convert("RGBA" if has_alpha else "RGB")
+
+    if not has_alpha:
+        return image
+
+    import numpy as np
+
+    alpha = np.asarray(image.getchannel("A"), dtype=np.uint8)
+    support = alpha >= 32
+    area_ratio = float(support.mean()) if support.size else 0.0
+    if area_ratio < 0.001:
+        raise ValueError("TRELLIS input has an empty alpha mask; segmentation produced no object")
+    if area_ratio > 0.92:
+        raise ValueError(
+            "TRELLIS input alpha mask covers almost the entire image; refusing to model the background"
+        )
+    return image
 
 
 def _safe_empty_cache(name: str) -> None:
@@ -105,6 +149,26 @@ def _move_pipeline(device: str) -> None:
     if device == "cpu":
         _safe_empty_cache("pipeline offload")
     _log(f"TRELLIS pipeline is now on {device}; {_cuda_memory()}")
+
+
+def _move_variant_pipeline(device: str) -> None:
+    global variant_pipeline_device
+
+    if variant_pipeline is None:
+        raise RuntimeError("TRELLIS variant pipeline is not loaded")
+    if variant_pipeline_device == device:
+        return
+
+    _log(f"Moving TRELLIS variant pipeline to {device}...")
+    try:
+        variant_pipeline.to(device)
+    except Exception:
+        variant_pipeline_device = None
+        raise
+    variant_pipeline_device = device
+    if device == "cpu":
+        _safe_empty_cache("variant pipeline offload")
+    _log(f"TRELLIS variant pipeline is now on {device}; {_cuda_memory()}")
 
 
 def _load_pipeline() -> None:
@@ -176,6 +240,34 @@ def _load_pipeline() -> None:
         _log(f"Worker failed to load:\n{load_error}")
 
 
+def _load_variant_pipeline() -> None:
+    """Load the official TRELLIS 1 text pipeline only when a variant is requested."""
+    global variant_pipeline, variant_pipeline_device, variant_load_error
+
+    if variant_pipeline is not None:
+        return
+
+    try:
+        from trellis.pipelines import TrellisTextTo3DPipeline
+
+        _log(f"Loading TRELLIS variant pipeline {TRELLIS_VARIANT_MODEL}...")
+        loaded_pipeline = TrellisTextTo3DPipeline.from_pretrained(
+            TRELLIS_VARIANT_MODEL
+        )
+        loaded_pipeline.to("cuda")
+        variant_pipeline = loaded_pipeline
+        variant_pipeline_device = "cuda"
+        variant_load_error = None
+        _log(
+            f"TRELLIS variant pipeline ready ({TRELLIS_VARIANT_MODEL}); "
+            f"{_cuda_memory()}"
+        )
+    except Exception as exc:
+        variant_load_error = f"{exc}\n{traceback.format_exc()}"
+        _log(f"TRELLIS variant pipeline failed to load:\n{variant_load_error}")
+        raise
+
+
 @app.on_event("startup")
 def startup_event() -> None:
     _load_pipeline()
@@ -187,10 +279,16 @@ def health() -> dict:
         "ready": pipeline is not None,
         "error": load_error,
         "device": pipeline_device,
+        "variant_ready": variant_pipeline is not None,
+        "variant_device": variant_pipeline_device,
+        "variant_error": variant_load_error,
+        "variant_model": TRELLIS_VARIANT_MODEL,
         "cuda_memory": _cuda_memory(),
         "profile": {
             "sparse_steps": TRELLIS_SPARSE_STEPS,
             "slat_steps": TRELLIS_SLAT_STEPS,
+            "variant_slat_steps": TRELLIS_VARIANT_SLAT_STEPS,
+            "variant_model": TRELLIS_VARIANT_MODEL,
             "texture_size": TRELLIS_TEXTURE_SIZE,
             "texture_mode": TRELLIS_TEXTURE_MODE,
             "texture_views": TRELLIS_TEXTURE_VIEWS,
@@ -211,6 +309,8 @@ def offload() -> dict:
     with inference_lock:
         try:
             _move_pipeline("cpu")
+            if variant_pipeline is not None:
+                _move_variant_pipeline("cpu")
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -245,13 +345,18 @@ def generate(payload: GenerateRequest) -> dict:
     with inference_lock:
         started_at = time.perf_counter()
         try:
+            if variant_pipeline is not None:
+                _move_variant_pipeline("cpu")
             _move_pipeline("cuda")
             if torch.cuda.is_available():
                 torch.cuda.reset_peak_memory_stats()
             _log(f"Request {name}: crop={crop_path}; {_cuda_memory()}")
 
-            image = Image.open(crop_path).convert("RGB")
-            _log(f"{name}: preprocessing image ({image.width}x{image.height})")
+            image = _load_trellis_input(crop_path)
+            input_mode = "RGBA/SAM2 alpha" if "A" in image.getbands() else "RGB fallback"
+            _log(
+                f"{name}: preprocessing image ({image.width}x{image.height}, {input_mode})"
+            )
             image = pipeline.preprocess_image(image)
 
             _log(f"{name}: running sparse structure + SLAT diffusion")
@@ -346,6 +451,153 @@ def generate(payload: GenerateRequest) -> dict:
             _log(f"{name}: request cleanup; {_cuda_memory()}")
 
     return {"model_path": str(output_path)}
+
+
+def _open3d_mesh_from_glb(path: Path):
+    """Read a GLB as one triangle mesh for TRELLIS' official run_variant API."""
+    import numpy as np
+    import open3d as o3d
+    import trimesh
+
+    loaded = trimesh.load(str(path), force="scene", process=False)
+    if isinstance(loaded, trimesh.Scene):
+        loaded = loaded.dump(concatenate=True)
+    vertices = np.asarray(getattr(loaded, "vertices", []), dtype=np.float64)
+    faces = np.asarray(getattr(loaded, "faces", []), dtype=np.int32)
+    if vertices.size == 0 or faces.size == 0:
+        raise RuntimeError(f"Base GLB has no triangle mesh: {path}")
+
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    mesh.triangles = o3d.utility.Vector3iVector(faces)
+    mesh.remove_duplicated_vertices()
+    mesh.remove_degenerate_triangles()
+    mesh.remove_unreferenced_vertices()
+    if len(mesh.vertices) == 0 or len(mesh.triangles) == 0:
+        raise RuntimeError(f"Base GLB has no usable triangles: {path}")
+    return mesh
+
+
+@app.post("/variant")
+def generate_variant(payload: VariantRequest) -> dict:
+    if pipeline is None:
+        raise HTTPException(
+            status_code=503,
+            detail=load_error or "TRELLIS image pipeline is not loaded",
+        )
+
+    base_mesh_path = Path(payload.base_mesh_path)
+    if not base_mesh_path.is_file() or base_mesh_path.suffix.lower() != ".glb":
+        raise HTTPException(status_code=404, detail="Base GLB not found")
+    prompt = " ".join(str(payload.prompt or "").split()).strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Variant prompt must not be empty")
+    if len(prompt) > 1000:
+        raise HTTPException(status_code=400, detail="Variant prompt is too long")
+
+    name = Path(payload.name).name
+    if not name or name in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid variant model name")
+    output_dir = Path(payload.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{name}.glb"
+
+    with inference_lock:
+        started_at = time.perf_counter()
+        try:
+            # The T4 cannot keep both large pipelines on CUDA.  The image
+            # pipeline is moved to CPU while the official text variant model
+            # performs run_variant, then it is released again in finally.
+            _move_pipeline("cpu")
+            _load_variant_pipeline()
+            _move_variant_pipeline("cuda")
+            if torch.cuda.is_available():
+                torch.cuda.reset_peak_memory_stats()
+
+            _log(
+                f"{name}: run_variant base={base_mesh_path}; "
+                f"prompt={prompt}; {_cuda_memory()}"
+            )
+            base_mesh = _open3d_mesh_from_glb(base_mesh_path)
+            with torch.no_grad():
+                outputs = variant_pipeline.run_variant(
+                    base_mesh,
+                    prompt,
+                    seed=42,
+                    formats=["gaussian", "mesh"],
+                    slat_sampler_params={
+                        "steps": TRELLIS_VARIANT_SLAT_STEPS,
+                        "cfg_strength": 3.0,
+                    },
+                )
+
+            _log(f"{name}: converting variant output to textured GLB")
+            if TRELLIS_TEXTURE_MODE == "opt":
+                with torch.enable_grad():
+                    glb = postprocessing_utils.to_glb(
+                        outputs["gaussian"][0],
+                        outputs["mesh"][0],
+                        simplify=TRELLIS_SIMPLIFY,
+                        fill_holes=TRELLIS_FILL_HOLES,
+                        texture_size=TRELLIS_TEXTURE_SIZE,
+                        verbose=False,
+                    )
+            else:
+                with torch.inference_mode():
+                    glb = postprocessing_utils.to_glb(
+                        outputs["gaussian"][0],
+                        outputs["mesh"][0],
+                        simplify=TRELLIS_SIMPLIFY,
+                        fill_holes=TRELLIS_FILL_HOLES,
+                        texture_size=TRELLIS_TEXTURE_SIZE,
+                        verbose=False,
+                    )
+            glb.export(str(output_path))
+            if not output_path.is_file():
+                raise RuntimeError("TRELLIS variant export finished but no file was written")
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            _log(
+                f"{name}: variant saved in "
+                f"{time.perf_counter() - started_at:.1f}s; {_cuda_memory()}"
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            error_trace = traceback.format_exc()
+            _log(
+                f"{name}: VARIANT FAILED after "
+                f"{time.perf_counter() - started_at:.1f}s; {_cuda_memory()}\n"
+                f"{error_trace}"
+            )
+            detail = f"{type(exc).__name__}: {exc}"
+            if "out of memory" in str(exc).lower():
+                detail += ". GPU out of memory while running TRELLIS variant."
+            raise HTTPException(
+                status_code=500,
+                detail=f"TRELLIS variant generation failed for {name}: {detail}",
+            ) from exc
+        finally:
+            if "outputs" in locals():
+                del outputs
+            if "glb" in locals():
+                del glb
+            if "base_mesh" in locals():
+                del base_mesh
+            if variant_pipeline is not None and variant_pipeline_device == "cuda":
+                try:
+                    _move_variant_pipeline("cpu")
+                except Exception as exc:
+                    _log(f"{name}: variant pipeline offload failed: {exc}")
+            gc.collect()
+            _safe_empty_cache(name)
+            _log(f"{name}: variant request cleanup; {_cuda_memory()}")
+
+    return {
+        "model_path": str(output_path),
+        "mode": "variant",
+        "base_mesh_path": str(base_mesh_path),
+    }
 
 
 if __name__ == "__main__":

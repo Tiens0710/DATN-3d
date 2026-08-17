@@ -16,6 +16,7 @@ def load_mask_helpers():
             "_mask_extent",
             "_mask_completeness",
             "_select_complete_mask",
+            "_is_reusable_alpha",
         }
     ]
     namespace = {"np": np}
@@ -24,6 +25,19 @@ def load_mask_helpers():
 
 
 class SegmentationQualityTests(unittest.TestCase):
+    def test_reusable_alpha_rejects_empty_and_full_canvas_masks(self):
+        helpers = load_mask_helpers()
+        is_reusable = helpers["_is_reusable_alpha"]
+
+        empty = np.zeros((100, 100), dtype=np.uint8)
+        full = np.full((100, 100), 255, dtype=np.uint8)
+        object_alpha = np.zeros((100, 100), dtype=np.uint8)
+        object_alpha[20:80, 30:70] = 255
+
+        self.assertFalse(is_reusable(empty))
+        self.assertFalse(is_reusable(full))
+        self.assertTrue(is_reusable(object_alpha))
+
     def test_complete_chair_mask_wins_over_higher_score_seat_only_mask(self):
         helpers = load_mask_helpers()
         partial = np.zeros((100, 100), dtype=bool)

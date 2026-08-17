@@ -453,6 +453,24 @@ def _mask_extent(mask: np.ndarray) -> tuple[int, int, int, int] | None:
     )
 
 
+def _is_reusable_alpha(alpha: np.ndarray) -> bool:
+    """Return whether an existing alpha channel contains a usable object.
+
+    Object-wise generation already produces a SAM2 alpha mask during the
+    sanitization step.  Re-running GroundingDINO on the flattened white preview
+    is unsafe for white furniture, so only reuse an alpha channel when it is
+    clearly neither empty nor an almost-opaque full canvas.
+    """
+    if alpha.ndim != 2 or not alpha.size:
+        return False
+    support = alpha >= 32
+    extent = _mask_extent(support)
+    if extent is None:
+        return False
+    area_ratio = float(support.mean())
+    return 0.001 <= area_ratio <= 0.92
+
+
 def _mask_completeness(mask, sam_score: float, box: list[int]) -> float:
     """Rank SAM candidates by score and object extent, not score alone."""
     x1, y1, x2, y2 = [int(value) for value in box]
@@ -871,10 +889,14 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
         max_object_size = (int(width * 0.82), int(height * 0.82))
         isolated.thumbnail(max_object_size, Image.Resampling.LANCZOS)
 
-        clean_image = Image.new("RGB", (width, height), "white")
+        # Keep the object on a transparent canvas.  Flattening this image to
+        # RGB white here loses the SAM2 result and makes a white object
+        # indistinguishable from its background when objectwise segmentation
+        # runs again later in the pipeline.
+        clean_image = Image.new("RGBA", (width, height), (255, 255, 255, 0))
         paste_x = (width - isolated.width) // 2
         paste_y = (height - isolated.height) // 2
-        clean_image.paste(isolated, (paste_x, paste_y), isolated)
+        clean_image.alpha_composite(isolated, (paste_x, paste_y))
         clean_image.save(image_path)
 
         job.update(
@@ -884,6 +906,7 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 "kept_confidence": selected["confidence"],
                 "mask_score": mask_score,
                 "segmentation_method": segmentation_method,
+                "alpha_preserved": True,
             }
         )
         sanitized_jobs.append(job)
@@ -916,21 +939,46 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
             raise FileNotFoundError(image_path or "Missing object image path")
 
         label = str(item.get("label", "object")).strip().lower() or "object"
-        image, candidates = _detect_label_instances(image_path, label)
+        with Image.open(image_path) as opened_image:
+            has_alpha = "A" in opened_image.getbands() or "transparency" in opened_image.info
+            image = opened_image.convert("RGBA" if has_alpha else "RGB")
         width, height = image.size
 
-        if candidates:
-            box_values = candidates[0]["box"]
-            confidence = candidates[0]["confidence"]
+        # Sanitization has already run GroundingDINO + SAM2.  Reuse that alpha
+        # mask instead of asking GroundingDINO to find a white object on the
+        # white canvas produced by the old flow.
+        preserved_alpha = None
+        if has_alpha:
+            candidate_alpha = np.asarray(image.getchannel("A"), dtype=np.uint8)
+            if _is_reusable_alpha(candidate_alpha):
+                preserved_alpha = _clean_alpha(candidate_alpha, [0, 0, width, height])
+                if not _is_reusable_alpha(preserved_alpha):
+                    preserved_alpha = None
+
+        if preserved_alpha is not None:
+            alpha = preserved_alpha
+            box_values = list(_mask_extent(alpha >= 32) or [0, 0, width, height])
+            confidence = float(item.get("kept_confidence", item.get("confidence", 1.0)) or 0.0)
+            mask_score = float(item.get("mask_score", 1.0) or 1.0)
+            best = 0
+            segmentation_method = f"{item.get('segmentation_method') or 'sam2'}+reused_alpha"
         else:
-            margin = max(18, int(min(width, height) * 0.04))
-            box_values = [margin, margin, width - margin, height - margin]
-            confidence = 0.0
-        alpha, best, mask_score, segmentation_method = _predict_refined_alpha(
-            image,
-            box_values,
-            label=label,
-        )
+            # Backward-compatible fallback for old manifests that contain an
+            # RGB image without a preserved alpha channel.
+            image, candidates = _detect_label_instances(image_path, label)
+            width, height = image.size
+            if candidates:
+                box_values = candidates[0]["box"]
+                confidence = candidates[0]["confidence"]
+            else:
+                margin = max(18, int(min(width, height) * 0.04))
+                box_values = [margin, margin, width - margin, height - margin]
+                confidence = 0.0
+            alpha, best, mask_score, segmentation_method = _predict_refined_alpha(
+                image,
+                box_values,
+                label=label,
+            )
 
         rgba = image.convert("RGBA")
         rgba.putalpha(Image.fromarray(alpha))
@@ -952,7 +1000,11 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
                 "final_box": [0, 0, width, height],
                 "crop_path": crop_path,
                 "crop_url": f"/crops/{name}.png",
-                "source_mode": "objectwise_sam2",
+                "source_mode": (
+                    "objectwise_reused_alpha"
+                    if preserved_alpha is not None
+                    else "objectwise_sam2"
+                ),
                 "segmentation_method": segmentation_method,
             }
         )

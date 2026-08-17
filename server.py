@@ -28,7 +28,7 @@ from src.parser import parse_scene_graph, parse_scene_graph_from_objects
 from src.layout import compute_layout
 from src.generator_2d import create_object_contact_sheet, generate_object_images
 from src.segmenter import run_grounded_sam2
-from src.generator_3d import generate_3d_models
+from src.generator_3d import generate_3d_models, generate_3d_variant
 from src.combiner import combine_scene_meshes
 from src.materials import patch_glb_materials
 
@@ -50,10 +50,10 @@ os.makedirs(RUNS_DIR, exist_ok=True)
 
 app = FastAPI(
     title="DATN 3D Scene Reconstruction API",
-    version="1.3.1",
+    version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v7-material-edit"
+BACKEND_BUILD = "gemini-metric-layout-v8-trellis-variant"
 
 allowed_origins = [
     origin.strip()
@@ -140,6 +140,13 @@ class MaterialEditRequest(BaseModel):
     run_id: str
     source_file: str = "outputs/scene_combined.glb"
     materials: List[Dict[str, Any]]
+
+
+class TrellisVariantRequest(BaseModel):
+    run_id: str
+    source_file: str
+    prompt: str
+    name: str = ""
 
 
 trellis_jobs: Dict[str, Dict[str, Any]] = {}
@@ -753,6 +760,65 @@ def run_trellis_job(job_id: str, run_id: str, crops: List[Dict[str, Any]]) -> No
             }
 
 
+def run_trellis_variant_job(
+    job_id: str,
+    run_id: str,
+    source_path: str,
+    prompt: str,
+    name: str,
+) -> None:
+    with trellis_jobs_lock:
+        if run_id in cancelled_runs:
+            trellis_jobs[job_id]["status"] = "cancelled"
+            trellis_jobs[job_id]["updated_at"] = time.time()
+            return
+        trellis_jobs[job_id]["status"] = "running"
+        trellis_jobs[job_id]["updated_at"] = time.time()
+
+    try:
+        paths = _run_paths(run_id)
+        model = generate_3d_variant(
+            source_path,
+            prompt,
+            str(paths["models"]),
+            name,
+            allowed_root=str(paths["root"]),
+            public_prefix=f"/runs/{run_id}/models",
+        )
+        source_relative = Path(source_path).resolve().relative_to(
+            paths["root"].resolve()
+        ).as_posix()
+        _write_run_metadata(
+            paths,
+            f"variant_{name}.json",
+            {
+                "run_id": run_id,
+                "source_file": source_relative,
+                "prompt": prompt,
+                "model": model,
+            },
+        )
+        zip_path = _create_full_run_archive(paths)
+        with trellis_jobs_lock:
+            trellis_jobs[job_id] = {
+                "status": "cancelled" if run_id in cancelled_runs else "completed",
+                "models": [] if run_id in cancelled_runs else [model],
+                "run_id": run_id,
+                "kind": "variant",
+                "zip_url": f"/runs/{run_id}/outputs/{zip_path.name}",
+                "updated_at": time.time(),
+            }
+    except Exception as exc:
+        with trellis_jobs_lock:
+            trellis_jobs[job_id] = {
+                "status": "cancelled" if run_id in cancelled_runs else "failed",
+                "error": str(exc),
+                "run_id": run_id,
+                "kind": "variant",
+                "updated_at": time.time(),
+            }
+
+
 def get_trellis_queue_position(job_id: str) -> int:
     with trellis_jobs_lock:
         queued_ids = [
@@ -769,9 +835,24 @@ def get_trellis_queue_position(job_id: str) -> int:
 async def trellis_queue_worker() -> None:
     """Process queued TRELLIS jobs without blocking the FastAPI event loop."""
     while True:
-        job_id, run_id, crops = await trellis_queue.get()
+        job_id, run_id, payload = await trellis_queue.get()
         try:
-            await asyncio.to_thread(run_trellis_job, job_id, run_id, crops)
+            if payload.get("kind") == "variant":
+                await asyncio.to_thread(
+                    run_trellis_variant_job,
+                    job_id,
+                    run_id,
+                    payload["source_path"],
+                    payload["prompt"],
+                    payload["name"],
+                )
+            else:
+                await asyncio.to_thread(
+                    run_trellis_job,
+                    job_id,
+                    run_id,
+                    payload.get("crops", []),
+                )
         finally:
             trellis_queue.task_done()
 
@@ -810,7 +891,7 @@ def health_check():
     readiness = backend_readiness()
     return {
         "status": "ok",
-        "version": "1.3.1",
+        "version": "1.4.0",
         "build": BACKEND_BUILD,
         **readiness,
         "gemini_model": GEMINI_MODEL,
@@ -1149,11 +1230,14 @@ async def api_generate_3d(request: TrellisRequest):
         trellis_jobs[job_id] = {
             "status": "queued",
             "run_id": request.run_id,
+            "kind": "generate",
             "created_at": now,
             "updated_at": now,
         }
 
-    await trellis_queue.put((job_id, request.run_id, safe_crops))
+    await trellis_queue.put(
+        (job_id, request.run_id, {"kind": "generate", "crops": safe_crops})
+    )
     queue_position = get_trellis_queue_position(job_id)
 
     return {
@@ -1174,6 +1258,69 @@ def api_generate_3d_status(job_id: str):
     if result.get("status") == "queued":
         result["queue_position"] = get_trellis_queue_position(job_id)
     return result
+
+
+@app.post("/api/edit_3d_variant")
+async def api_edit_3d_variant(request: TrellisVariantRequest):
+    """Queue TRELLIS 1's official text-conditioned run_variant operation."""
+    _cleanup_state()
+    _raise_if_run_cancelled(request.run_id)
+    paths = _run_paths(request.run_id)
+    if trellis_queue.qsize() >= MAX_TRELLIS_QUEUE:
+        raise HTTPException(status_code=429, detail="TRELLIS queue is full; try again later")
+
+    prompt = " ".join(str(request.prompt or "").split()).strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Variant prompt must not be empty")
+    if len(prompt) > 1000:
+        raise HTTPException(status_code=400, detail="Variant prompt must be 1000 characters or fewer")
+
+    source_name = str(request.source_file or "").replace("\\", "/").strip("/")
+    source_path = (paths["root"] / source_name).resolve()
+    run_root = paths["root"].resolve()
+    if run_root not in source_path.parents or source_path.suffix.lower() != ".glb":
+        raise HTTPException(status_code=400, detail="source_file must be a GLB inside this run")
+    if not source_path.is_file():
+        raise HTTPException(status_code=404, detail="Source GLB not found")
+
+    requested_name = re.sub(r"[^A-Za-z0-9_-]+", "_", str(request.name or "").strip())
+    if not requested_name:
+        requested_name = f"{source_path.stem}_variant_{uuid.uuid4().hex[:8]}"
+    requested_name = requested_name[:80].strip("_-")
+    if not requested_name:
+        raise HTTPException(status_code=400, detail="Invalid variant model name")
+
+    job_id = uuid.uuid4().hex
+    now = time.time()
+    with trellis_jobs_lock:
+        trellis_jobs[job_id] = {
+            "status": "queued",
+            "run_id": request.run_id,
+            "kind": "variant",
+            "source_file": source_path.relative_to(run_root).as_posix(),
+            "prompt": prompt,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    await trellis_queue.put(
+        (
+            job_id,
+            request.run_id,
+            {
+                "kind": "variant",
+                "source_path": str(source_path),
+                "prompt": prompt,
+                "name": requested_name,
+            },
+        )
+    )
+    return {
+        "status": "queued",
+        "kind": "variant",
+        "job_id": job_id,
+        "queue_position": get_trellis_queue_position(job_id),
+    }
 
 
 @app.post("/api/combine_scene")
