@@ -2517,6 +2517,128 @@
             display: none;
         }
 
+        .material-controls {
+            position: absolute;
+            z-index: 8;
+            top: 112px;
+            right: 138px;
+            width: 214px;
+            display: grid;
+            gap: 9px;
+            padding: 11px;
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 10px;
+            background: rgba(20, 23, 29, .86);
+            color: #eef0f4;
+            backdrop-filter: blur(15px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+        }
+
+        .material-controls.is-hidden {
+            display: none;
+        }
+
+        .material-field {
+            display: grid;
+            gap: 5px;
+            color: #aeb7c4;
+            font-size: 10px;
+        }
+
+        .material-field > span {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .material-field output {
+            color: #f2f5f8;
+            font-family: "Fira Code", monospace;
+            font-size: 10px;
+        }
+
+        .material-field select,
+        .material-field input[type="range"] {
+            width: 100%;
+        }
+
+        .material-field select {
+            min-height: 26px;
+            padding: 4px 7px;
+            border: 1px solid #3a4655;
+            border-radius: 5px;
+            background: #151b23;
+            color: #e7ebf1;
+            font-size: 10px;
+        }
+
+        .material-field input[type="color"] {
+            width: 100%;
+            height: 28px;
+            padding: 2px;
+            border: 1px solid #3a4655;
+            border-radius: 5px;
+            background: #151b23;
+            cursor: pointer;
+        }
+
+        .material-field input:disabled,
+        .material-field select:disabled,
+        .material-action-btn:disabled {
+            cursor: not-allowed;
+            opacity: .45;
+        }
+
+        .material-actions {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 6px;
+        }
+
+        .material-action-btn {
+            min-height: 27px;
+            padding: 4px 7px;
+            border: 1px solid #3a4655;
+            border-radius: 5px;
+            background: #202832;
+            color: #dce3eb;
+            font-size: 10px;
+            white-space: nowrap;
+        }
+
+        .material-action-btn:not(:disabled):hover {
+            border-color: #9184e8;
+            background: #2a3040;
+        }
+
+        .material-action-btn.primary {
+            border-color: rgba(145, 132, 232, .78);
+            background: linear-gradient(135deg, #7567d9, #5748b8);
+            color: #fff;
+        }
+
+        #material-editor-status {
+            color: #7f8b9b;
+            font-size: 9px;
+            line-height: 1.35;
+        }
+
+        @media (max-width: 1180px) {
+            .material-controls {
+                right: 126px;
+                width: 198px;
+            }
+        }
+
+        @media (max-width: 860px) {
+            .material-controls {
+                top: 98px;
+                right: 12px;
+                width: min(214px, calc(100% - 24px));
+            }
+        }
+
         .pipeline-progress.image-mode {
             grid-template-columns: repeat(4, minmax(0, 1fr));
         }
@@ -3197,6 +3319,34 @@
                         <button class="view-control-btn" id="btn-view-front" type="button"><i data-lucide="move-horizontal"></i>Front</button>
                         <button class="view-control-btn" id="btn-view-top" type="button"><i data-lucide="arrow-down-to-line"></i>Top</button>
                         <button class="view-control-btn" id="btn-view-side" type="button"><i data-lucide="panel-right"></i>Side</button>
+                        <button class="view-control-btn" id="btn-view-material" type="button"><i data-lucide="palette"></i>Material</button>
+                    </div>
+
+                    <div class="material-controls is-hidden" id="material-controls" aria-label="Material editor">
+                        <div class="control-title">Material editor</div>
+                        <label class="material-field">
+                            <span>Apply to</span>
+                            <select id="material-target" disabled>
+                                <option value="all">All materials</option>
+                            </select>
+                        </label>
+                        <label class="material-field material-color-field">
+                            <span>Base color</span>
+                            <input id="material-color" type="color" value="#ffffff" disabled>
+                        </label>
+                        <label class="material-field">
+                            <span><span>Roughness</span><output id="material-roughness-value">0.80</output></span>
+                            <input id="material-roughness" type="range" min="0" max="1" step="0.01" value="0.8" disabled>
+                        </label>
+                        <label class="material-field">
+                            <span><span>Metallic</span><output id="material-metallic-value">0.00</output></span>
+                            <input id="material-metallic" type="range" min="0" max="1" step="0.01" value="0" disabled>
+                        </label>
+                        <div class="material-actions">
+                            <button class="material-action-btn" id="btn-material-reset" type="button" disabled>Reset</button>
+                            <button class="material-action-btn primary" id="btn-material-download" type="button" disabled>Tải GLB đã chỉnh</button>
+                        </div>
+                        <small id="material-editor-status">Chưa có mô hình 3D.</small>
                     </div>
 
                     <div class="scene-telemetry" aria-label="Scene telemetry">
@@ -3556,7 +3706,9 @@
                 globalViewer.removeAttribute("src");
                 globalViewer.hidden = true;
                 delete globalViewer.dataset.objectUrl;
+                delete globalViewer.dataset.sourceUrl;
             }
+            resetMaterialEditorState();
             const emptyState = document.getElementById("spatial-viewport-empty");
             if (emptyState) emptyState.style.display = "flex";
             const stateLabel = document.getElementById("spatial-viewport-state");
@@ -3630,6 +3782,7 @@
             if (previousUrl) URL.revokeObjectURL(previousUrl);
             const objectUrl = URL.createObjectURL(blob);
             if (spatialViewer) spatialViewer.dataset.objectUrl = objectUrl;
+            if (spatialViewer) spatialViewer.dataset.sourceUrl = sceneUrl || url;
             syncSpatialViewport(objectUrl, sceneUrl, zipUrl);
         }
 
@@ -3643,10 +3796,13 @@
 
             spatialLatestSceneUrl = sceneUrl || "";
             spatialLatestZipUrl = zipUrl || "";
+            resetMaterialEditorState();
+            globalViewer.dataset.sourceUrl = sceneUrl || globalViewer.dataset.sourceUrl || objectUrl;
             globalViewer.src = objectUrl;
             globalViewer.cameraOrbit = "30deg 72deg 78%";
             globalViewer.fieldOfView = "35deg";
             globalViewer.hidden = false;
+            bindMaterialEditor(globalViewer);
             setModelViewerAutoRotate(globalViewer, true);
             if (emptyState) emptyState.style.display = "none";
             const finalScene = Boolean(sceneUrl);
@@ -3691,6 +3847,346 @@
         const viewportResizeMin = 280;
         const viewportResizeMax = 900;
         let viewportResizeState = null;
+
+        const materialEditorState = {
+            viewer: spatialViewer,
+            materials: [],
+            originals: [],
+            values: [],
+            sourceBuffer: null,
+            sourceKey: "",
+        };
+
+        function getMaterialEditorElements() {
+            return {
+                panel: document.getElementById("material-controls"),
+                target: document.getElementById("material-target"),
+                color: document.getElementById("material-color"),
+                roughness: document.getElementById("material-roughness"),
+                roughnessValue: document.getElementById("material-roughness-value"),
+                metallic: document.getElementById("material-metallic"),
+                metallicValue: document.getElementById("material-metallic-value"),
+                reset: document.getElementById("btn-material-reset"),
+                download: document.getElementById("btn-material-download"),
+                status: document.getElementById("material-editor-status"),
+            };
+        }
+
+        function setMaterialEditorStatus(message, isError = false) {
+            const { status } = getMaterialEditorElements();
+            if (!status) return;
+            status.textContent = message;
+            status.style.color = isError ? "#f09a9f" : "#7f8b9b";
+        }
+
+        function setMaterialEditorEnabled(enabled) {
+            const { target, color, roughness, metallic, reset, download } = getMaterialEditorElements();
+            [target, color, roughness, metallic, reset, download].forEach((element) => {
+                if (element) element.disabled = !enabled;
+            });
+        }
+
+        function cloneMaterialValue(value) {
+            return {
+                color: Array.from(value.color || [1, 1, 1, 1]),
+                roughness: Number(value.roughness ?? 0.8),
+                metallic: Number(value.metallic ?? 0),
+            };
+        }
+
+        function getMaterialPbr(material) {
+            return material?.pbrMetallicRoughness || null;
+        }
+
+        function materialFactorColorToHex(factor) {
+            const channels = Array.from(factor || [1, 1, 1]).slice(0, 3).map((channel) => {
+                return Math.max(0, Math.min(255, Math.round(Number(channel || 0) * 255)));
+            });
+            return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+        }
+
+        function hexToMaterialColor(value) {
+            const hex = String(value || "#ffffff").replace("#", "");
+            const normalized = hex.length === 3
+                ? hex.split("").map((channel) => `${channel}${channel}`).join("")
+                : hex.padEnd(6, "f").slice(0, 6);
+            return [
+                parseInt(normalized.slice(0, 2), 16) / 255,
+                parseInt(normalized.slice(2, 4), 16) / 255,
+                parseInt(normalized.slice(4, 6), 16) / 255,
+            ];
+        }
+
+        function readMaterialValue(material) {
+            const pbr = getMaterialPbr(material);
+            return {
+                color: Array.from(pbr?.baseColorFactor || [1, 1, 1, 1]),
+                roughness: Number(pbr?.roughnessFactor ?? 0.8),
+                metallic: Number(pbr?.metallicFactor ?? 0),
+            };
+        }
+
+        function selectedMaterialIndexes() {
+            const { target } = getMaterialEditorElements();
+            if (!target || target.value === "all") {
+                return materialEditorState.materials.map((_, index) => index);
+            }
+            const index = Number(target.value);
+            return Number.isInteger(index) && materialEditorState.materials[index]
+                ? [index]
+                : [];
+        }
+
+        function syncMaterialEditorInputs() {
+            const { target, color, roughness, roughnessValue, metallic, metallicValue } = getMaterialEditorElements();
+            const index = target?.value === "all" ? 0 : Number(target?.value);
+            const value = materialEditorState.values[index];
+            if (!value) return;
+            if (color) color.value = materialFactorColorToHex(value.color);
+            if (roughness) roughness.value = String(value.roughness);
+            if (roughnessValue) roughnessValue.textContent = Number(value.roughness).toFixed(2);
+            if (metallic) metallic.value = String(value.metallic);
+            if (metallicValue) metallicValue.textContent = Number(value.metallic).toFixed(2);
+        }
+
+        function populateMaterialEditor(viewer) {
+            const materials = Array.from(viewer?.model?.materials || []);
+            const { target } = getMaterialEditorElements();
+            if (!materials.length || !target) {
+                materialEditorState.materials = [];
+                materialEditorState.originals = [];
+                materialEditorState.values = [];
+                setMaterialEditorEnabled(false);
+                setMaterialEditorStatus("Mô hình chưa có material để chỉnh.");
+                return false;
+            }
+
+            materialEditorState.viewer = viewer;
+            materialEditorState.materials = materials;
+            materialEditorState.originals = materials.map(readMaterialValue).map(cloneMaterialValue);
+            materialEditorState.values = materialEditorState.originals.map(cloneMaterialValue);
+            target.innerHTML = "<option value=\"all\">Tất cả materials</option>";
+            materials.forEach((material, index) => {
+                const option = document.createElement("option");
+                option.value = String(index);
+                option.textContent = `${index + 1}. ${material.name || `Material ${index + 1}`}`;
+                target.appendChild(option);
+            });
+            setMaterialEditorEnabled(true);
+            syncMaterialEditorInputs();
+            setMaterialEditorStatus(`${materials.length} material${materials.length > 1 ? "s" : ""} sẵn sàng.`);
+            return true;
+        }
+
+        function resetMaterialEditorState() {
+            materialEditorState.materials = [];
+            materialEditorState.originals = [];
+            materialEditorState.values = [];
+            materialEditorState.sourceBuffer = null;
+            materialEditorState.sourceKey = "";
+            const { panel, target } = getMaterialEditorElements();
+            if (panel) panel.classList.add("is-hidden");
+            if (target) target.innerHTML = "<option value=\"all\">All materials</option>";
+            setMaterialEditorEnabled(false);
+            setMaterialEditorStatus("Chưa có mô hình 3D.");
+        }
+
+        function applyMaterialEditorValues() {
+            const { color, roughness, roughnessValue, metallic, metallicValue } = getMaterialEditorElements();
+            if (!materialEditorState.materials.length || !color || !roughness || !metallic) return;
+            const indexes = selectedMaterialIndexes();
+            const rgb = hexToMaterialColor(color.value);
+            const roughnessValueNumber = Number(roughness.value);
+            const metallicValueNumber = Number(metallic.value);
+
+            indexes.forEach((index) => {
+                const material = materialEditorState.materials[index];
+                const pbr = getMaterialPbr(material);
+                if (!pbr) return;
+                const alpha = Number(materialEditorState.values[index]?.color?.[3] ?? 1);
+                pbr.setBaseColorFactor?.([...rgb, alpha]);
+                pbr.setRoughnessFactor?.(roughnessValueNumber);
+                pbr.setMetallicFactor?.(metallicValueNumber);
+                materialEditorState.values[index] = {
+                    color: [...rgb, alpha],
+                    roughness: roughnessValueNumber,
+                    metallic: metallicValueNumber,
+                };
+            });
+
+            if (roughnessValue) roughnessValue.textContent = roughnessValueNumber.toFixed(2);
+            if (metallicValue) metallicValue.textContent = metallicValueNumber.toFixed(2);
+            setMaterialEditorStatus("Đã áp dụng trên viewer. Bấm Tải GLB đã chỉnh để lưu file.");
+        }
+
+        function restoreMaterialEditorValues() {
+            materialEditorState.materials.forEach((material, index) => {
+                const pbr = getMaterialPbr(material);
+                const original = materialEditorState.originals[index];
+                if (!pbr || !original) return;
+                pbr.setBaseColorFactor?.([...original.color]);
+                pbr.setRoughnessFactor?.(original.roughness);
+                pbr.setMetallicFactor?.(original.metallic);
+            });
+            materialEditorState.values = materialEditorState.originals.map(cloneMaterialValue);
+            const { target } = getMaterialEditorElements();
+            if (target) target.value = "all";
+            syncMaterialEditorInputs();
+            setMaterialEditorStatus("Đã khôi phục material ban đầu.");
+        }
+
+        async function loadMaterialSourceBuffer() {
+            const sourceUrl = spatialViewer?.dataset?.sourceUrl
+                || spatialLatestSceneUrl
+                || spatialViewer?.dataset?.objectUrl;
+            if (!sourceUrl) throw new Error("Chưa có file GLB nguồn");
+            if (materialEditorState.sourceBuffer && materialEditorState.sourceKey === sourceUrl) {
+                return materialEditorState.sourceBuffer;
+            }
+            const response = await fetch(sourceUrl, {
+                headers: { "ngrok-skip-browser-warning": "69420" },
+            });
+            if (!response.ok) throw new Error(`Không thể tải GLB nguồn (HTTP ${response.status})`);
+            materialEditorState.sourceBuffer = await response.arrayBuffer();
+            materialEditorState.sourceKey = sourceUrl;
+            return materialEditorState.sourceBuffer;
+        }
+
+        function patchGlbMaterialChunk(buffer, values) {
+            const source = new Uint8Array(buffer);
+            const view = new DataView(source.buffer, source.byteOffset, source.byteLength);
+            if (source.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67) {
+                throw new Error("File không phải GLB hợp lệ");
+            }
+
+            const jsonLength = view.getUint32(12, true);
+            const jsonStart = 20;
+            const jsonEnd = jsonStart + jsonLength;
+            if (jsonEnd > source.byteLength) throw new Error("GLB bị thiếu JSON chunk");
+
+            const decoder = new TextDecoder();
+            const gltf = JSON.parse(decoder.decode(source.slice(jsonStart, jsonEnd)).trim());
+            if (!Array.isArray(gltf.materials)) throw new Error("GLB không có danh sách material");
+            gltf.materials.forEach((material, index) => {
+                const value = values[index];
+                if (!value) return;
+                material.pbrMetallicRoughness = material.pbrMetallicRoughness || {};
+                material.pbrMetallicRoughness.baseColorFactor = [...value.color];
+                material.pbrMetallicRoughness.roughnessFactor = Number(value.roughness);
+                material.pbrMetallicRoughness.metallicFactor = Number(value.metallic);
+            });
+
+            const encodedJson = new TextEncoder().encode(JSON.stringify(gltf));
+            const paddedLength = Math.ceil(encodedJson.length / 4) * 4;
+            const paddedJson = new Uint8Array(paddedLength);
+            paddedJson.fill(0x20);
+            paddedJson.set(encodedJson);
+            const suffix = source.slice(jsonEnd);
+            const output = new Uint8Array(12 + 8 + paddedJson.length + suffix.length);
+            output.set(source.slice(0, 12), 0);
+            output.set(source.slice(12, 20), 12);
+            new DataView(output.buffer).setUint32(8, output.length, true);
+            new DataView(output.buffer).setUint32(12, paddedJson.length, true);
+            output.set(paddedJson, 20);
+            output.set(suffix, 20 + paddedJson.length);
+            return output.buffer;
+        }
+
+        function materialEditorSourceFile() {
+            const sourceUrl = spatialViewer?.dataset?.sourceUrl
+                || spatialLatestSceneUrl
+                || "";
+            if (!sourceUrl || !currentRunId) return "outputs/scene_combined.glb";
+            try {
+                const url = new URL(sourceUrl, backendUrl || window.location.href);
+                const marker = `/runs/${currentRunId}/`;
+                const markerIndex = url.pathname.indexOf(marker);
+                if (markerIndex >= 0) {
+                    return decodeURIComponent(url.pathname.slice(markerIndex + marker.length));
+                }
+            } catch (error) {
+                // Fall back to the combined scene when a local blob URL is active.
+            }
+            return "outputs/scene_combined.glb";
+        }
+
+        async function requestEditedMaterialGlb() {
+            if (!backendUrl || !currentRunId) return null;
+            const response = await pipelineFetch(`${backendUrl}/api/edit_material`, {
+                method: "POST",
+                headers: apiHeaders({ "Content-Type": "application/json" }),
+                body: JSON.stringify({
+                    run_id: currentRunId,
+                    source_file: materialEditorSourceFile(),
+                    materials: materialEditorState.values.map((value) => ({
+                        base_color: value.color,
+                        roughness: value.roughness,
+                        metallic: value.metallic,
+                    })),
+                }),
+            });
+            if (!response.ok) {
+                const detail = await response.text();
+                throw new Error(`API material error: ${response.status} - ${detail}`);
+            }
+            return response.json();
+        }
+
+        async function downloadEditedMaterialGlb() {
+            const button = getMaterialEditorElements().download;
+            if (!materialEditorState.materials.length) return;
+            const originalText = button?.textContent || "Tải GLB đã chỉnh";
+            try {
+                if (button) {
+                    button.disabled = true;
+                    button.textContent = "Đang xuất...";
+                }
+                const apiResult = await requestEditedMaterialGlb();
+                if (apiResult?.glb_url) {
+                    const glbUrl = new URL(apiResult.glb_url, backendUrl || window.location.href).toString();
+                    await downloadBackendFile(
+                        glbUrl,
+                        `scene_material_edited_${String(currentRunId || "result").slice(0, 8)}.glb`
+                    );
+                    if (apiResult.zip_url && backendUrl) {
+                        spatialLatestZipUrl = `${backendUrl}${apiResult.zip_url}`;
+                    }
+                } else {
+                    // Keep local export available for a standalone frontend preview.
+                    const sourceBuffer = await loadMaterialSourceBuffer();
+                    const editedBuffer = patchGlbMaterialChunk(sourceBuffer, materialEditorState.values);
+                    const objectUrl = URL.createObjectURL(new Blob([editedBuffer], { type: "model/gltf-binary" }));
+                    const anchor = document.createElement("a");
+                    anchor.href = objectUrl;
+                    anchor.download = `scene_material_edited_${String(currentRunId || "result").slice(0, 8)}.glb`;
+                    document.body.appendChild(anchor);
+                    anchor.click();
+                    anchor.remove();
+                    URL.revokeObjectURL(objectUrl);
+                }
+                writeLog("🎨 Đã xuất GLB với material đã chỉnh.", "success");
+                setMaterialEditorStatus("Đã tải GLB material mới từ API.");
+            } catch (error) {
+                writeLog(`❌ Không thể xuất GLB material: ${error.message}`, "error");
+                setMaterialEditorStatus(error.message, true);
+            } finally {
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = originalText;
+                }
+            }
+        }
+
+        function bindMaterialEditor(viewer) {
+            if (!viewer || viewer.dataset.materialEditorBound === "true") return;
+            viewer.addEventListener("load", () => {
+                window.requestAnimationFrame(() => populateMaterialEditor(viewer));
+            });
+            viewer.dataset.materialEditorBound = "true";
+        }
+
+        bindMaterialEditor(spatialViewer);
+        resetMaterialEditorState();
 
         function setAppRailVisibility(hidden, persist = true) {
             if (!spatialWorkspace) return;
@@ -3890,6 +4386,23 @@
         document.getElementById("btn-view-side")?.addEventListener("click", () => {
             if (spatialViewer) spatialViewer.cameraOrbit = "90deg 75deg 78%";
         });
+        document.getElementById("btn-view-material")?.addEventListener("click", () => {
+            const { panel } = getMaterialEditorElements();
+            if (!panel) return;
+            const willOpen = panel.classList.contains("is-hidden");
+            panel.classList.toggle("is-hidden", !willOpen);
+            if (willOpen) {
+                if (!populateMaterialEditor(spatialViewer)) {
+                    setMaterialEditorStatus("Đang chờ mô hình 3D hoàn tất tải...");
+                }
+            }
+        });
+        getMaterialEditorElements().target?.addEventListener("change", syncMaterialEditorInputs);
+        getMaterialEditorElements().color?.addEventListener("input", applyMaterialEditorValues);
+        getMaterialEditorElements().roughness?.addEventListener("input", applyMaterialEditorValues);
+        getMaterialEditorElements().metallic?.addEventListener("input", applyMaterialEditorValues);
+        getMaterialEditorElements().reset?.addEventListener("click", restoreMaterialEditorValues);
+        getMaterialEditorElements().download?.addEventListener("click", downloadEditedMaterialGlb);
         document.getElementById("btn-spatial-download")?.addEventListener("click", async () => {
             if (!spatialLatestZipUrl) {
                 writeLog("Chưa có gói kết quả đầy đủ để tải.", "error");

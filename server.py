@@ -30,6 +30,7 @@ from src.generator_2d import create_object_contact_sheet, generate_object_images
 from src.segmenter import run_grounded_sam2
 from src.generator_3d import generate_3d_models
 from src.combiner import combine_scene_meshes
+from src.materials import patch_glb_materials
 
 
 KAGGLE_WORKING = "/kaggle/working"
@@ -49,10 +50,10 @@ os.makedirs(RUNS_DIR, exist_ok=True)
 
 app = FastAPI(
     title="DATN 3D Scene Reconstruction API",
-    version="1.3.0",
+    version="1.3.1",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v6"
+BACKEND_BUILD = "gemini-metric-layout-v7-material-edit"
 
 allowed_origins = [
     origin.strip()
@@ -133,6 +134,12 @@ class CombineRequest(BaseModel):
     models: List[Dict[str, Any]]
     layout: Dict[str, Any]
     scale_factor: float = 0.01
+
+
+class MaterialEditRequest(BaseModel):
+    run_id: str
+    source_file: str = "outputs/scene_combined.glb"
+    materials: List[Dict[str, Any]]
 
 
 trellis_jobs: Dict[str, Dict[str, Any]] = {}
@@ -803,7 +810,7 @@ def health_check():
     readiness = backend_readiness()
     return {
         "status": "ok",
-        "version": "1.3.0",
+        "version": "1.3.1",
         "build": BACKEND_BUILD,
         **readiness,
         "gemini_model": GEMINI_MODEL,
@@ -1208,6 +1215,81 @@ def api_combine_scene(request: CombineRequest):
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/edit_material")
+def api_edit_material(request: MaterialEditRequest):
+    """Edit GLB PBR factors without re-running the TRELLIS pipeline."""
+    try:
+        _raise_if_run_cancelled(request.run_id)
+        paths = _run_paths(request.run_id)
+        if not request.materials:
+            raise HTTPException(status_code=400, detail="materials must not be empty")
+        if len(request.materials) > 256:
+            raise HTTPException(status_code=400, detail="Too many material entries")
+
+        source_name = str(request.source_file or "").replace("\\", "/").strip("/")
+        source_path = (paths["root"] / source_name).resolve()
+        run_root = paths["root"].resolve()
+        if run_root not in source_path.parents or source_path.suffix.lower() != ".glb":
+            raise HTTPException(status_code=400, detail="source_file must be a GLB inside this run")
+        if not source_path.is_file():
+            raise HTTPException(status_code=404, detail="Source GLB not found")
+
+        for index, material in enumerate(request.materials):
+            if not isinstance(material, dict):
+                raise HTTPException(status_code=400, detail=f"Material {index} must be an object")
+            color = material.get("base_color", [1.0, 1.0, 1.0, 1.0])
+            if not isinstance(color, list) or len(color) not in {3, 4}:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Material {index} base_color must contain 3 or 4 numbers",
+                )
+            try:
+                values = [float(channel) for channel in color]
+                roughness = float(material.get("roughness", 0.8))
+                metallic = float(material.get("metallic", 0.0))
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail=f"Invalid material {index}: {exc}") from exc
+            if any(channel < 0.0 or channel > 1.0 for channel in values):
+                raise HTTPException(status_code=400, detail=f"Material {index} color is out of range")
+            if not 0.0 <= roughness <= 1.0 or not 0.0 <= metallic <= 1.0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Material {index} roughness and metallic must be between 0 and 1",
+                )
+
+        output_path = paths["outputs"] / "scene_combined_material_edited.glb"
+        updated_count = patch_glb_materials(
+            source_path,
+            output_path,
+            request.materials,
+        )
+        _write_run_metadata(
+            paths,
+            "material_edit_metadata.json",
+            {
+                "run_id": request.run_id,
+                "source_file": source_path.relative_to(run_root).as_posix(),
+                "output_file": output_path.relative_to(run_root).as_posix(),
+                "materials": request.materials,
+            },
+        )
+        # Keep the edited GLB included when the user downloads the full run.
+        zip_path = _create_full_run_archive(paths)
+        return {
+            "status": "success",
+            "run_id": request.run_id,
+            "updated_materials": updated_count,
+            "glb_url": f"/runs/{request.run_id}/outputs/{output_path.name}",
+            "zip_url": f"/runs/{request.run_id}/outputs/{zip_path.name}",
+        }
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 if __name__ == "__main__":
