@@ -103,7 +103,17 @@ def _object_descriptor(label: str, scene_prompt: str) -> str:
     return label
 
 
-def _isolation_background(label: str, retry: bool) -> str:
+def _generation_attempt(item: dict) -> int:
+    """Return a backward-compatible zero-based diffusion attempt number."""
+    if "generation_attempt" not in item:
+        return 1 if item.get("retry_clean_background") else 0
+    try:
+        return max(0, int(item.get("generation_attempt", 0)))
+    except (TypeError, ValueError):
+        return 1 if item.get("retry_clean_background") else 0
+
+
+def _isolation_background(label: str, attempt: int | bool) -> str:
     """Choose a stable, contrasting studio colour for every object image.
 
     Object-wise images are intermediate assets, not the final scene.  A plain
@@ -116,11 +126,11 @@ def _isolation_background(label: str, retry: bool) -> str:
         "muted plum-purple",
         "warm burnt-orange",
     )
-    variant = (sum(ord(char) for char in label) + int(retry)) % len(palettes)
+    variant = (sum(ord(char) for char in label) + int(attempt)) % len(palettes)
     colour = palettes[variant]
     return (
-        f"solid matte {colour} seamless studio cyclorama, empty background only, "
-        "no gradient, no horizon line, no wall panel, no platform"
+        f"flat evenly-lit matte {colour} background, empty background only, "
+        "no floor, no ground, no horizon line, no wall, no platform, no cast shadow"
     )
 
 
@@ -150,7 +160,7 @@ def _object_prompt(
     scene_prompt: str,
     all_labels: list[str],
     object_description: str = "",
-    retry_clean_background: bool = False,
+    generation_attempt: int = 0,
 ) -> tuple[str, str]:
     category = _object_category(label)
     excluded = ", ".join(sorted(set(all_labels) - {label})) or "other furniture"
@@ -219,7 +229,9 @@ def _object_prompt(
             "connected supports, four legs and every foot visible. "
         ),
         "sofa": (
-            "Complete sofa, eye-level front three-quarter view, full seat, arms, base, and feet visible. "
+            "Complete upholstered sofa, eye-level front three-quarter view, clearly recognizable as a sofa. "
+            "Show two separate seat cushions, two upright back cushions, both arms, base, and feet. "
+            "The cushions must cover the wooden seat and back frame. "
         ),
         "lamp": (
             "Exactly one freestanding floor lamp, eye-level front three-quarter view, "
@@ -234,7 +246,7 @@ def _object_prompt(
         category,
         "Complete object, eye-level front three-quarter view, all structural parts visible. ",
     )
-    studio_background = _isolation_background(label, retry_clean_background)
+    studio_background = _isolation_background(label, generation_attempt)
     positive = (
         f"Product photo of exactly one standalone {descriptor}. "
         f"{geometry_instruction}"
@@ -248,6 +260,8 @@ def _object_prompt(
         "top-down, extreme perspective, malformed geometry, fused parts, floating parts, "
         "missing legs, extra legs, black silhouette, pure white background, no-contrast background, "
         "rectangular backdrop, background card, studio panel, product stand, pedestal, platform, "
+        "floor, ground, ground plane, floor plane, rug, carpet, mat, fabric under object, "
+        "cast shadow, reflection, support sheet, connected background, "
         "wall cutout, clutter, text, watermark, icon, app icon, logo, symbol, blueprint, "
         "diagram, wireframe, line art, flat graphic, UI element"
     )
@@ -257,6 +271,8 @@ def _object_prompt(
         negative += ", round tabletop, oval tabletop"
     if category == "table" and not explicit_pedestal:
         negative += ", pedestal table, central leg, three-legged table, cabriole legs"
+    if category == "sofa":
+        negative += ", bed, bed frame, daybed, bench, empty wooden frame, bare seat frame, missing cushions"
     return positive, negative
 
 
@@ -277,12 +293,13 @@ def build_object_jobs(
         object_id = str(item.get("id", f"{label}_{index}"))
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", object_id):
             raise ValueError(f"Invalid object id: {object_id}")
+        attempt = _generation_attempt(item)
         positive, negative = _object_prompt(
             label,
             scene_prompt,
             all_labels,
             object_description=str(item.get("description", "")),
-            retry_clean_background=bool(item.get("retry_clean_background", False)),
+            generation_attempt=attempt,
         )
         jobs.append({
             "name": object_id,
@@ -293,7 +310,7 @@ def build_object_jobs(
             # A clean-background retry must also explore a different diffusion
             # sample. Keeping the original deterministic seed can reproduce
             # the same malformed icon/graphic with only a new backdrop.
-            "seed": 42 + index * 101 + (10_000 if item.get("retry_clean_background") else 0),
+            "seed": 42 + index * 101 + attempt * 10_000,
         })
     return jobs
 
@@ -417,7 +434,14 @@ def _objects_needing_clean_background_retry(
         object_id = str(item.get("id", "")).lower()
         label = str(item.get("label", "")).lower()
         if (object_id and object_id in error_text) or (label and label in error_text):
-            matches.append(dict(item, retry_clean_background=True))
+            attempt = _generation_attempt(item) + 1
+            matches.append(
+                dict(
+                    item,
+                    generation_attempt=attempt,
+                    retry_clean_background=True,
+                )
+            )
     return matches
 
 
@@ -448,32 +472,45 @@ def generate_object_images(
     # Prompt wording alone cannot guarantee cardinality in a diffusion model.
     # Validate each image with GroundingDINO and retain one SAM2 instance before
     # the contact sheet is exposed to the frontend or sent to TRELLIS.
-    try:
-        jobs = _sanitize_generated_jobs(jobs)
-    except RuntimeError as first_error:
-        retry_objects = _objects_needing_clean_background_retry(objects, first_error)
-        if not retry_objects:
-            raise
-
-        # Regenerate only the problematic object with a different chromatic,
-        # seamless background. This gives SAM2 a second clean chance without
-        # spending another full diffusion pass on the other furniture.
-        retry_jobs = _generate_jobs_from_worker(
-            scene_prompt,
-            retry_objects,
-            lora_scale,
-            object_image_dir,
-        )
-        retry_by_name = {str(job.get("name", "")): job for job in retry_jobs}
-        jobs = [retry_by_name.get(str(job.get("name", "")), job) for job in jobs]
+    pending_objects = [dict(item, generation_attempt=0) for item in objects]
+    for attempt in range(3):
         try:
             jobs = _sanitize_generated_jobs(jobs)
-        except RuntimeError as retry_error:
-            raise RuntimeError(
-                "Object segmentation failed after an automatic clean-background retry. "
-                "The incomplete asset was blocked before it could be sent to TRELLIS. "
-                f"Details: {retry_error}"
-            ) from retry_error
+            break
+        except RuntimeError as generation_error:
+            retry_objects = _objects_needing_clean_background_retry(
+                pending_objects,
+                generation_error,
+            )
+            if not retry_objects or attempt >= 2:
+                raise RuntimeError(
+                    "Object validation failed after three independent SD3.5 samples. "
+                    "The malformed asset was blocked before TRELLIS. "
+                    f"Details: {generation_error}"
+                ) from generation_error
+
+            retry_jobs = _generate_jobs_from_worker(
+                scene_prompt,
+                retry_objects,
+                lora_scale,
+                object_image_dir,
+            )
+            retry_by_name = {str(job.get("name", "")): job for job in retry_jobs}
+            jobs = [retry_by_name.get(str(job.get("name", "")), job) for job in jobs]
+            retry_names = {str(item.get("id", "")) for item in retry_objects}
+            pending_objects = [
+                next(
+                    (
+                        retry
+                        for retry in retry_objects
+                        if str(retry.get("id", "")) == str(item.get("id", ""))
+                    ),
+                    item,
+                )
+                if str(item.get("id", "")) in retry_names
+                else item
+                for item in pending_objects
+            ]
 
     for job in jobs:
         image_path = job.get("image_path")

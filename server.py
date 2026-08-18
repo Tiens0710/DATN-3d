@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v12-object-asset-guards"
+BACKEND_BUILD = "gemini-metric-layout-v13-reject-floor-assets"
 
 allowed_origins = [
     origin.strip()

@@ -28,7 +28,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 
-app = FastAPI(title="DATN TRELLIS Worker", version="1.2.2")
+app = FastAPI(title="DATN TRELLIS Worker", version="1.2.3")
 pipeline = None
 pipeline_device = None
 variant_pipeline = None
@@ -158,17 +158,22 @@ def _remove_hallucinated_floor_backdrop(glb) -> tuple[int, str]:
 
         face_vertices = vertices[faces]
         face_y_max = face_vertices[:, :, 1].max(axis=1)
-        floor_band = max(0.006, y_extent * 0.045)
+        floor_band = max(0.006, y_extent * 0.085)
         near_floor = face_y_max <= vertices[:, 1].min() + floor_band
         horizontal = np.abs(np.asarray(glb.face_normals)[:, 1]) >= 0.94
-        candidates = np.flatnonzero(near_floor & horizontal)
-        if len(candidates) < 8:
+        horizontal_candidates = np.flatnonzero(near_floor & horizontal)
+        candidates = np.flatnonzero(near_floor)
+        if len(horizontal_candidates) < 4 or len(candidates) < 8:
             return 0, "no broad lower horizontal faces"
 
-        candidate_vertices = vertices[np.unique(faces[candidates].reshape(-1))]
+        candidate_vertices = vertices[
+            np.unique(faces[horizontal_candidates].reshape(-1))
+        ]
         candidate_xz = np.ptp(candidate_vertices[:, [0, 2]], axis=0)
         footprint_coverage = candidate_xz / np.maximum(xz_extent, 1e-8)
-        candidate_area = float(np.asarray(glb.area_faces)[candidates].sum())
+        candidate_area = float(
+            np.asarray(glb.area_faces)[horizontal_candidates].sum()
+        )
         footprint_area = float(xz_extent[0] * xz_extent[1])
         total_area = max(float(np.asarray(glb.area_faces).sum()), 1e-8)
 
@@ -176,9 +181,9 @@ def _remove_hallucinated_floor_backdrop(glb) -> tuple[int, str]:
         # material part of the mesh.  This avoids touching the undersides of
         # valid furniture, which are much smaller than a generated backdrop.
         if (
-            footprint_coverage[0] < 0.88
-            or footprint_coverage[1] < 0.88
-            or candidate_area < max(footprint_area * 0.28, total_area * 0.16)
+            footprint_coverage[0] < 0.76
+            or footprint_coverage[1] < 0.76
+            or candidate_area < max(footprint_area * 0.22, total_area * 0.10)
         ):
             return 0, "lower faces do not match a large backdrop"
 

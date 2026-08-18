@@ -48,7 +48,7 @@ AUTO_DETECTION_CAPTION = (
     "coffee table. dining table. furniture."
 )
 
-app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.1")
+app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.2")
 dino_model = None
 sam_predictor = None
 dino_load_image = None
@@ -461,6 +461,81 @@ def _mask_extent(mask: np.ndarray) -> tuple[int, int, int, int] | None:
         int(columns.max()) + 1,
         int(rows.max()) + 1,
     )
+
+
+def _looks_like_floor_attachment(alpha: np.ndarray) -> bool:
+    """Detect a broad opaque sheet attached below an otherwise isolated asset.
+
+    This intentionally uses only silhouette geometry, so it applies to every
+    object class and every background colour.  Valid furniture normally ends
+    in sparse feet/legs.  A rug, floor patch or support card remains broad and
+    dense all the way to the lowest rows of the alpha extent.
+    """
+    support = np.asarray(alpha) >= 32
+    extent = _mask_extent(support)
+    if extent is None:
+        return False
+    x1, y1, x2, y2 = extent
+    crop = support[y1:y2, x1:x2]
+    height, width = crop.shape
+    if height < 32 or width < 32:
+        return False
+
+    row_fill = crop.mean(axis=1)
+    band_size = max(5, int(round(height * 0.18)))
+    bottom = row_fill[-band_size:]
+    tail = row_fill[-max(3, int(round(height * 0.07))):]
+    middle = row_fill[
+        int(round(height * 0.20)):max(int(round(height * 0.20)) + 1, int(round(height * 0.62)))
+    ]
+    broad_rows = float((bottom >= 0.55).mean())
+    middle_fill = float(np.median(middle)) if middle.size else 0.0
+    bottom_fill = float(np.median(bottom))
+    return (
+        bottom_fill >= 0.42
+        and float(np.median(tail)) >= 0.28
+        and broad_rows >= 0.45
+        and bottom_fill >= middle_fill * 1.22
+    )
+
+
+def _generated_asset_semantic_error(
+    image_path: str,
+    label: str,
+    target_confidence: float,
+) -> str | None:
+    """Reject clearly named support props and sofa/bed identity swaps.
+
+    A target-only DINO query can still call a bed-like wooden frame a sofa.
+    This second, narrow query is used only as a veto for high-confidence
+    confusers; it does not replace the target detector or accept new objects.
+    """
+    normalized = " ".join(label.lower().replace("_", " ").split())
+    confusers = ["rug", "carpet", "floor mat"]
+    if "sofa" in normalized or "couch" in normalized:
+        confusers.extend(["bed", "bed frame"])
+
+    _source, image_tensor = dino_load_image(image_path)
+    _boxes, logits, phrases = _predict_dino(
+        image_tensor=image_tensor,
+        caption=". ".join(confusers) + ".",
+        box_threshold=0.22,
+        text_threshold=0.16,
+    )
+    for index, phrase in enumerate(phrases):
+        detected = str(phrase).strip().lower()
+        score_tensor = logits[index]
+        score = float(
+            score_tensor.max().item()
+            if getattr(score_tensor, "ndim", 0)
+            else score_tensor.item()
+        )
+        if any(term in detected for term in ("rug", "carpet", "floor mat")):
+            if score >= 0.24:
+                return f"detected an unwanted support surface '{detected}' ({score:.2f})"
+        elif ("bed" in detected) and score >= max(0.24, target_confidence * 0.85):
+            return f"the requested sofa is visually a '{detected}' ({score:.2f})"
+    return None
 
 
 def _mask_density(mask: np.ndarray, box: list[int]) -> float:
@@ -1243,6 +1318,13 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
             selected = candidates[0]
             selected_box = selected["box"]
             confidence = selected["confidence"]
+            semantic_error = _generated_asset_semantic_error(
+                image_path,
+                label,
+                confidence,
+            )
+            if semantic_error:
+                raise ValueError(f"Generated '{label}' {semantic_error}")
             try:
                 alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
                     source_image,
@@ -1301,6 +1383,12 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
             detector_fallback = True
             job["detected_instances"] = 0
             job["count_validation"] = "matting_fallback"
+
+        if _looks_like_floor_attachment(alpha):
+            raise ValueError(
+                f"Generated '{label}' contains a rug, floor patch, support sheet, "
+                "or connected background below the object"
+            )
 
         alpha_image = Image.fromarray(alpha)
         content_box = alpha_image.getbbox() or tuple(selected_box)

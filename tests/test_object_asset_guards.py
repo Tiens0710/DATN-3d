@@ -28,6 +28,7 @@ def load_generator_helpers():
     constants = {"_OBJECT_ALIASES", "_GLOBAL_PROMPT_MARKERS", "_CLAUSE_BREAKS"}
     functions = {
         "_object_descriptor",
+        "_generation_attempt",
         "_isolation_background",
         "_object_category",
         "_object_prompt",
@@ -88,6 +89,46 @@ class ObjectAssetGuardTests(unittest.TestCase):
 
         self.assertNotEqual(original["seed"], retry["seed"])
         self.assertEqual(retry["seed"] - original["seed"], 10_000)
+
+    def test_prompts_reject_ground_and_sofa_bed_shapes(self):
+        helpers = load_generator_helpers()
+        _positive, table_negative = helpers["_object_prompt"](
+            "coffee table", "one wooden coffee table", ["coffee table"]
+        )
+        sofa_positive, sofa_negative = helpers["_object_prompt"](
+            "sofa", "one cream sofa", ["sofa"]
+        )
+
+        self.assertIn("rug", table_negative)
+        self.assertIn("ground plane", table_negative)
+        self.assertIn("two separate seat cushions", sofa_positive)
+        self.assertIn("bed frame", sofa_negative)
+
+    def test_floor_attachment_guard_rejects_a_broad_lower_sheet(self):
+        source = Path("worker_sam2_dino.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        selected = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"_mask_extent", "_looks_like_floor_attachment"}
+        ]
+        namespace = {"np": np}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), "floor_guard", "exec"), namespace)
+        guard = namespace["_looks_like_floor_attachment"]
+
+        rug = np.zeros((200, 200), dtype=np.uint8)
+        rug[30:135, 65:135] = 255
+        rug[120:190, 20:180] = 255
+        valid_table = np.zeros((200, 200), dtype=np.uint8)
+        valid_table[40:85, 25:175] = 255
+        valid_table[85:175, 35:50] = 255
+        valid_table[85:175, 150:165] = 255
+        valid_cabinet = np.zeros((200, 200), dtype=np.uint8)
+        valid_cabinet[25:180, 45:155] = 255
+
+        self.assertTrue(guard(rug))
+        self.assertFalse(guard(valid_table))
+        self.assertFalse(guard(valid_cabinet))
 
     def test_text_flow_crop_is_tight_not_a_full_transparent_canvas(self):
         save_crop = load_crop_helper()
