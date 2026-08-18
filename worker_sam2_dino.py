@@ -48,7 +48,7 @@ AUTO_DETECTION_CAPTION = (
     "coffee table. dining table. furniture."
 )
 
-app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.0")
+app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.1")
 dino_model = None
 sam_predictor = None
 dino_load_image = None
@@ -614,21 +614,18 @@ def _looks_like_inverted_uploaded_mask(
     )
 
 
-def _looks_like_uploaded_background_leak(
+def _looks_like_connected_background_leak(
     image: Image.Image,
     alpha: np.ndarray,
     box: list[int],
 ) -> bool:
     """Detect a plausible SAM mask that still contains a large studio panel.
 
-    The inverted-mask check above catches the obvious case where SAM marks
-    nearly the whole detector box as foreground.  A more subtle failure is a
-    correct-looking object mask with a connected white floor/card attached to
-    its lower edge.  That mask passes the old density threshold but TRELLIS
-    turns the attached region into a flat mesh.  Only enable this repair when
-    the image border is a stable background and an independent border-colour
-    mask finds a sufficiently large, compact foreground; this keeps white
-    furniture on white backgrounds from being reduced to only its dark edges.
+    This is label-agnostic and is used for generated as well as uploaded
+    assets. The inverted-mask check catches the obvious case where SAM marks
+    nearly the whole detector box as foreground. A subtler failure is a mask
+    with a connected floor/card/background shape attached to its lower edge.
+    That mask passes a density check but TRELLIS turns it into a flat mesh.
     """
     if not _uniform_border(image):
         return False
@@ -721,7 +718,7 @@ def _uploaded_alpha(
             label=label,
         )
         inverted_mask = _looks_like_inverted_uploaded_mask(image, alpha, box)
-        leaked_background = _looks_like_uploaded_background_leak(image, alpha, box)
+        leaked_background = _looks_like_connected_background_leak(image, alpha, box)
         if not inverted_mask and not leaked_background:
             return alpha, float(mask_score), method
         prediction_error = (
@@ -753,13 +750,19 @@ def _uploaded_alpha(
     )
 
 
-def _save_uploaded_rgba_crop(
+def _save_trellis_rgba_crop(
     image: Image.Image,
     alpha: np.ndarray,
     crops_dir: str,
     name: str,
 ) -> tuple[str, list[int], Image.Image]:
-    """Save a tight transparent crop with a safety margin for TRELLIS."""
+    """Save a tight transparent crop with a safety margin for TRELLIS.
+
+    This is shared by text-generated and uploaded inputs.  TRELLIS respects an
+    existing alpha mask but does not re-crop such an image, so forwarding a
+    full 1024px transparent canvas makes a small object look like background
+    geometry.  Every valid object must therefore be tightened here.
+    """
     support = alpha >= 32
     extent = _mask_extent(support)
     if extent is None:
@@ -1080,6 +1083,23 @@ def _predict_refined_alpha(
                 "SAM2 isolated an opaque rectangular backdrop instead of the requested object"
             )
 
+    # A backdrop does not have to be a perfect rectangle. Generated images can
+    # contain a connected blue/white card or floor shape that DINO labels as
+    # the requested furniture. Compare it with an independent border-colour
+    # mask before it is sent to TRELLIS.
+    if _looks_like_connected_background_leak(image, alpha, sam_box_values):
+        contrast_alpha = _border_background_alpha(image, sam_box_values)
+        if contrast_alpha is None or _looks_like_connected_background_leak(
+            image,
+            contrast_alpha,
+            sam_box_values,
+        ):
+            raise ValueError(
+                f"SAM2 isolated a connected background/card instead of '{label or 'the object'}'"
+            )
+        alpha = contrast_alpha
+        method = f"{method}+border-background-leak-refine"
+
     # The detector box is a semantic guardrail: matting must not pull in a
     # neighboring chair/table even when the source image contains duplicates.
     allowed = np.zeros_like(alpha)
@@ -1384,11 +1404,13 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
                 label=label,
             )
 
-        rgba = image.convert("RGBA")
-        rgba.putalpha(Image.fromarray(alpha))
         name = str(item.get("name", "object"))
-        crop_path = os.path.join(crops_dir, f"{name}.png")
-        rgba.save(crop_path)
+        crop_path, final_box, rgba = _save_trellis_rgba_crop(
+            image,
+            alpha,
+            crops_dir,
+            name,
+        )
         previews.append(
             Image.alpha_composite(Image.new("RGBA", rgba.size, "white"), rgba)
             .convert("RGB")
@@ -1398,10 +1420,12 @@ def _segment_objectwise(objects: list[dict], crops_dir: str) -> list[dict]:
                 "name": name,
                 "label": label,
                 "confidence": confidence,
-                "detected_instances": len(candidates),
+                "detected_instances": int(
+                    item.get("detected_instances", 1 if preserved_alpha is not None else len(candidates))
+                ),
                 "mask_score": mask_score,
                 "box": box_values,
-                "final_box": [0, 0, width, height],
+                "final_box": final_box,
                 "crop_path": crop_path,
                 "crop_url": f"/crops/{name}.png",
                 "source_mode": (
@@ -1556,7 +1580,7 @@ def _segment_uploaded(
             )
             safe_label = re.sub(r"[^a-z0-9]+", "_", candidate["label"].lower()).strip("_")
             name = f"{safe_label or 'object'}_{index}"
-            crop_path, final_box, rgba = _save_uploaded_rgba_crop(
+            crop_path, final_box, rgba = _save_trellis_rgba_crop(
                 source_image,
                 alpha,
                 crops_dir,
@@ -1671,7 +1695,7 @@ def _segment_uploaded(
             [x1, y1, x2, y2],
             label=label,
         )
-        crop_path, final_box, rgba = _save_uploaded_rgba_crop(
+        crop_path, final_box, rgba = _save_trellis_rgba_crop(
             source_image,
             alpha,
             crops_dir,

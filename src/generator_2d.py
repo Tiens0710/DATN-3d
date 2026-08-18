@@ -124,6 +124,27 @@ def _isolation_background(label: str, retry: bool) -> str:
     )
 
 
+def _object_category(label: str) -> str:
+    """Map descriptive scene labels to the construction rule they need.
+
+    Gemini can return labels such as ``coffee table`` or ``bedside table``.
+    They are still tables, but an exact dictionary lookup used to skip the
+    table geometry and negative constraints.  This is intentionally generic
+    so every table/chair/sofa/lamp variation receives the same structural
+    protection.
+    """
+    normalized = " ".join(str(label).lower().replace("_", " ").split())
+    if "table" in normalized or "desk" in normalized:
+        return "table"
+    if "chair" in normalized or "stool" in normalized:
+        return "chair"
+    if "sofa" in normalized or "couch" in normalized:
+        return "sofa"
+    if "lamp" in normalized or "light" in normalized:
+        return "lamp"
+    return normalized
+
+
 def _object_prompt(
     label: str,
     scene_prompt: str,
@@ -131,6 +152,7 @@ def _object_prompt(
     object_description: str = "",
     retry_clean_background: bool = False,
 ) -> tuple[str, str]:
+    category = _object_category(label)
     excluded = ", ".join(sorted(set(all_labels) - {label})) or "other furniture"
     description = " ".join(str(object_description).split()).strip(" ,.;:")
     generic_descriptions = {
@@ -152,7 +174,7 @@ def _object_prompt(
         marker in f"{scene_prompt} {descriptor}".lower()
         for marker in detail_markers
     )
-    if detail_requested and label == "table":
+    if detail_requested and category == "table":
         detail_instruction = (
             "Show the requested carving only as a clear restrained border on the apron or tabletop edge. "
         )
@@ -209,7 +231,7 @@ def _object_prompt(
         ),
     }
     geometry_instruction = geometry_instructions.get(
-        label,
+        category,
         "Complete object, eye-level front three-quarter view, all structural parts visible. ",
     )
     studio_background = _isolation_background(label, retry_clean_background)
@@ -217,21 +239,23 @@ def _object_prompt(
         f"Product photo of exactly one standalone {descriptor}. "
         f"{geometry_instruction}"
         f"{detail_instruction}"
-        f"Centered, fully visible, 70 percent of frame, {studio_background}"
-        "with clear foreground contrast, soft even light, realistic material, accurate proportions."
+        f"Centered, fully visible, 70 percent of frame, {studio_background} "
+        "with clear foreground contrast, soft even light, realistic material, accurate proportions. "
+        "A real physical furniture product, never an icon, logo, blueprint, diagram, or wireframe."
     )
     negative = (
         f"extra object, duplicate {label}, pair, set, {excluded}, cropped, close-up, "
         "top-down, extreme perspective, malformed geometry, fused parts, floating parts, "
         "missing legs, extra legs, black silhouette, pure white background, no-contrast background, "
         "rectangular backdrop, background card, studio panel, product stand, pedestal, platform, "
-        "wall cutout, clutter, text, watermark"
+        "wall cutout, clutter, text, watermark, icon, app icon, logo, symbol, blueprint, "
+        "diagram, wireframe, line art, flat graphic, UI element"
     )
     if detail_requested:
         negative += ", missing requested carving, blank decorative area"
-    if label == "table" and not explicit_shape:
+    if category == "table" and not explicit_shape:
         negative += ", round tabletop, oval tabletop"
-    if label == "table" and not explicit_pedestal:
+    if category == "table" and not explicit_pedestal:
         negative += ", pedestal table, central leg, three-legged table, cabriole legs"
     return positive, negative
 
@@ -266,7 +290,10 @@ def build_object_jobs(
             "prompt": positive,
             "negative_prompt": negative,
             "image_path": os.path.join(object_image_dir, f"{object_id}.png"),
-            "seed": 42 + index * 101,
+            # A clean-background retry must also explore a different diffusion
+            # sample. Keeping the original deterministic seed can reproduce
+            # the same malformed icon/graphic with only a new backdrop.
+            "seed": 42 + index * 101 + (10_000 if item.get("retry_clean_background") else 0),
         })
     return jobs
 
