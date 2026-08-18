@@ -28,7 +28,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 
-app = FastAPI(title="DATN TRELLIS Worker", version="1.2.1")
+app = FastAPI(title="DATN TRELLIS Worker", version="1.2.2")
 pipeline = None
 pipeline_device = None
 variant_pipeline = None
@@ -58,6 +58,9 @@ TRELLIS_FILL_HOLES = os.environ.get("TRELLIS_FILL_HOLES", "0").lower() in {
     "yes",
     "on",
 }
+TRELLIS_REMOVE_FLOOR_BACKDROP = os.environ.get(
+    "TRELLIS_REMOVE_FLOOR_BACKDROP", "1"
+).lower() in {"1", "true", "yes", "on"}
 
 
 class GenerateRequest(BaseModel):
@@ -117,18 +120,79 @@ def _load_trellis_input(path: Path) -> Image.Image:
         raise ValueError(
             "TRELLIS input alpha mask covers almost the entire image; refusing to model the background"
         )
-    # TRELLIS 1 checks the alpha channel in ``preprocess_image`` but its
-    # DINOv2 encoder later converts the PIL image to RGB and drops alpha.  If
-    # the transparent pixels still contain the original white studio
-    # background, that hidden RGB data becomes visible to the model and can be
-    # reconstructed as a large floor/card.  Match TRELLIS' own rembg path by
-    # premultiplying RGB with alpha: transparent pixels become black and only
-    # the segmented object remains as conditioning content.
-    rgb = np.asarray(image.convert("RGB"), dtype=np.float32)
-    alpha_factor = alpha.astype(np.float32)[..., None] / 255.0
-    rgb = np.clip(np.rint(rgb * alpha_factor), 0, 255).astype(np.uint8)
-    normalized = np.dstack((rgb, alpha))
-    return Image.fromarray(normalized, mode="RGBA")
+    # Keep the cleaned RGBA crop intact. TRELLIS 1's official
+    # ``preprocess_image`` function uses this alpha channel, crops/resizes the
+    # object, then premultiplies RGB exactly once before its DINOv2 encoder.
+    # Premultiplying here as well darkens anti-aliased object edges twice and
+    # can make a black floor hallucination more likely.
+    return image
+
+
+def _remove_hallucinated_floor_backdrop(glb) -> tuple[int, str]:
+    """Remove an obvious large horizontal floor hallucinated by image-to-3D.
+
+    TRELLIS is trained to infer a complete asset from a single image.  With
+    product photos it occasionally emits a large, black, horizontal sheet
+    beneath the object even though the input alpha has no such background.
+    The exported mesh uses Y as its up axis, so a true floor is both near the
+    lowest Y coordinate and spans almost the whole X/Z footprint.  Those two
+    constraints make this conservative: ordinary small horizontal parts such
+    as shelves, seats and table tops are not removed.
+    """
+    if not TRELLIS_REMOVE_FLOOR_BACKDROP:
+        return 0, "disabled"
+
+    try:
+        import numpy as np
+
+        vertices = np.asarray(glb.vertices, dtype=np.float64)
+        faces = np.asarray(glb.faces, dtype=np.int64)
+        if vertices.ndim != 2 or vertices.shape[1] != 3 or len(faces) < 12:
+            return 0, "mesh has no usable faces"
+
+        extents = np.ptp(vertices, axis=0)
+        xz_extent = extents[[0, 2]]
+        y_extent = float(extents[1])
+        if y_extent <= 1e-6 or np.any(xz_extent <= 1e-6):
+            return 0, "degenerate bounds"
+
+        face_vertices = vertices[faces]
+        face_y_max = face_vertices[:, :, 1].max(axis=1)
+        floor_band = max(0.006, y_extent * 0.045)
+        near_floor = face_y_max <= vertices[:, 1].min() + floor_band
+        horizontal = np.abs(np.asarray(glb.face_normals)[:, 1]) >= 0.94
+        candidates = np.flatnonzero(near_floor & horizontal)
+        if len(candidates) < 8:
+            return 0, "no broad lower horizontal faces"
+
+        candidate_vertices = vertices[np.unique(faces[candidates].reshape(-1))]
+        candidate_xz = np.ptp(candidate_vertices[:, [0, 2]], axis=0)
+        footprint_coverage = candidate_xz / np.maximum(xz_extent, 1e-8)
+        candidate_area = float(np.asarray(glb.area_faces)[candidates].sum())
+        footprint_area = float(xz_extent[0] * xz_extent[1])
+        total_area = max(float(np.asarray(glb.area_faces).sum()), 1e-8)
+
+        # The plane must cover nearly the full scene footprint and represent a
+        # material part of the mesh.  This avoids touching the undersides of
+        # valid furniture, which are much smaller than a generated backdrop.
+        if (
+            footprint_coverage[0] < 0.88
+            or footprint_coverage[1] < 0.88
+            or candidate_area < max(footprint_area * 0.28, total_area * 0.16)
+        ):
+            return 0, "lower faces do not match a large backdrop"
+
+        keep = np.ones(len(faces), dtype=bool)
+        keep[candidates] = False
+        glb.update_faces(keep)
+        glb.remove_unreferenced_vertices()
+        return int(len(candidates)), (
+            "removed large lower backdrop "
+            f"(coverage={footprint_coverage[0]:.2f}x{footprint_coverage[1]:.2f})"
+        )
+    except Exception as exc:
+        # A failed cleanup must never discard a successfully generated asset.
+        return 0, f"cleanup skipped: {type(exc).__name__}: {exc}"
 
 
 def _safe_empty_cache(name: str) -> None:
@@ -421,6 +485,11 @@ def generate(payload: GenerateRequest) -> dict:
                         texture_size=TRELLIS_TEXTURE_SIZE,
                         verbose=False,
                     )
+            removed_faces, cleanup_detail = _remove_hallucinated_floor_backdrop(glb)
+            if removed_faces:
+                _log(f"{name}: {cleanup_detail}; removed {removed_faces} floor faces")
+            else:
+                _log(f"{name}: floor cleanup: {cleanup_detail}")
             glb.export(str(output_path))
             if not output_path.is_file():
                 raise RuntimeError("GLB export finished but no file was written")
@@ -563,6 +632,14 @@ def generate_variant(payload: VariantRequest) -> dict:
                         texture_size=TRELLIS_TEXTURE_SIZE,
                         verbose=False,
                     )
+            removed_faces, cleanup_detail = _remove_hallucinated_floor_backdrop(glb)
+            if removed_faces:
+                _log(
+                    f"{name}: variant {cleanup_detail}; "
+                    f"removed {removed_faces} floor faces"
+                )
+            else:
+                _log(f"{name}: variant floor cleanup: {cleanup_detail}")
             glb.export(str(output_path))
             if not output_path.is_file():
                 raise RuntimeError("TRELLIS variant export finished but no file was written")

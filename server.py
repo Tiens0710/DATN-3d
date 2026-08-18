@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v10-alpha-background-safe"
+BACKEND_BUILD = "gemini-metric-layout-v11-floor-backdrop-filter"
 
 allowed_origins = [
     origin.strip()
