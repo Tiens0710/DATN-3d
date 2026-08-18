@@ -80,6 +80,16 @@ SAM_POINT_REFINEMENT = os.environ.get("SAM_POINT_REFINEMENT", "1").lower() not i
     "false",
     "no",
 }
+# A true product mask can be dense (for example a wardrobe), but it should not
+# be an almost-solid rectangle that occupies the complete detector prompt box.
+# This deliberately conservative threshold catches background cards/panels
+# without rejecting normal box-shaped furniture.
+BACKDROP_MASK_MIN_DENSITY = float(
+    os.environ.get("BACKDROP_MASK_MIN_DENSITY", "0.88")
+)
+BACKDROP_BOX_COVERAGE = float(
+    os.environ.get("BACKDROP_BOX_COVERAGE", "0.92")
+)
 
 
 class SegmentRequest(BaseModel):
@@ -453,6 +463,76 @@ def _mask_extent(mask: np.ndarray) -> tuple[int, int, int, int] | None:
     )
 
 
+def _mask_density(mask: np.ndarray, box: list[int]) -> float:
+    """Measure foreground density inside a detector box."""
+    height, width = mask.shape[:2]
+    x1, y1, x2, y2 = [int(value) for value in box]
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(width, x2), min(height, y2)
+    if x2 <= x1 or y2 <= y1:
+        return 1.0
+    return float(mask[y1:y2, x1:x2].astype(bool).mean())
+
+
+def _looks_like_rectangular_backdrop(alpha: np.ndarray, box: list[int]) -> bool:
+    """Return whether a mask is an opaque rectangular background/card.
+
+    This check is label-agnostic on purpose.  SAM2 can latch onto a panel,
+    studio floor, or wall patch behind *any* object, not only a floor lamp.
+    The thresholds are kept high so ordinary dense furniture is accepted.
+    """
+    support = alpha >= 32
+    extent = _mask_extent(support)
+    if extent is None:
+        return False
+    x1, y1, x2, y2 = [int(value) for value in box]
+    box_width = max(1, x2 - x1)
+    box_height = max(1, y2 - y1)
+    ex1, ey1, ex2, ey2 = extent
+    extent_width = ex2 - ex1
+    extent_height = ey2 - ey1
+    density = _mask_density(support, box)
+    fills_box = (
+        extent_width >= BACKDROP_BOX_COVERAGE * box_width
+        and extent_height >= BACKDROP_BOX_COVERAGE * box_height
+    )
+    return fills_box and density >= BACKDROP_MASK_MIN_DENSITY
+
+
+def _border_background_alpha(image: Image.Image, box: list[int]) -> np.ndarray | None:
+    """Extract a product against the solid background estimated from image edges.
+
+    Object-wise SD3.5 images are intentionally generated on a plain contrasting
+    backdrop.  Estimating that backdrop from the border gives every object the
+    same second segmentation path when SAM2 or matting keeps a wall/panel.
+    """
+    rgb = np.asarray(image.convert("RGB"), dtype=np.float32)
+    height, width = rgb.shape[:2]
+    if min(width, height) < 32:
+        return None
+
+    border = max(3, min(width, height) // 48)
+    samples = np.concatenate(
+        (
+            rgb[:border, :, :].reshape(-1, 3),
+            rgb[-border:, :, :].reshape(-1, 3),
+            rgb[:, :border, :].reshape(-1, 3),
+            rgb[:, -border:, :].reshape(-1, 3),
+        ),
+        axis=0,
+    )
+    background = np.median(samples, axis=0)
+    border_distance = np.linalg.norm(samples - background, axis=1)
+    threshold = max(22.0, float(np.percentile(border_distance, 96)) * 1.8 + 8.0)
+    distance = np.linalg.norm(rgb - background, axis=2)
+    alpha = np.where(distance >= threshold, 255, 0).astype(np.uint8)
+    alpha = _clean_alpha(alpha, box)
+    support = alpha >= 32
+    if _mask_extent(support) is None or _looks_like_rectangular_backdrop(alpha, box):
+        return None
+    return alpha
+
+
 def _is_reusable_alpha(alpha: np.ndarray) -> bool:
     """Return whether an existing alpha channel contains a usable object.
 
@@ -629,6 +709,9 @@ def _predict_refined_alpha(
         "dining chair": (0.045, 88),
         "sofa": (0.05, 96),
         "couch": (0.05, 96),
+        "lamp": (0.02, 48),
+        "floor lamp": (0.02, 48),
+        "arc floor lamp": (0.02, 48),
     }.get(normalized_label, (SAM_BOX_PADDING_RATIO, SAM_BOX_PADDING_MAX))
     padding_ratio, padding_max = label_padding
     padding = max(
@@ -734,6 +817,19 @@ def _predict_refined_alpha(
             alpha = np.where(sam_gate, refined, 0).astype(np.uint8)
             method = f"sam2+{MATTING_MODEL}"
 
+    # If SAM2 chose a dense rectangle, it likely selected the studio backdrop
+    # or a generated product card instead of the requested object.  Use the
+    # background colour estimated at the image border for every object type.
+    if _looks_like_rectangular_backdrop(alpha, sam_box_values):
+        contrast_alpha = _border_background_alpha(image, sam_box_values)
+        if contrast_alpha is not None:
+            alpha = contrast_alpha
+            method = f"{method}+border-background-refine"
+        else:
+            raise ValueError(
+                "SAM2 isolated an opaque rectangular backdrop instead of the requested object"
+            )
+
     # The detector box is a semantic guardrail: matting must not pull in a
     # neighboring chair/table even when the source image contains duplicates.
     allowed = np.zeros_like(alpha)
@@ -750,6 +846,10 @@ def _predict_refined_alpha(
         raise ValueError(
             "SAM2 returned an incomplete object mask "
             f"(width coverage={width_coverage:.2f}, height coverage={height_coverage:.2f})"
+        )
+    if _looks_like_rectangular_backdrop(alpha, sam_box_values):
+        raise ValueError(
+            "SAM2 isolated an opaque rectangular backdrop instead of the requested object"
         )
     return alpha, best_mask, float(scores[best_mask]), method
 
@@ -780,11 +880,16 @@ def _detect_label_instances(
     query_label = {
         "couch": "sofa",
         "dining table": "table",
+        "arc floor lamp": "floor lamp",
+        "standing lamp": "floor lamp",
     }.get(normalized_label, normalized_label)
     label_thresholds = {
         "chair": (0.18, 0.14),
         "couch": (0.18, 0.14),
         "dining table": (0.20, 0.15),
+        "lamp": (0.16, 0.13),
+        "floor lamp": (0.16, 0.13),
+        "arc floor lamp": (0.16, 0.13),
     }
     box_threshold, text_threshold = label_thresholds.get(
         normalized_label,
@@ -879,9 +984,18 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 # when DINO found its box.  Since generated object images are
                 # expected to contain one object, matting the whole image is a
                 # safer fallback than forwarding a broken mask to TRELLIS.
-                fallback_alpha = _full_image_matting_alpha(source_image)
+                fallback_alpha = _border_background_alpha(source_image, selected_box)
+                if fallback_alpha is None:
+                    fallback_alpha = _full_image_matting_alpha(source_image)
                 if fallback_alpha is None:
                     raise sam_exc
+                if _looks_like_rectangular_backdrop(
+                    fallback_alpha,
+                    selected_box,
+                ):
+                    raise ValueError(
+                        "Could not isolate the requested object from its rectangular backdrop"
+                    ) from sam_exc
                 alpha = fallback_alpha
                 selected_box = list(_mask_extent(alpha >= 32) or selected_box)
                 confidence = selected["confidence"]
@@ -895,20 +1009,21 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
             # background.  The generated image is object-wise and is expected
             # to contain exactly one object, so use the semantic matting model
             # on the full image before rejecting the job.
-            alpha = _full_image_matting_alpha(source_image)
+            alpha = _border_background_alpha(source_image, [0, 0, width, height])
             if alpha is None:
-                if label in {"chair", "dining chair", "table", "dining table", "sofa", "bed"}:
-                    raise ValueError(
-                        f"GroundingDINO and {MATTING_MODEL} could not isolate the generated '{label}'. "
-                        "Use a contrasting background or regenerate the 2D object."
-                    )
-                # Preserve uncommon open-vocabulary objects that neither
-                # detector can name; the later stage can still process them.
-                job["sanitized"] = False
-                job["segmentation_method"] = "not-detected"
-                job["count_validation"] = "undetected"
-                sanitized_jobs.append(job)
-                continue
+                alpha = _full_image_matting_alpha(source_image)
+            if alpha is None:
+                raise ValueError(
+                    f"GroundingDINO and {MATTING_MODEL} could not isolate the generated '{label}'. "
+                    "Use a contrasting background or regenerate the 2D object."
+                )
+            if _looks_like_rectangular_backdrop(
+                alpha,
+                [0, 0, width, height],
+            ):
+                raise ValueError(
+                    "Could not isolate the requested object from its rectangular backdrop"
+                )
             selected_box = list(_mask_extent(alpha >= 32) or [0, 0, width, height])
             confidence = 0.0
             mask_score = 0.0
@@ -944,6 +1059,7 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 "mask_score": mask_score,
                 "segmentation_method": segmentation_method,
                 "alpha_preserved": True,
+                "backdrop_checked": True,
                 "detector_fallback": detector_fallback,
             }
         )
@@ -1064,7 +1180,19 @@ def sanitize(payload: SanitizeRequest) -> dict:
     with inference_lock:
         try:
             _move_models(_preferred_inference_device())
-            jobs = _sanitize_object_images(payload.objects)
+            jobs = []
+            # Process jobs independently so the caller knows exactly which
+            # object needs a clean-background retry.  The models stay resident
+            # under the same inference lock; this is not a reload per object.
+            for item in payload.objects:
+                try:
+                    jobs.extend(_sanitize_object_images([item]))
+                except Exception as item_exc:
+                    name = str(item.get("name", "object"))
+                    label = str(item.get("label", "object"))
+                    raise ValueError(
+                        f"Object '{name}' ({label}) could not be isolated: {item_exc}"
+                    ) from item_exc
         except Exception as exc:
             raise HTTPException(
                 status_code=500,

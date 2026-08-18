@@ -41,7 +41,8 @@ _OBJECT_ALIASES = {
     "wardrobe": ("wardrobe",),
     "bookshelf": ("bookshelf",),
     "shelf": ("shelf",),
-    "lamp": ("lamp", "đèn", "den"),
+    "lamp": ("floor lamp", "arc floor lamp", "standing lamp", "lamp", "đèn", "den"),
+    "floor lamp": ("floor lamp", "arc floor lamp", "standing lamp", "lamp", "đèn sàn", "den san"),
     "ottoman": ("ottoman",),
     "nightstand": ("nightstand", "bedside table"),
     "dresser": ("dresser",),
@@ -102,11 +103,33 @@ def _object_descriptor(label: str, scene_prompt: str) -> str:
     return label
 
 
+def _isolation_background(label: str, retry: bool) -> str:
+    """Choose a stable, contrasting studio colour for every object image.
+
+    Object-wise images are intermediate assets, not the final scene.  A plain
+    chromatic cyclorama gives both SAM2 and the border-colour fallback a clear
+    foreground/background separation, including for white furniture.
+    """
+    palettes = (
+        "cobalt-blue",
+        "deep teal",
+        "muted plum-purple",
+        "warm burnt-orange",
+    )
+    variant = (sum(ord(char) for char in label) + int(retry)) % len(palettes)
+    colour = palettes[variant]
+    return (
+        f"solid matte {colour} seamless studio cyclorama, empty background only, "
+        "no gradient, no horizon line, no wall panel, no platform"
+    )
+
+
 def _object_prompt(
     label: str,
     scene_prompt: str,
     all_labels: list[str],
     object_description: str = "",
+    retry_clean_background: bool = False,
 ) -> tuple[str, str]:
     excluded = ", ".join(sorted(set(all_labels) - {label})) or "other furniture"
     description = " ".join(str(object_description).split()).strip(" ,.;:")
@@ -176,23 +199,33 @@ def _object_prompt(
         "sofa": (
             "Complete sofa, eye-level front three-quarter view, full seat, arms, base, and feet visible. "
         ),
+        "lamp": (
+            "Exactly one freestanding floor lamp, eye-level front three-quarter view, "
+            "with the complete shade, vertical stem, base, and every support visible. "
+        ),
+        "floor lamp": (
+            "Exactly one freestanding floor lamp, eye-level front three-quarter view, "
+            "with the complete shade, vertical stem, base, and every support visible. "
+        ),
     }
     geometry_instruction = geometry_instructions.get(
         label,
         "Complete object, eye-level front three-quarter view, all structural parts visible. ",
     )
+    studio_background = _isolation_background(label, retry_clean_background)
     positive = (
         f"Product photo of exactly one standalone {descriptor}. "
         f"{geometry_instruction}"
         f"{detail_instruction}"
-        "Centered, fully visible, 70 percent of frame, neutral medium-gray studio background "
+        f"Centered, fully visible, 70 percent of frame, {studio_background}"
         "with clear foreground contrast, soft even light, realistic material, accurate proportions."
     )
     negative = (
         f"extra object, duplicate {label}, pair, set, {excluded}, cropped, close-up, "
         "top-down, extreme perspective, malformed geometry, fused parts, floating parts, "
         "missing legs, extra legs, black silhouette, pure white background, no-contrast background, "
-        "clutter, text, watermark"
+        "rectangular backdrop, background card, studio panel, product stand, pedestal, platform, "
+        "wall cutout, clutter, text, watermark"
     )
     if detail_requested:
         negative += ", missing requested carving, blank decorative area"
@@ -225,6 +258,7 @@ def build_object_jobs(
             scene_prompt,
             all_labels,
             object_description=str(item.get("description", "")),
+            retry_clean_background=bool(item.get("retry_clean_background", False)),
         )
         jobs.append({
             "name": object_id,
@@ -307,23 +341,13 @@ def _sanitize_generated_jobs(jobs: list[dict]) -> list[dict]:
     return sanitized
 
 
-def generate_object_images(
+def _generate_jobs_from_worker(
     scene_prompt: str,
     objects: list[dict],
-    lora_scale: float = 0.2,
-    object_image_dir: str = OBJECT_IMAGE_DIR,
-    manifest_path: str = OBJECT_MANIFEST,
+    lora_scale: float,
+    object_image_dir: str,
 ) -> list[dict]:
-    """Generate isolated object images through the resident SD3.5 worker."""
-    if not objects:
-        raise ValueError("The object-wise generator received no objects")
-
-    _check_worker_ready()
-    # SD3.5 is the active GPU model in this phase.  TRELLIS and SAM2/DINO are
-    # resident workers too, so explicitly move both to CPU before loading the
-    # diffusion pipeline back onto CUDA.
-    _offload_worker(TRELLIS_WORKER_URL, "TRELLIS")
-    _offload_worker(SAM2_DINO_WORKER_URL, "SAM2/DINO")
+    """Ask the resident SD3.5 worker to generate one or more object images."""
     try:
         response = requests.post(
             f"{SD35_WORKER_URL}/generate",
@@ -347,11 +371,82 @@ def generate_object_images(
         raise RuntimeError(
             f"SD3.5 worker returned {len(jobs)} jobs for {len(objects)} objects"
         )
+    return jobs
+
+
+def _objects_needing_clean_background_retry(
+    objects: list[dict],
+    error: Exception,
+) -> list[dict]:
+    """Return only the object(s) named by a sanitization failure.
+
+    The SAM2 worker includes both the stable object id and label in errors.
+    This lets us regenerate the one bad intermediate asset instead of rerunning
+    the entire scene and works for any furniture category.
+    """
+    error_text = str(error).lower()
+    matches = []
+    for item in objects:
+        object_id = str(item.get("id", "")).lower()
+        label = str(item.get("label", "")).lower()
+        if (object_id and object_id in error_text) or (label and label in error_text):
+            matches.append(dict(item, retry_clean_background=True))
+    return matches
+
+
+def generate_object_images(
+    scene_prompt: str,
+    objects: list[dict],
+    lora_scale: float = 0.2,
+    object_image_dir: str = OBJECT_IMAGE_DIR,
+    manifest_path: str = OBJECT_MANIFEST,
+) -> list[dict]:
+    """Generate isolated object images through the resident SD3.5 worker."""
+    if not objects:
+        raise ValueError("The object-wise generator received no objects")
+
+    _check_worker_ready()
+    # SD3.5 is the active GPU model in this phase.  TRELLIS and SAM2/DINO are
+    # resident workers too, so explicitly move both to CPU before loading the
+    # diffusion pipeline back onto CUDA.
+    _offload_worker(TRELLIS_WORKER_URL, "TRELLIS")
+    _offload_worker(SAM2_DINO_WORKER_URL, "SAM2/DINO")
+    jobs = _generate_jobs_from_worker(
+        scene_prompt,
+        objects,
+        lora_scale,
+        object_image_dir,
+    )
 
     # Prompt wording alone cannot guarantee cardinality in a diffusion model.
     # Validate each image with GroundingDINO and retain one SAM2 instance before
     # the contact sheet is exposed to the frontend or sent to TRELLIS.
-    jobs = _sanitize_generated_jobs(jobs)
+    try:
+        jobs = _sanitize_generated_jobs(jobs)
+    except RuntimeError as first_error:
+        retry_objects = _objects_needing_clean_background_retry(objects, first_error)
+        if not retry_objects:
+            raise
+
+        # Regenerate only the problematic object with a different chromatic,
+        # seamless background. This gives SAM2 a second clean chance without
+        # spending another full diffusion pass on the other furniture.
+        retry_jobs = _generate_jobs_from_worker(
+            scene_prompt,
+            retry_objects,
+            lora_scale,
+            object_image_dir,
+        )
+        retry_by_name = {str(job.get("name", "")): job for job in retry_jobs}
+        jobs = [retry_by_name.get(str(job.get("name", "")), job) for job in jobs]
+        try:
+            jobs = _sanitize_generated_jobs(jobs)
+        except RuntimeError as retry_error:
+            raise RuntimeError(
+                "Object segmentation failed after an automatic clean-background retry. "
+                "The incomplete asset was blocked before it could be sent to TRELLIS. "
+                f"Details: {retry_error}"
+            ) from retry_error
 
     for job in jobs:
         image_path = job.get("image_path")

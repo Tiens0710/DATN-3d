@@ -3,6 +3,8 @@ import re
 from pathlib import Path
 
 import requests
+import numpy as np
+from PIL import Image
 
 
 TRELLIS_WORKER_URL = os.environ.get(
@@ -91,6 +93,48 @@ def _mesh_thickness_ratio(model_path: str) -> float | None:
         return None
 
 
+def _validate_reconstructable_crop(crop_path: str, label: str) -> None:
+    """Block an almost-opaque rectangular background before TRELLIS sees it."""
+    try:
+        with Image.open(crop_path) as source:
+            if "A" not in source.getbands() and "transparency" not in source.info:
+                raise ValueError("crop is missing an alpha channel")
+            alpha = np.asarray(source.convert("RGBA").getchannel("A"), dtype=np.uint8)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"could not inspect '{label}' crop: {exc}") from exc
+
+    support = alpha >= 32
+    rows, columns = np.where(support)
+    if not rows.size:
+        raise ValueError(f"'{label}' crop has an empty alpha mask")
+    x1, x2 = int(columns.min()), int(columns.max()) + 1
+    y1, y2 = int(rows.min()), int(rows.max()) + 1
+    extent_area = max(1, (x2 - x1) * (y2 - y1))
+    density = float(support[y1:y2, x1:x2].mean())
+    canvas_coverage = extent_area / max(1, alpha.size)
+    alpha_coverage = float(support.mean())
+    extent_width = (x2 - x1) / max(1, alpha.shape[1])
+    extent_height = (y2 - y1) / max(1, alpha.shape[0])
+
+    # Sanitized object images are centred on a transparent canvas.  A crop that
+    # remains almost opaque across that canvas is a background card/panel, not
+    # a reliable object image.  Values are intentionally conservative to keep
+    # legitimate dense furniture such as cabinets and wardrobes reconstructable.
+    if (
+        density >= 0.96
+        and canvas_coverage >= 0.62
+        and alpha_coverage >= 0.60
+        and extent_width >= 0.78
+        and extent_height >= 0.78
+    ):
+        raise ValueError(
+            f"'{label}' crop still contains an opaque rectangular background panel; "
+            "the asset was blocked before it could be sent to TRELLIS"
+        )
+
+
 def generate_3d_models(
     crops: list,
     multi_glb_dir: str,
@@ -118,6 +162,7 @@ def generate_3d_models(
             raise ValueError(f"Invalid crop name: {name}")
         if allowed_root:
             crop_path = str(_path_within(crop_path, allowed_root))
+        _validate_reconstructable_crop(crop_path, str(crop.get("label", name)))
 
         try:
             response = requests.post(
