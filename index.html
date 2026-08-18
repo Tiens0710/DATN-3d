@@ -7557,7 +7557,10 @@
 
                 nodePrompt.connect(0, nodeOptimizer, 0);
                 nodeOptimizer.connect(0, nodeSDXL, 0);
-                nodePrompt.connect(0, nodeSceneGraph, 0);
+                // The scene graph must use the same normalized prompt as the
+                // image generator; the optimizer falls back to the raw prompt
+                // if Gemini is unavailable.
+                nodeOptimizer.connect(0, nodeSceneGraph, 0);
                 nodeSceneGraph.connect(0, nodeLayout, 0);
                 nodeLayout.connect(0, nodeSDXL, 1);
                 nodeSDXL.connect(0, nodeSAM2, 0);
