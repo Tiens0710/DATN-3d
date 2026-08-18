@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v15-compact-sd35-prompts"
+BACKEND_BUILD = "gemini-metric-layout-v16-exact-object-inventory"
 
 allowed_origins = [
     origin.strip()
@@ -353,21 +353,36 @@ Rules:
 """.strip()
 
 
+def _contains_prompt_term(text: str, terms: tuple[str, ...]) -> bool:
+    """Match complete words/phrases, never substrings inside another word.
+
+    The old ``"bàn" in source`` test interpreted ``ghế bành`` as containing a
+    table because the letters ``bàn`` are the prefix of ``bành``.
+    """
+    return any(
+        re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text, re.IGNORECASE)
+        for term in terms
+    )
+
+
 def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
     """Append short geometry guards without bloating the CLIP prompt."""
     source = source_prompt.lower()
     guards = []
 
-    if any(term in source for term in ("table", "bàn", "ban")):
+    if _contains_prompt_term(source, ("table", "tables", "bàn", "ban")):
         guards.append("complete rectangular table with four connected legs visible")
     # In Vietnamese, "ghế sofa" contains the generic word "ghế" but it is not
     # a separate chair. Remove sofa phrases before checking chair markers.
     chair_source = re.sub(r"\b(?:ghế|ghe)\s+sofa\b", "sofa", source)
-    if any(term in chair_source for term in ("chair", "ghế", "ghe")):
+    if _contains_prompt_term(chair_source, ("chair", "chairs", "ghế", "ghe")):
         guards.append("complete chair with seat, backrest, and all legs visible")
-    if any(term in source for term in ("sofa", "couch")):
+    if _contains_prompt_term(source, ("sofa", "sofas", "couch", "couches")):
         guards.append("complete sofa with arms, base, and feet visible")
-    if any(term in source for term in ("floor lamp", "standing lamp", "đèn sàn", "den san")):
+    if _contains_prompt_term(
+        source,
+        ("floor lamp", "floor lamps", "standing lamp", "đèn sàn", "den san"),
+    ):
         guards.append("complete floor lamp with shade, thin stem, and base visible")
 
     detail_markers = (
@@ -617,6 +632,39 @@ def _gemini_scene_graph(prompt: str) -> dict | None:
         })
     if not clean_objects:
         raise ValueError("Gemini returned no usable objects")
+
+    # Respect an explicit single-object request even if the structured model
+    # hallucinates a prop. Prefer the label mentioned in the first inventory
+    # sentence, then fall back to Gemini's first object.
+    prompt_lower = prompt.lower()
+    strict_single = (
+        "exactly one" in prompt_lower
+        and any(
+            marker in prompt_lower
+            for marker in (
+                "no other object",
+                "no extra object",
+                "without other object",
+                "standalone",
+            )
+        )
+    )
+    if strict_single and len(clean_objects) > 1:
+        inventory_sentence = re.split(r"[.;]", prompt_lower, maxsplit=1)[0]
+        selected_index = next(
+            (
+                index
+                for index, item in enumerate(clean_objects)
+                if str(item.get("label", "")).lower() in inventory_sentence
+            ),
+            0,
+        )
+        clean_objects = [clean_objects[selected_index]]
+        data["relations"] = []
+        data["relation"] = "single"
+        data["placements"] = [
+            {"object": 0, "position_xyz": [0.0, 0.0, 0.0], "rotation_y_degrees": 0.0}
+        ]
     return parse_scene_graph_from_objects(
         prompt,
         clean_objects,

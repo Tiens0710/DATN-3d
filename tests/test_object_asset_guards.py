@@ -62,7 +62,7 @@ class ObjectAssetGuardTests(unittest.TestCase):
         selected = [
             node for node in module.body
             if isinstance(node, ast.FunctionDef)
-            and node.name == "_ensure_furniture_details"
+            and node.name in {"_contains_prompt_term", "_ensure_furniture_details"}
         ]
         namespace = {"re": re}
         exec(compile(ast.Module(body=selected, type_ignores=[]), "prompt_guard", "exec"), namespace)
@@ -74,6 +74,24 @@ class ObjectAssetGuardTests(unittest.TestCase):
         self.assertNotIn("complete chair", optimized)
         self.assertIn("complete sofa", optimized)
         self.assertIn("complete floor lamp", optimized)
+
+    def test_vietnamese_armchair_does_not_trigger_table_guard(self):
+        source = Path("server.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        selected = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"_contains_prompt_term", "_ensure_furniture_details"}
+        ]
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), "armchair_guard", "exec"), namespace)
+        optimized = namespace["_ensure_furniture_details"](
+            "Một chiếc ghế bành hiện đại bằng gỗ.",
+            "Exactly one modern wooden armchair, no other objects.",
+        )
+
+        self.assertNotIn("complete rectangular table", optimized)
+        self.assertIn("complete chair", optimized)
 
     def test_descriptive_coffee_table_uses_table_structure_rules(self):
         helpers = load_generator_helpers()
