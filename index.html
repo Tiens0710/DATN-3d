@@ -2520,18 +2520,90 @@
         .material-controls {
             position: absolute;
             z-index: 8;
-            top: 112px;
+            top: 96px;
             right: 138px;
-            width: 214px;
+            width: min(286px, calc(100% - 24px));
+            max-height: calc(100% - 112px);
             display: grid;
             gap: 9px;
-            padding: 11px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: 13px;
             border: 1px solid rgba(255, 255, 255, .18);
-            border-radius: 10px;
-            background: rgba(20, 23, 29, .86);
+            border-radius: 12px;
+            background: rgba(13, 17, 24, .96);
             color: #eef0f4;
             backdrop-filter: blur(15px);
             box-shadow: 0 12px 30px rgba(0, 0, 0, .28);
+        }
+
+        .material-controls::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .material-controls::-webkit-scrollbar-thumb {
+            border-radius: 99px;
+            background: rgba(145, 132, 232, .55);
+        }
+
+        .material-panel-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            padding-bottom: 2px;
+        }
+
+        .material-panel-kicker {
+            margin-bottom: 3px;
+            color: #9aa7b8;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+        }
+
+        .material-close {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, .12);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, .06);
+            color: #b7c0cc;
+            font-size: 17px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .material-close:hover {
+            background: rgba(145, 132, 232, .22);
+            color: #ffffff;
+        }
+
+        .material-section {
+            display: grid;
+            gap: 9px;
+            padding: 10px;
+            border: 1px solid rgba(111, 132, 158, .22);
+            border-radius: 9px;
+            background: rgba(255, 255, 255, .035);
+        }
+
+        .material-section-title {
+            color: #f3f5f8;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .material-section-description {
+            margin-top: -4px;
+            color: #8793a3;
+            font-size: 9px;
+            line-height: 1.35;
         }
 
         .material-controls.is-hidden {
@@ -2663,7 +2735,7 @@
         @media (max-width: 1180px) {
             .material-controls {
                 right: 126px;
-                width: 198px;
+                width: min(270px, calc(100% - 24px));
             }
         }
 
@@ -2671,7 +2743,8 @@
             .material-controls {
                 top: 98px;
                 right: 12px;
-                width: min(214px, calc(100% - 24px));
+                width: min(286px, calc(100% - 24px));
+                max-height: calc(100% - 112px);
             }
         }
 
@@ -3359,44 +3432,58 @@
                     </div>
 
                     <div class="material-controls is-hidden" id="material-controls" aria-label="Material editor">
-                        <div class="control-title">Material editor</div>
-                        <label class="material-field">
-                            <span>Apply to</span>
-                            <select id="material-target" disabled>
-                                <option value="all">All materials</option>
-                            </select>
-                        </label>
-                        <label class="material-field material-color-field">
-                            <span>Base color</span>
-                            <input id="material-color" type="color" value="#ffffff" disabled>
-                        </label>
-                        <label class="material-field">
-                            <span><span>Roughness</span><output id="material-roughness-value">0.80</output></span>
-                            <input id="material-roughness" type="range" min="0" max="1" step="0.01" value="0.8" disabled>
-                        </label>
-                        <label class="material-field">
-                            <span><span>Metallic</span><output id="material-metallic-value">0.00</output></span>
-                            <input id="material-metallic" type="range" min="0" max="1" step="0.01" value="0" disabled>
-                        </label>
-                        <div class="material-actions">
-                            <button class="material-action-btn" id="btn-material-reset" type="button" disabled>Reset</button>
-                            <button class="material-action-btn primary" id="btn-material-download" type="button" disabled>Tải GLB đã chỉnh</button>
+                        <div class="material-panel-header">
+                            <div>
+                                <div class="material-panel-kicker">3D Editor</div>
+                                <div class="control-title">Chỉnh sửa vật thể</div>
+                            </div>
+                            <button class="material-close" id="btn-material-close" type="button" aria-label="Đóng bảng chỉnh sửa">×</button>
                         </div>
-                        <small id="material-editor-status">Chưa có mô hình 3D.</small>
-                        <div class="variant-editor-divider"></div>
-                        <div class="control-title">TRELLIS 1 variant</div>
-                        <label class="material-field">
-                            <span>Model gốc</span>
-                            <select id="variant-source" disabled>
-                                <option value="">Chưa có model riêng</option>
-                            </select>
-                        </label>
-                        <label class="material-field">
-                            <span>Mô tả thay đổi</span>
-                            <textarea id="variant-prompt" rows="3" placeholder="Ví dụ: dark walnut wood with a soft cream fabric seat" disabled></textarea>
-                        </label>
-                        <button class="material-action-btn primary" id="btn-trellis-variant" type="button" disabled>Tạo biến thể 3D</button>
-                        <small id="variant-editor-status">Giữ hình dáng tổng thể, tạo lại chi tiết theo prompt.</small>
+
+                        <section class="material-section" aria-labelledby="material-section-title">
+                            <div class="material-section-title" id="material-section-title">Vật liệu</div>
+                            <div class="material-section-description">Đổi màu và bề mặt trực tiếp trên mô hình hiện tại.</div>
+                            <label class="material-field">
+                                <span>Áp dụng cho</span>
+                                <select id="material-target" disabled>
+                                    <option value="all">Tất cả vật liệu</option>
+                                </select>
+                            </label>
+                            <label class="material-field material-color-field">
+                                <span>Màu cơ bản</span>
+                                <input id="material-color" type="color" value="#ffffff" disabled>
+                            </label>
+                            <label class="material-field">
+                                <span><span>Độ nhám</span><output id="material-roughness-value">0.80</output></span>
+                                <input id="material-roughness" type="range" min="0" max="1" step="0.01" value="0.8" disabled>
+                            </label>
+                            <label class="material-field">
+                                <span><span>Độ kim loại</span><output id="material-metallic-value">0.00</output></span>
+                                <input id="material-metallic" type="range" min="0" max="1" step="0.01" value="0" disabled>
+                            </label>
+                            <div class="material-actions">
+                                <button class="material-action-btn" id="btn-material-reset" type="button" disabled>Khôi phục</button>
+                                <button class="material-action-btn primary" id="btn-material-download" type="button" disabled>Tải GLB đã chỉnh</button>
+                            </div>
+                            <small id="material-editor-status">Chưa có mô hình 3D.</small>
+                        </section>
+
+                        <section class="material-section" aria-labelledby="variant-section-title">
+                            <div class="material-section-title" id="variant-section-title">Biến thể 3D bằng TRELLIS 1</div>
+                            <div class="material-section-description">Giữ bố cục chính và tạo lại chi tiết theo prompt.</div>
+                            <label class="material-field">
+                                <span>Vật thể gốc</span>
+                                <select id="variant-source" disabled>
+                                    <option value="">Chưa có model riêng</option>
+                                </select>
+                            </label>
+                            <label class="material-field">
+                                <span>Mô tả thay đổi</span>
+                                <textarea id="variant-prompt" rows="3" placeholder="Ví dụ: dark walnut wood with a soft cream fabric seat" disabled></textarea>
+                            </label>
+                            <button class="material-action-btn primary" id="btn-trellis-variant" type="button" disabled>Tạo biến thể 3D</button>
+                            <small id="variant-editor-status">Chạy xong TRELLIS để bật chức năng này.</small>
+                        </section>
                     </div>
 
                     <div class="scene-telemetry" aria-label="Scene telemetry">
@@ -4070,7 +4157,7 @@
             materialEditorState.materials = materials;
             materialEditorState.originals = materials.map(readMaterialValue).map(cloneMaterialValue);
             materialEditorState.values = materialEditorState.originals.map(cloneMaterialValue);
-            target.innerHTML = "<option value=\"all\">Tất cả materials</option>";
+            target.innerHTML = "<option value=\"all\">Tất cả vật liệu</option>";
             materials.forEach((material, index) => {
                 const option = document.createElement("option");
                 option.value = String(index);
@@ -4091,7 +4178,7 @@
             materialEditorState.sourceKey = "";
             const { panel, target } = getMaterialEditorElements();
             if (panel) panel.classList.add("is-hidden");
-            if (target) target.innerHTML = "<option value=\"all\">All materials</option>";
+            if (target) target.innerHTML = "<option value=\"all\">Tất cả vật liệu</option>";
             setMaterialEditorEnabled(false);
             setMaterialEditorStatus("Chưa có mô hình 3D.");
             refreshVariantSourceOptions([]);
@@ -4594,6 +4681,9 @@
                     setMaterialEditorStatus("Đang chờ mô hình 3D hoàn tất tải...");
                 }
             }
+        });
+        document.getElementById("btn-material-close")?.addEventListener("click", () => {
+            getMaterialEditorElements().panel?.classList.add("is-hidden");
         });
         getMaterialEditorElements().target?.addEventListener("change", syncMaterialEditorInputs);
         getMaterialEditorElements().color?.addEventListener("input", applyMaterialEditorValues);
@@ -6341,7 +6431,15 @@
                         }
                     }
 
-                    this.properties.models = data.models || [];
+                    this.properties.models = Array.isArray(data.models) ? data.models : [];
+                    const modelSignature = this.properties.models
+                        .map((model) => `${model.name || ""}:${model.model_url || ""}`)
+                        .join("|");
+                    if (this._lastModelSignature !== modelSignature) {
+                        this.properties.viewerModelIndex = 0;
+                        this._lastModelSignature = modelSignature;
+                    }
+                    this._lastTrellisViewerKey = "";
                     this.setOutputData(0, this.properties.models);
                     const firstModel = this.properties.models.find((model) => model.model_url);
                     if (firstModel) {
@@ -6382,10 +6480,9 @@
             const models = (this.properties.models || []).filter((model) => model.model_url);
             if (!models.length) return;
 
-            const index = Math.min(
-                Math.max(0, Number(this.properties.viewerModelIndex) || 0),
-                models.length - 1
-            );
+            const requestedIndex = Number(this.properties.viewerModelIndex) || 0;
+            const index = ((requestedIndex % models.length) + models.length) % models.length;
+            this.properties.viewerModelIndex = index;
             const model = models[index];
             const sourceUrl = `${backendUrl}${model.model_url}`;
             const viewerId = `trellis-viewer-${this.id}`;
@@ -6400,11 +6497,12 @@
             }
 
             this.position3DViewer();
-            if (this._lastTrellisViewerUrl === sourceUrl) return;
-            this._lastTrellisViewerUrl = sourceUrl;
+            const viewerKey = `${sourceUrl}|${index}|${models.length}`;
+            if (this._lastTrellisViewerKey === viewerKey) return;
+            this._lastTrellisViewerKey = viewerKey;
             viewer.innerHTML = `
                 <div class="viewer-stage">
-                    <div class="viewer-model-label">${model.label || model.name || "3D model"}</div>
+                    <div class="viewer-model-label">${index + 1}/${models.length} · ${model.label || model.name || "3D model"}</div>
                     <model-viewer
                         src="${sourceUrl}"
                         camera-controls
@@ -6416,6 +6514,8 @@
                         alt="TRELLIS generated 3D model">
                     </model-viewer>
                     <div class="viewer-controls">
+                        <button class="viewer-btn" data-action="previous" aria-label="Previous 3D model">‹</button>
+                        <button class="viewer-btn" data-action="next" aria-label="Next 3D model">›</button>
                         <button class="viewer-btn" data-action="spin">Stop Spin</button>
                         <button class="viewer-btn" data-action="reset">Reset View</button>
                         <button class="viewer-btn" data-action="download">Tải GLB</button>
@@ -6425,6 +6525,32 @@
 
             const modelViewer = viewer.querySelector("model-viewer");
             setModelViewerAutoRotate(modelViewer, true);
+            const previousButton = viewer.querySelector('[data-action="previous"]');
+            const nextButton = viewer.querySelector('[data-action="next"]');
+            const switchModel = async (offset) => {
+                const currentModels = (this.properties.models || []).filter((item) => item.model_url);
+                if (currentModels.length < 2) return;
+                this.properties.viewerModelIndex = (
+                    this.properties.viewerModelIndex + offset + currentModels.length
+                ) % currentModels.length;
+                this._lastTrellisViewerKey = "";
+                await this.update3DViewer();
+                this.setDirtyCanvas(true, true);
+            };
+            if (models.length < 2) {
+                previousButton.disabled = true;
+                nextButton.disabled = true;
+                previousButton.style.opacity = "0.35";
+                nextButton.style.opacity = "0.35";
+            }
+            previousButton.onclick = (event) => {
+                event.stopPropagation();
+                switchModel(-1);
+            };
+            nextButton.onclick = (event) => {
+                event.stopPropagation();
+                switchModel(1);
+            };
             viewer.querySelector('[data-action="spin"]').onclick = (event) => {
                 event.stopPropagation();
                 toggleModelViewerAutoRotate(modelViewer, event.currentTarget, {
@@ -6492,7 +6618,11 @@
             });
 
             this.addWidget("number", "3D System Scale", this.properties.scaleFactor, (v) => {
-                this.properties.scaleFactor = v;
+                const nextScale = Number(v);
+                if (Number.isFinite(nextScale) && nextScale > 0) {
+                    this.properties.scaleFactor = nextScale;
+                    this._lastCombineKey = "";
+                }
             }, { min: 0.002, max: 0.05, step: 0.002 });
 
             this.size = [420, 400];
@@ -6515,12 +6645,23 @@
                 throw new Error("Chưa kết nối GPU Kaggle");
             }
 
-            if (this._lastModels === modelsData && this.properties.sceneUrl) {
+            const combineKey = JSON.stringify({
+                models: Array.isArray(modelsData)
+                    ? modelsData.map((model) => ({
+                        name: model.name || "",
+                        model_url: model.model_url || "",
+                        model_path: model.model_path || "",
+                    }))
+                    : [],
+                layout: relationLayout,
+                scaleFactor: Number(this.properties.scaleFactor) || 0.01,
+            });
+            if (this._lastCombineKey === combineKey && this.properties.sceneUrl) {
                 this.setOutputData(0, this.properties.sceneUrl);
                 return;
             }
 
-            this._lastModels = modelsData;
+            this._lastCombineKey = combineKey;
             this.properties.modelCount = Array.isArray(modelsData) ? modelsData.length : 0;
             this.properties.status = "Combining scene...";
             this.properties.error = "";
@@ -6637,8 +6778,8 @@
                         src="${this._objectUrl}" 
                         camera-controls 
                         auto-rotate 
-                        camera-orbit="30deg 72deg 65%"
-                        field-of-view="35deg"
+                        camera-orbit="30deg 72deg auto"
+                        field-of-view="40deg"
                         alt="DATN Interactive 3D Scene Combined Output"
                         shadow-intensity="1.5"
                         exposure="1.0"
@@ -6655,6 +6796,15 @@
 
                     const modelViewer = viewer.querySelector("model-viewer");
                     setModelViewerAutoRotate(modelViewer, true);
+                    // Let model-viewer frame the complete combined scene instead
+                    // of reusing a close-up radius that is suitable only for one
+                    // object. This keeps the sofa, table and lamp visible together.
+                    const fitCombinedScene = () => {
+                        modelViewer.cameraOrbit = "30deg 72deg auto";
+                        modelViewer.fieldOfView = "40deg";
+                    };
+                    modelViewer.addEventListener("load", fitCombinedScene, { once: true });
+                    fitCombinedScene();
 
                     viewer.querySelector(`#btn-spin-${this.id}`).onclick = (e) => {
                         e.stopPropagation();
