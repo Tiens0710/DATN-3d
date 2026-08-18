@@ -5430,6 +5430,7 @@
         LiteGraph.NODE_TITLE_FONT = "600 12px Inter, 'Segoe UI', sans-serif";
         LiteGraph.NODE_LABEL_FONT = "normal 11px Inter, 'Segoe UI', sans-serif";
         canvas.title_text_font = "600 13px Inter, 'Segoe UI', sans-serif";
+        canvas.node_title_color = "#f8fafc";
         canvas.inner_text_font = "11px Inter, 'Segoe UI', sans-serif";
 
         // Keep custom canvas text inside its node. LiteGraph does not clip
@@ -5520,10 +5521,14 @@
         // ComfyUI-style smooth curved links
         canvas.render_connections_border = false;
         canvas.connections_width = 1.5;
-        canvas.render_curved_connections = true;
-        canvas.render_connection_arrows = false;
+        // Orthogonal elbows keep fan-out branches readable and prevent the
+        // default spline curves from sweeping across neighbouring cards.
+        canvas.render_curved_connections = false;
+        canvas.render_connection_arrows = true;
         canvas.highquality_render = true;
-        canvas.links_render_mode = LiteGraph.SPLINE_LINK;
+        canvas.links_render_mode = Number.isFinite(LiteGraph.ELBOW_LINK)
+            ? LiteGraph.ELBOW_LINK
+            : LiteGraph.LINEAR_LINK;
 
         // Redraw loop
         function resizeCanvas() {
@@ -5557,6 +5562,7 @@
         }
         NodeImageInput.title = "🖼️ Input Image";
         NodeImageInput.title_color = "#72d3be";
+        NodeImageInput.title_text_color = "#102a2a";
         NodeImageInput.prototype.onExecute = function () {
             const imageUrl = uploadedImageUrl || this.properties.imageUrl;
             if (!imageUrl || imageUrl.startsWith("blob:")) {
@@ -5625,6 +5631,7 @@
         }
         NodePrompt.title = "✏️ Input Text Prompt";
         NodePrompt.title_color = "rgba(76, 175, 80, 0.85)";
+        NodePrompt.title_text_color = "#ffffff";
 
         NodePrompt.prototype.onExecute = function () {
             const textarea = document.getElementById(`prompt-input-${this.id}`);
@@ -5691,10 +5698,11 @@
         LiteGraph.registerNodeType("datn/input_prompt", NodePrompt);
 
 
-        // Node 2: Scene Graph Parser (spaCy NLP)
+        // Node 2: Scene Graph Parser (Gemini + deterministic fallback)
         function NodeSceneGraph() {
             this.addInput("prompt", "string");
             this.addOutput("scene_graph", "object");
+            this.addOutput("optimized_prompt", "string");
             this.properties = { graphData: null };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
@@ -5705,6 +5713,7 @@
         }
         NodeSceneGraph.title = "🧠 Scene Graph Parser";
         NodeSceneGraph.title_color = "rgba(46, 125, 50, 0.85)";
+        NodeSceneGraph.title_text_color = "#ffffff";
         NodeSceneGraph.prototype.onExecute = async function () {
             const inputPrompt = this.getInputData(0);
             if (!inputPrompt) {
@@ -5718,6 +5727,7 @@
 
             if (this._lastPrompt === inputPrompt && this.properties.graphData) {
                 this.setOutputData(0, this.properties.graphData);
+                this.setOutputData(1, inputPrompt);
                 return;
             }
 
@@ -5734,6 +5744,7 @@
                     const data = await res.json();
                     this.properties.graphData = data;
                     this.setOutputData(0, data);
+                    this.setOutputData(1, inputPrompt);
                     writeLog("✅ Trích xuất Scene Graph thành công!", "success");
                 } else {
                     const errText = await res.text();
@@ -5809,6 +5820,7 @@
         }
         NodeLayout2D.title = "📐 2D Layout Generator";
         NodeLayout2D.title_color = "rgba(106, 77, 199, 0.85)";
+        NodeLayout2D.title_text_color = "#ffffff";
         NodeLayout2D.prototype.onExecute = async function () {
             const graphData = this.getInputData(0);
             if (!graphData) {
@@ -5982,6 +5994,7 @@
         }
         NodePromptOptimizer.title = "Gemini 3.1 Flash-Lite Prompt Optimizer";
         NodePromptOptimizer.title_color = "#ffffff";
+        NodePromptOptimizer.title_text_color = "#1f2937";
         NodePromptOptimizer.prototype.onExecute = async function () {
             const prompt = this.getInputData(0);
             if (!prompt) throw new Error("Thiếu prompt cho Gemini Optimizer");
@@ -6041,7 +6054,7 @@
         // Node 5: SD3.5 Image Generator
         function NodeSDXLGen() {
             this.addInput("prompt", "string");
-            this.addInput("scene_graph", "object");
+            this.addInput("object_plan", "object");
             this.addOutput("image_url", "string");
 
             this.properties = {
@@ -6068,6 +6081,7 @@
         }
         NodeSDXLGen.title = "🎨 SD3.5 Image Generator";
         NodeSDXLGen.title_color = "rgba(198, 40, 40, 0.85)";
+        NodeSDXLGen.title_text_color = "#ffffff";
         NodeSDXLGen.prototype.loadPreviewImage = async function (rawUrl) {
             if (!rawUrl) return;
 
@@ -6391,6 +6405,7 @@
         }
         NodeGroundedSAM2.title = "✂️ Grounded-SAM2 Segment";
         NodeGroundedSAM2.title_color = "rgba(230, 81, 0, 0.85)";
+        NodeGroundedSAM2.title_text_color = "#ffffff";
         NodeGroundedSAM2.prototype.onExecute = async function () {
             const imageUrl = uploadedImageUrl || this.getInputData(0);
             const inputLayout = this.getInputData(1);
@@ -6617,8 +6632,10 @@
                 this._cropImages.forEach((img, idx) => {
                     try {
                         const tx = 15 + (idx * 90);
-                        // Draw a grid pattern back for alpha visibility
-                        ctx.fillStyle = "rgba(255,255,255,0.03)";
+                        // Composite transparent PNG crops on white so a valid
+                        // alpha mask is not displayed as a black silhouette
+                        // against the dark LiteGraph canvas.
+                        ctx.fillStyle = "#ffffff";
                         ctx.fillRect(tx, 320, 80, 80);
                         ctx.strokeStyle = "rgba(255,255,255,0.06)";
                         ctx.strokeRect(tx, 320, 80, 80);
@@ -6667,6 +6684,7 @@
         }
         NodeTrellis3D.title = "🧊 TRELLIS 3D Generator";
         NodeTrellis3D.title_color = "rgba(21, 101, 192, 0.85)";
+        NodeTrellis3D.title_text_color = "#ffffff";
         NodeTrellis3D.prototype.onExecute = async function () {
             const cropsData = this.getInputData(0);
             if (!cropsData) {
@@ -7044,6 +7062,7 @@
         }
         NodeSceneCombiner.title = "🌐 3D Scene Combiner";
         NodeSceneCombiner.title_color = "rgba(106, 27, 154, 0.85)";
+        NodeSceneCombiner.title_text_color = "#ffffff";
         NodeSceneCombiner.prototype.onExecute = async function () {
             const modelsData = this.getInputData(0);
             const relationLayout = this.getInputData(1) || {};
@@ -7533,50 +7552,53 @@
                 // object generation, while the 2D layout feeds segmentation
                 // labels/boxes and the final spatial scene assembly.
                 const nodePrompt = LiteGraph.createNode("datn/input_prompt");
-                nodePrompt.pos = [60, 360];
+                nodePrompt.pos = [60, 300];
                 graph.add(nodePrompt);
 
                 const nodeOptimizer = LiteGraph.createNode("datn/prompt_optimizer");
-                nodeOptimizer.pos = [420, 360];
+                nodeOptimizer.pos = [420, 300];
                 graph.add(nodeOptimizer);
 
                 const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
-                nodeSceneGraph.pos = [850, 650];
+                nodeSceneGraph.pos = [850, 300];
                 graph.add(nodeSceneGraph);
 
                 const nodeLayout = LiteGraph.createNode("datn/layout_2d");
-                nodeLayout.pos = [1250, 650];
+                nodeLayout.pos = [1250, 760];
                 graph.add(nodeLayout);
 
                 const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
-                nodeSDXL.pos = [850, 120];
+                nodeSDXL.pos = [1250, 300];
                 graph.add(nodeSDXL);
 
                 const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
-                nodeSAM2.pos = [1350, 120];
+                nodeSAM2.pos = [1750, 300];
                 graph.add(nodeSAM2);
 
                 const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
-                nodeTrellis.pos = [1850, 120];
+                nodeTrellis.pos = [2250, 300];
                 graph.add(nodeTrellis);
 
                 const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
-                nodeCombiner.pos = [1850, 560];
+                nodeCombiner.pos = [2250, 760];
                 graph.add(nodeCombiner);
 
                 nodePrompt.connect(0, nodeOptimizer, 0);
-                nodeOptimizer.connect(0, nodeSDXL, 0);
                 nodeOptimizer.connect(0, nodeSceneGraph, 0);
                 nodeSceneGraph.connect(0, nodeLayout, 0);
+                nodeSceneGraph.connect(1, nodeSDXL, 0);
                 nodeSceneGraph.connect(0, nodeSDXL, 1);
                 nodeSDXL.connect(0, nodeSAM2, 0);
                 nodeLayout.connect(0, nodeSAM2, 1);
                 nodeSAM2.connect(0, nodeTrellis, 0);
                 nodeTrellis.connect(0, nodeCombiner, 0);
+                // The 2D layout is the authoritative spatial plan for the
+                // final scene. SAM2 consumes the same plan for object labels
+                // and boxes, but it must not sit between Layout and Combiner.
                 nodeLayout.connect(0, nodeCombiner, 1);
                 updateInputModeUI();
                 requestAnimationFrame(() => fitGraphToView(60));
-                writeLog("Flow văn bản đã được nạp: Prompt → Gemini → Scene Graph; Scene Graph → SD3.5 + 2D Layout → SAM2 → TRELLIS → Scene.", "info");
+                writeLog("Flow văn bản đã được nạp: Gemini → Scene Graph; Scene Graph → SD3.5 (prompt + object plan) + 2D Layout; SD3.5 + Layout → SAM2 → TRELLIS → Scene.", "info");
             }
 
             const nodeCount = document.getElementById("graph-node-count");

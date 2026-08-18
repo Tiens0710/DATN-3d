@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v8-trellis-variant"
+BACKEND_BUILD = "gemini-metric-layout-v9-upload-mask-repair"
 
 allowed_origins = [
     origin.strip()

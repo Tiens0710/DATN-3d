@@ -533,6 +533,158 @@ def _border_background_alpha(image: Image.Image, box: list[int]) -> np.ndarray |
     return alpha
 
 
+def _uniform_border(image: Image.Image) -> bool:
+    """Return whether the image border looks like a plain studio backdrop."""
+    rgb = np.asarray(image.convert("RGB"), dtype=np.float32)
+    height, width = rgb.shape[:2]
+    if min(width, height) < 32:
+        return False
+    border = max(3, min(width, height) // 48)
+    samples = np.concatenate(
+        (
+            rgb[:border, :, :].reshape(-1, 3),
+            rgb[-border:, :, :].reshape(-1, 3),
+            rgb[:, :border, :].reshape(-1, 3),
+            rgb[:, -border:, :].reshape(-1, 3),
+        ),
+        axis=0,
+    )
+    # White/grey studio backgrounds have very little colour variation on the
+    # border. This is deliberately only used as a signal that a mask may be
+    # inverted; it is not itself a segmentation decision.
+    return float(np.mean(np.std(samples, axis=0))) <= 26.0
+
+
+def _mask_boundary_ratio(mask: np.ndarray, box: list[int]) -> float:
+    """Measure how much of a detector-box boundary is marked foreground."""
+    height, width = mask.shape[:2]
+    x1, y1, x2, y2 = [int(value) for value in box]
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(width, x2), min(height, y2)
+    if x2 <= x1 or y2 <= y1:
+        return 0.0
+    region = mask[y1:y2, x1:x2].astype(bool)
+    if region.size == 0:
+        return 0.0
+    thickness = max(1, min(region.shape) // 30)
+    boundary = np.concatenate(
+        (
+            region[:thickness, :].reshape(-1),
+            region[-thickness:, :].reshape(-1),
+            region[:, :thickness].reshape(-1),
+            region[:, -thickness:].reshape(-1),
+        )
+    )
+    return float(boundary.mean()) if boundary.size else 0.0
+
+
+def _looks_like_inverted_uploaded_mask(
+    image: Image.Image,
+    alpha: np.ndarray,
+    box: list[int],
+) -> bool:
+    """Detect the common SAM2 failure where the white background is foreground.
+
+    On a plain background the wrong mask usually fills the detector box and
+    touches its boundary, while the real object is the transparent hole in the
+    middle. Detecting this before TRELLIS is important: otherwise the transparent
+    object is discarded and the white rectangular backdrop becomes geometry.
+    """
+    support = alpha >= 32
+    extent = _mask_extent(support)
+    if extent is None or not _uniform_border(image):
+        return False
+
+    x1, y1, x2, y2 = [int(value) for value in box]
+    box_width = max(1, x2 - x1)
+    box_height = max(1, y2 - y1)
+    ex1, ey1, ex2, ey2 = extent
+    extent_width = (ex2 - ex1) / box_width
+    extent_height = (ey2 - ey1) / box_height
+    density = _mask_density(support, box)
+    boundary_ratio = _mask_boundary_ratio(support, box)
+    area_ratio = float(support.mean())
+
+    return (
+        extent_width >= 0.82
+        and extent_height >= 0.82
+        and density >= 0.34
+        and boundary_ratio >= 0.52
+        and area_ratio >= 0.18
+    )
+
+
+def _uploaded_alpha(
+    image: Image.Image,
+    box: list[int],
+    label: str,
+) -> tuple[np.ndarray, float, str]:
+    """Get a foreground alpha for an uploaded image without forwarding a bad mask."""
+    width, height = image.size
+    prediction_error = None
+    try:
+        alpha, _best_mask, mask_score, method = _predict_refined_alpha(
+            image,
+            box,
+            label=label,
+        )
+        if not _looks_like_inverted_uploaded_mask(image, alpha, box):
+            return alpha, float(mask_score), method
+        prediction_error = "SAM2 selected the plain background as foreground"
+    except Exception as exc:
+        prediction_error = str(exc)
+
+    # Uploaded product photos commonly use a white/grey background. Estimating
+    # that colour from the border is safer than trusting an inverted SAM mask.
+    full_box = [0, 0, width, height]
+    fallback_alpha = _border_background_alpha(image, full_box)
+    if fallback_alpha is not None:
+        return fallback_alpha, 0.0, "border-background-fallback"
+
+    # For non-uniform backgrounds, use the optional matting model as the next
+    # recovery path. If neither method can produce a reliable alpha, fail here
+    # with a clear segmentation error instead of generating a black backdrop.
+    fallback_alpha = _full_image_matting_alpha(image)
+    if fallback_alpha is not None:
+        return fallback_alpha, 0.0, f"{MATTING_MODEL}-fallback"
+
+    detail = prediction_error or "no usable foreground mask"
+    raise ValueError(
+        f"Could not isolate uploaded '{label}': {detail}. "
+        "Use a clear physical-object photo with visible contrast from its background."
+    )
+
+
+def _save_uploaded_rgba_crop(
+    image: Image.Image,
+    alpha: np.ndarray,
+    crops_dir: str,
+    name: str,
+) -> tuple[str, list[int], Image.Image]:
+    """Save a tight transparent crop with a safety margin for TRELLIS."""
+    support = alpha >= 32
+    extent = _mask_extent(support)
+    if extent is None:
+        raise ValueError("Uploaded segmentation returned an empty foreground mask")
+
+    x1, y1, x2, y2 = extent
+    content = image.convert("RGBA")
+    content.putalpha(Image.fromarray(alpha))
+    content = content.crop((x1, y1, x2, y2))
+    # Keep transparent breathing room so a dense object cannot look like an
+    # opaque full-frame panel to TRELLIS' input validator.
+    padding = max(12, int(max(content.size) * 0.08))
+    cropped = Image.new(
+        "RGBA",
+        (content.width + padding * 2, content.height + padding * 2),
+        (255, 255, 255, 0),
+    )
+    cropped.alpha_composite(content, (padding, padding))
+    crop_path = os.path.join(crops_dir, f"{name}.png")
+    cropped.save(crop_path)
+    return crop_path, [x1, y1, x2, y2], cropped
+
+
 def _is_reusable_alpha(alpha: np.ndarray) -> bool:
     """Return whether an existing alpha channel contains a usable object.
 
@@ -1295,17 +1447,19 @@ def _segment_uploaded(
         previews = []
         for index, candidate in enumerate(kept, start=1):
             x1, y1, x2, y2 = candidate["box"]
-            alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
+            alpha, mask_score, segmentation_method = _uploaded_alpha(
                 source_image,
                 [x1, y1, x2, y2],
                 label=str(candidate.get("label", "object")),
             )
-            rgba = source_image.convert("RGBA")
-            rgba.putalpha(Image.fromarray(alpha))
             safe_label = re.sub(r"[^a-z0-9]+", "_", candidate["label"].lower()).strip("_")
             name = f"{safe_label or 'object'}_{index}"
-            crop_path = os.path.join(crops_dir, f"{name}.png")
-            rgba.save(crop_path)
+            crop_path, final_box, rgba = _save_uploaded_rgba_crop(
+                source_image,
+                alpha,
+                crops_dir,
+                name,
+            )
             previews.append(
                 Image.alpha_composite(Image.new("RGBA", rgba.size, "white"), rgba)
                 .convert("RGB")
@@ -1317,7 +1471,7 @@ def _segment_uploaded(
                     "confidence": candidate["confidence"],
                     "mask_score": mask_score,
                     "box": [x1, y1, x2, y2],
-                    "final_box": [x1, y1, x2, y2],
+                    "final_box": final_box,
                     "crop_path": crop_path,
                     "crop_url": f"/crops/{name}.png",
                     "source_mode": "uploaded_grounded_sam2_auto",
@@ -1410,15 +1564,17 @@ def _segment_uploaded(
         confidence = selected["confidence"]
         detector_fallback = False
 
-        alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
+        alpha, mask_score, segmentation_method = _uploaded_alpha(
             source_image,
             [x1, y1, x2, y2],
             label=label,
         )
-        rgba = source_image.convert("RGBA")
-        rgba.putalpha(Image.fromarray(alpha))
-        crop_path = os.path.join(crops_dir, f"{name}.png")
-        rgba.save(crop_path)
+        crop_path, final_box, rgba = _save_uploaded_rgba_crop(
+            source_image,
+            alpha,
+            crops_dir,
+            name,
+        )
         previews.append(
             Image.alpha_composite(Image.new("RGBA", rgba.size, "white"), rgba)
             .convert("RGB")
@@ -1427,13 +1583,13 @@ def _segment_uploaded(
             {
                 "name": name,
                 "label": label,
-                "confidence": confidence,
-                "mask_score": mask_score,
-                "box": [x1, y1, x2, y2],
-                "final_box": [x1, y1, x2, y2],
-                "crop_path": crop_path,
-                "crop_url": f"/crops/{name}.png",
-                "source_mode": "uploaded_grounded_sam2",
+            "confidence": confidence,
+            "mask_score": mask_score,
+            "box": [x1, y1, x2, y2],
+            "final_box": final_box,
+            "crop_path": crop_path,
+            "crop_url": f"/crops/{name}.png",
+            "source_mode": "uploaded_grounded_sam2",
                 "detector_fallback": detector_fallback,
                 "segmentation_method": segmentation_method,
             }
