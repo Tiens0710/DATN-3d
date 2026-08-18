@@ -371,7 +371,14 @@ def _sanitize_generated_jobs(jobs: list[dict]) -> list[dict]:
         response.raise_for_status()
         sanitized = response.json().get("jobs", [])
     except requests.RequestException as exc:
-        detail = getattr(exc.response, "text", "") if exc.response else ""
+        # ``requests.Response.__bool__`` is False for HTTP 4xx/5xx.  Checking
+        # the response by truthiness therefore discarded the JSON error body
+        # exactly when it was needed to identify the failed object.
+        detail = (
+            _response_error_detail(exc.response)
+            if exc.response is not None
+            else ""
+        )
         raise RuntimeError(
             "Generated-object count validation failed. "
             f"SAM2/DINO worker response: {detail or exc}"
@@ -476,41 +483,63 @@ def generate_object_images(
     for attempt in range(3):
         try:
             jobs = _sanitize_generated_jobs(jobs)
-            break
         except RuntimeError as generation_error:
             retry_objects = _objects_needing_clean_background_retry(
                 pending_objects,
                 generation_error,
             )
             if not retry_objects or attempt >= 2:
+                attempts_made = attempt + 1
                 raise RuntimeError(
-                    "Object validation failed after three independent SD3.5 samples. "
+                    f"Object isolation failed after {attempts_made} SD3.5 "
+                    f"sample{'s' if attempts_made != 1 else ''}. "
                     "The malformed asset was blocked before TRELLIS. "
                     f"Details: {generation_error}"
                 ) from generation_error
-
-            retry_jobs = _generate_jobs_from_worker(
-                scene_prompt,
-                retry_objects,
-                lora_scale,
-                object_image_dir,
-            )
-            retry_by_name = {str(job.get("name", "")): job for job in retry_jobs}
-            jobs = [retry_by_name.get(str(job.get("name", "")), job) for job in jobs]
-            retry_names = {str(item.get("id", "")) for item in retry_objects}
-            pending_objects = [
-                next(
-                    (
-                        retry
-                        for retry in retry_objects
-                        if str(retry.get("id", "")) == str(item.get("id", ""))
-                    ),
-                    item,
+        else:
+            warned_names = {
+                str(job.get("name", ""))
+                for job in jobs
+                if job.get("retry_recommended")
+            }
+            if not warned_names or attempt >= 2:
+                break
+            retry_objects = []
+            for item in pending_objects:
+                if str(item.get("id", "")) not in warned_names:
+                    continue
+                retry_objects.append(
+                    dict(
+                        item,
+                        generation_attempt=_generation_attempt(item) + 1,
+                        retry_clean_background=True,
+                    )
                 )
-                if str(item.get("id", "")) in retry_names
-                else item
-                for item in pending_objects
-            ]
+            if not retry_objects:
+                break
+
+        retry_jobs = _generate_jobs_from_worker(
+            scene_prompt,
+            retry_objects,
+            lora_scale,
+            object_image_dir,
+        )
+        retry_by_name = {str(job.get("name", "")): job for job in retry_jobs}
+        jobs = [retry_by_name.get(str(job.get("name", "")), job) for job in jobs]
+        retry_names = {str(item.get("id", "")) for item in retry_objects}
+        pending_objects = [
+            next(
+                (
+                    retry
+                    for retry in retry_objects
+                    if str(retry.get("id", "")) == str(item.get("id", ""))
+                ),
+                item,
+            )
+            if str(item.get("id", "")) in retry_names
+            else item
+            for item in pending_objects
+        ]
 
     for job in jobs:
         image_path = job.get("image_path")

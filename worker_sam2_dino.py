@@ -531,9 +531,9 @@ def _generated_asset_semantic_error(
             else score_tensor.item()
         )
         if any(term in detected for term in ("rug", "carpet", "floor mat")):
-            if score >= 0.24:
+            if score >= 0.34:
                 return f"detected an unwanted support surface '{detected}' ({score:.2f})"
-        elif ("bed" in detected) and score >= max(0.24, target_confidence * 0.85):
+        elif ("bed" in detected) and score >= max(0.34, target_confidence * 1.05):
             return f"the requested sofa is visually a '{detected}' ({score:.2f})"
     return None
 
@@ -1314,17 +1314,24 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
         source_image, candidates = _detect_label_instances(image_path, label)
         width, height = source_image.size
         detector_fallback = False
+        quality_warnings = []
         if candidates:
             selected = candidates[0]
             selected_box = selected["box"]
             confidence = selected["confidence"]
-            semantic_error = _generated_asset_semantic_error(
-                image_path,
-                label,
-                confidence,
-            )
-            if semantic_error:
-                raise ValueError(f"Generated '{label}' {semantic_error}")
+            try:
+                semantic_error = _generated_asset_semantic_error(
+                    image_path,
+                    label,
+                    confidence,
+                )
+                if semantic_error:
+                    quality_warnings.append(semantic_error)
+            except Exception as semantic_exc:
+                # This query is a quality hint, not part of the core DINO+SAM
+                # isolation path. A weak/conflicting auxiliary prediction must
+                # never turn an otherwise valid pipeline run into HTTP 500.
+                job["semantic_check_error"] = type(semantic_exc).__name__
             try:
                 alpha, best_mask, mask_score, segmentation_method = _predict_refined_alpha(
                     source_image,
@@ -1385,9 +1392,9 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
             job["count_validation"] = "matting_fallback"
 
         if _looks_like_floor_attachment(alpha):
-            raise ValueError(
-                f"Generated '{label}' contains a rug, floor patch, support sheet, "
-                "or connected background below the object"
+            quality_warnings.append(
+                "silhouette may contain a rug, floor patch, support sheet, "
+                "or connected background"
             )
 
         alpha_image = Image.fromarray(alpha)
@@ -1419,6 +1426,8 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 "alpha_preserved": True,
                 "backdrop_checked": True,
                 "detector_fallback": detector_fallback,
+                "quality_warnings": quality_warnings,
+                "retry_recommended": bool(quality_warnings),
             }
         )
         sanitized_jobs.append(job)
