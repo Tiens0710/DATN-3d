@@ -441,6 +441,10 @@
             padding: 2px 3px;
         }
 
+        .node-3d-container[data-compact="true"] .viewer-btn[data-secondary-action] {
+            display: none;
+        }
+
         .viewer-btn:hover {
             background: rgba(255, 255, 255, 0.1);
         }
@@ -2524,6 +2528,7 @@
             right: 18px;
             bottom: 82px;
             width: min(286px, calc(100% - 24px));
+            max-height: calc(100% - 24px);
             display: grid;
             gap: 9px;
             overflow-y: auto;
@@ -2552,6 +2557,14 @@
             justify-content: space-between;
             gap: 10px;
             padding-bottom: 2px;
+            cursor: grab;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .material-panel-header:active,
+        .material-controls[data-dragging="true"] .material-panel-header {
+            cursor: grabbing;
         }
 
         .material-panel-kicker {
@@ -3993,6 +4006,7 @@
             values: [],
             sourceBuffer: null,
             sourceKey: "",
+            targetLabels: [],
         };
 
         function getMaterialEditorElements() {
@@ -4012,6 +4026,68 @@
                 variantButton: document.getElementById("btn-trellis-variant"),
                 variantStatus: document.getElementById("variant-editor-status"),
             };
+        }
+
+        function bindMaterialEditorDrag() {
+            const panel = document.getElementById("material-controls");
+            const handle = panel?.querySelector(".material-panel-header");
+            const stage = panel?.closest(".viewport-stage");
+            if (!panel || !handle || !stage || panel.dataset.dragBound === "true") return;
+
+            let dragState = null;
+
+            const clampPanelPosition = (clientX, clientY) => {
+                const stageRect = stage.getBoundingClientRect();
+                const panelWidth = panel.offsetWidth;
+                const panelHeight = panel.offsetHeight;
+                const maxLeft = Math.max(0, stageRect.width - panelWidth);
+                const maxTop = Math.max(0, stageRect.height - panelHeight);
+                return {
+                    left: Math.min(maxLeft, Math.max(0, clientX - stageRect.left - dragState.offsetX)),
+                    top: Math.min(maxTop, Math.max(0, clientY - stageRect.top - dragState.offsetY)),
+                };
+            };
+
+            handle.addEventListener("pointerdown", (event) => {
+                if (event.button !== 0 || event.target.closest("button")) return;
+                const panelRect = panel.getBoundingClientRect();
+                const stageRect = stage.getBoundingClientRect();
+                panel.style.left = `${panelRect.left - stageRect.left}px`;
+                panel.style.top = `${panelRect.top - stageRect.top}px`;
+                panel.style.right = "auto";
+                panel.style.bottom = "auto";
+                dragState = {
+                    pointerId: event.pointerId,
+                    offsetX: event.clientX - panelRect.left,
+                    offsetY: event.clientY - panelRect.top,
+                };
+                panel.dataset.dragging = "true";
+                handle.setPointerCapture?.(event.pointerId);
+                event.preventDefault();
+            });
+
+            handle.addEventListener("pointermove", (event) => {
+                if (!dragState || event.pointerId !== dragState.pointerId) return;
+                const position = clampPanelPosition(event.clientX, event.clientY);
+                panel.style.left = `${position.left}px`;
+                panel.style.top = `${position.top}px`;
+            });
+
+            const stopDragging = (event) => {
+                if (!dragState || (event?.pointerId != null && event.pointerId !== dragState.pointerId)) return;
+                try {
+                    handle.releasePointerCapture?.(dragState.pointerId);
+                } catch (error) {
+                    // The pointer may already have been released by the browser.
+                }
+                dragState = null;
+                delete panel.dataset.dragging;
+            };
+
+            handle.addEventListener("pointerup", stopDragging);
+            handle.addEventListener("pointercancel", stopDragging);
+            handle.addEventListener("lostpointercapture", stopDragging);
+            panel.dataset.dragBound = "true";
         }
 
         function setMaterialEditorStatus(message, isError = false) {
@@ -4141,6 +4217,94 @@
             if (metallicValue) metallicValue.textContent = Number(value.metallic).toFixed(2);
         }
 
+        function materialTargetLabel(index, material) {
+            const objectName = String(materialEditorState.targetLabels[index] || "").trim();
+            return objectName
+                ? `${index + 1}. ${objectName}`
+                : `${index + 1}. Vật liệu ${index + 1}`;
+        }
+
+        function populateMaterialTargetOptions(previousValue = "all") {
+            const { target } = getMaterialEditorElements();
+            if (!target) return;
+            target.innerHTML = '<option value="all">Tất cả vật thể</option>';
+            materialEditorState.materials.forEach((material, index) => {
+                const option = document.createElement("option");
+                option.value = String(index);
+                option.textContent = materialTargetLabel(index, material);
+                target.appendChild(option);
+            });
+            target.value = Array.from(target.options).some((option) => option.value === previousValue)
+                ? previousValue
+                : "all";
+        }
+
+        function extractGlbMaterialObjectNames(buffer) {
+            const bytes = new Uint8Array(buffer);
+            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            if (bytes.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67) return [];
+
+            const jsonLength = view.getUint32(12, true);
+            const jsonStart = 20;
+            const jsonEnd = jsonStart + jsonLength;
+            if (jsonEnd > bytes.byteLength) return [];
+
+            let gltf;
+            try {
+                gltf = JSON.parse(new TextDecoder().decode(bytes.slice(jsonStart, jsonEnd)).trim());
+            } catch (error) {
+                return [];
+            }
+
+            const materialCount = Array.isArray(gltf.materials) ? gltf.materials.length : 0;
+            const namesByMaterial = Array.from({ length: materialCount }, () => new Set());
+            const meshNames = new Map();
+            (gltf.nodes || []).forEach((node, nodeIndex) => {
+                if (!Number.isInteger(node?.mesh)) return;
+                const mesh = gltf.meshes?.[node.mesh];
+                const name = String(node.name || mesh?.name || `Vật thể ${nodeIndex + 1}`)
+                    .replace(/[_-]+/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim();
+                if (!meshNames.has(node.mesh)) meshNames.set(node.mesh, new Set());
+                meshNames.get(node.mesh).add(name);
+            });
+
+            (gltf.meshes || []).forEach((mesh, meshIndex) => {
+                const objectNames = meshNames.get(meshIndex) || new Set([
+                    String(mesh?.name || `Vật thể ${meshIndex + 1}`).replace(/[_-]+/g, " ")
+                ]);
+                (mesh.primitives || []).forEach((primitive) => {
+                    const materialIndex = primitive?.material;
+                    if (!Number.isInteger(materialIndex) || !namesByMaterial[materialIndex]) return;
+                    objectNames.forEach((name) => namesByMaterial[materialIndex].add(name));
+                });
+            });
+
+            return namesByMaterial.map((names) => Array.from(names).join(" + "));
+        }
+
+        async function enrichMaterialTargetNames() {
+            const { target } = getMaterialEditorElements();
+            const sourceUrl = spatialViewer?.dataset?.sourceUrl
+                || spatialLatestSceneUrl
+                || spatialViewer?.dataset?.objectUrl;
+            if (!target || !sourceUrl || !materialEditorState.materials.length) return;
+
+            const previousValue = target.value;
+            try {
+                const buffer = await loadMaterialSourceBuffer();
+                if (materialEditorState.sourceKey !== sourceUrl || !materialEditorState.materials.length) return;
+                const labels = extractGlbMaterialObjectNames(buffer);
+                if (!labels.length) return;
+                materialEditorState.targetLabels = labels;
+                populateMaterialTargetOptions(previousValue);
+                syncMaterialEditorInputs();
+            } catch (error) {
+                // Material editing remains available with a generic fallback.
+            }
+        }
+
         function populateMaterialEditor(viewer) {
             const materials = Array.from(viewer?.model?.materials || []);
             const { target } = getMaterialEditorElements();
@@ -4157,16 +4321,12 @@
             materialEditorState.materials = materials;
             materialEditorState.originals = materials.map(readMaterialValue).map(cloneMaterialValue);
             materialEditorState.values = materialEditorState.originals.map(cloneMaterialValue);
-            target.innerHTML = "<option value=\"all\">Tất cả vật liệu</option>";
-            materials.forEach((material, index) => {
-                const option = document.createElement("option");
-                option.value = String(index);
-                option.textContent = `${index + 1}. ${material.name || `Material ${index + 1}`}`;
-                target.appendChild(option);
-            });
+            materialEditorState.targetLabels = [];
+            populateMaterialTargetOptions(target.value);
             setMaterialEditorEnabled(true);
             syncMaterialEditorInputs();
-            setMaterialEditorStatus(`${materials.length} material${materials.length > 1 ? "s" : ""} sẵn sàng.`);
+            setMaterialEditorStatus(`${materials.length} vật liệu sẵn sàng.`);
+            enrichMaterialTargetNames();
             return true;
         }
 
@@ -4176,10 +4336,11 @@
             materialEditorState.values = [];
             materialEditorState.sourceBuffer = null;
             materialEditorState.sourceKey = "";
+            materialEditorState.targetLabels = [];
             const { panel, target } = getMaterialEditorElements();
             if (panel) panel.classList.add("is-hidden");
             document.querySelector(".viewport-controls")?.classList.remove("is-hidden");
-            if (target) target.innerHTML = "<option value=\"all\">Tất cả vật liệu</option>";
+            if (target) target.innerHTML = "<option value=\"all\">Tất cả vật thể</option>";
             setMaterialEditorEnabled(false);
             setMaterialEditorStatus("Chưa có mô hình 3D.");
             refreshVariantSourceOptions([]);
@@ -4472,6 +4633,7 @@
         }
 
         bindMaterialEditor(spatialViewer);
+        bindMaterialEditorDrag();
         resetMaterialEditorState();
 
         function setAppRailVisibility(hidden, persist = true) {
@@ -5239,6 +5401,83 @@
         canvas.title_text_font = "600 13px Inter, 'Segoe UI', sans-serif";
         canvas.inner_text_font = "11px Inter, 'Segoe UI', sans-serif";
 
+        // Keep custom canvas text inside its node. LiteGraph does not clip
+        // custom foreground drawings automatically, so long prompts/labels
+        // would otherwise paint over neighbouring nodes and cards.
+        function wrapCanvasTextLines(ctx, value, maxWidth) {
+            const text = String(value ?? "").replace(/\s+/g, " ").trim();
+            if (!text || maxWidth <= 0) return [];
+
+            const words = text.split(" ");
+            const lines = [];
+            let current = "";
+
+            const pushWord = (word) => {
+                if (!word) return;
+                if (!current) {
+                    current = word;
+                    return;
+                }
+                const candidate = `${current} ${word}`;
+                if (ctx.measureText(candidate).width <= maxWidth) {
+                    current = candidate;
+                    return;
+                }
+                lines.push(current);
+                current = word;
+            };
+
+            words.forEach((word) => {
+                if (ctx.measureText(word).width <= maxWidth) {
+                    pushWord(word);
+                    return;
+                }
+
+                // Break a single very long token as well (URLs and object ids
+                // are common in the workflow cards).
+                if (current) {
+                    lines.push(current);
+                    current = "";
+                }
+                let chunk = "";
+                for (const character of word) {
+                    const candidate = `${chunk}${character}`;
+                    if (ctx.measureText(candidate).width > maxWidth && chunk) {
+                        lines.push(chunk);
+                        chunk = character;
+                    } else {
+                        chunk = candidate;
+                    }
+                }
+                current = chunk;
+            });
+
+            if (current) lines.push(current);
+            return lines;
+        }
+
+        function drawWrappedCanvasText(ctx, value, x, y, maxWidth, options = {}) {
+            const lineHeight = options.lineHeight || 16;
+            const maxLines = Number.isFinite(options.maxLines)
+                ? Math.max(1, options.maxLines)
+                : Number.POSITIVE_INFINITY;
+            const lines = wrapCanvasTextLines(ctx, value, maxWidth);
+            const visibleLines = lines.slice(0, maxLines);
+
+            if (lines.length > maxLines && visibleLines.length) {
+                let lastLine = visibleLines[visibleLines.length - 1].replace(/\s+$/, "");
+                while (lastLine && ctx.measureText(`${lastLine}…`).width > maxWidth) {
+                    lastLine = lastLine.slice(0, -1);
+                }
+                visibleLines[visibleLines.length - 1] = `${lastLine}…`;
+            }
+
+            visibleLines.forEach((line, index) => {
+                ctx.fillText(line, x, y + index * lineHeight);
+            });
+            return visibleLines.length;
+        }
+
         // ComfyUI wire colors by slot type
         LGraphCanvas.link_type_colors = {
             "string": "#789775",
@@ -5477,6 +5716,11 @@
         NodeSceneGraph.prototype.onDrawForeground = function (ctx) {
             if (!this.properties.graphData) return;
 
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(8, 48, Math.max(0, this.size[0] - 16), Math.max(0, this.size[1] - 56));
+            ctx.clip();
+
             ctx.fillStyle = "#818cf8";
             ctx.font = "bold 13px 'Outfit'";
             ctx.fillText("Vật thể phát hiện (Nodes):", 15, 55);
@@ -5485,7 +5729,14 @@
             nodes.forEach((n, idx) => {
                 ctx.fillStyle = "#a5b4fc";
                 ctx.font = "12px 'Fira Code'";
-                ctx.fillText(`• [${n.id}] ${n.label} (${n.full})`, 25, 78 + (idx * 20));
+                drawWrappedCanvasText(
+                    ctx,
+                    `• [${n.id}] ${n.label} (${n.full})`,
+                    25,
+                    78 + (idx * 20),
+                    this.size[0] - 42,
+                    { maxLines: 1, lineHeight: 16 }
+                );
             });
 
             const edges = this.properties.graphData.edges || [];
@@ -5497,9 +5748,18 @@
                 edges.forEach((e, idx) => {
                     ctx.fillStyle = "#f472b6";
                     ctx.font = "12px 'Fira Code'";
-                    ctx.fillText(`• ${e.subject} --[${e.relation}]--> ${e.object}`, 25, 78 + (nodes.length * 20) + 30 + (idx * 20));
+                    drawWrappedCanvasText(
+                        ctx,
+                        `• ${e.subject} --[${e.relation}]--> ${e.object}`,
+                        25,
+                        78 + (nodes.length * 20) + 30 + (idx * 20),
+                        this.size[0] - 42,
+                        { maxLines: 1, lineHeight: 16 }
+                    );
                 });
             }
+
+            ctx.restore();
         };
         LiteGraph.registerNodeType("datn/scene_graph", NodeSceneGraph);
 
@@ -5655,18 +5915,23 @@
 
             ctx.fillStyle = "#e4e4e7";
             ctx.font = "bold 13px 'Outfit'";
-            ctx.fillText("Bố cục vật thể (top view):", 230, 55);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(224, 48, Math.max(0, this.size[0] - 232), Math.max(0, this.size[1] - 54));
+            ctx.clip();
+            drawWrappedCanvasText(ctx, "Bố cục vật thể (top view):", 230, 55, this.size[0] - 245, { maxLines: 1 });
             let textY = 75;
             for (const [nid, box] of Object.entries(boxes)) {
                 ctx.fillStyle = colorById[nid] || "#94a3b8";
                 ctx.font = "12px 'Fira Code'";
                 const label = nid.replace(/_\d+$/, "");
-                ctx.fillText(`${label}:`, 230, textY);
+                drawWrappedCanvasText(ctx, `${label}:`, 230, textY, this.size[0] - 245, { maxLines: 1 });
                 ctx.fillStyle = "#a1a1aa";
-                ctx.fillText(`x=${box.x}, y=${box.y}`, 240, textY + 16);
-                ctx.fillText(`w=${box.w}, h=${box.h}`, 240, textY + 30);
+                drawWrappedCanvasText(ctx, `x=${box.x}, y=${box.y}`, 240, textY + 16, this.size[0] - 255, { maxLines: 1 });
+                drawWrappedCanvasText(ctx, `w=${box.w}, h=${box.h}`, 240, textY + 30, this.size[0] - 255, { maxLines: 1 });
                 textY += 48;
             }
+            ctx.restore();
             ctx.restore();
         };
         LiteGraph.registerNodeType("datn/layout_2d", NodeLayout2D);
@@ -5723,6 +5988,9 @@
         NodePromptOptimizer.prototype.onDrawForeground = function (ctx) {
             if (!this.properties.optimizedPrompt) return;
             ctx.save();
+            ctx.beginPath();
+            ctx.rect(8, 56, Math.max(0, this.size[0] - 16), Math.max(0, this.size[1] - 64));
+            ctx.clip();
             ctx.fillStyle = "#d7e3ff";
             const zoom = Math.max(getCanvasRenderScale(), .40);
             const textFont = Math.max(12, 11 / zoom);
@@ -5730,24 +5998,9 @@
 
             const text = this.properties.optimizedPrompt;
             const maxWidth = this.size[0] - 30;
-            const lines = [];
-            let line = "";
-
-            for (const word of text.split(/\s+/)) {
-                const candidate = line ? `${line} ${word}` : word;
-                if (ctx.measureText(candidate).width > maxWidth) {
-                    if (line) lines.push(line);
-                    line = word;
-                } else {
-                    line = candidate;
-                }
-            }
-            if (line) lines.push(line);
-
             const lineHeight = Math.max(16, 15 / zoom);
-            lines.slice(0, 7).forEach((item, index) => {
-                ctx.fillText(item, 15, 72 + index * lineHeight);
-            });
+            const maxLines = Math.max(1, Math.floor((this.size[1] - 12 - 72) / lineHeight) + 1);
+            drawWrappedCanvasText(ctx, text, 15, 72, maxWidth, { maxLines, lineHeight });
 
             ctx.restore();
         };
@@ -6041,7 +6294,12 @@
             const previewMessage = this._previewState === "error"
                 ? `Lỗi preview: ${this._previewError || "không xác định"}`
                 : "Đang tải ảnh preview...";
-            ctx.fillText(previewMessage, 20, 105);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(12, 78, Math.max(0, this.size[0] - 24), Math.max(0, this.size[1] - 86));
+            ctx.clip();
+            drawWrappedCanvasText(ctx, previewMessage, 20, 105, this.size[0] - 40, { maxLines: 2, lineHeight: 16 });
+            ctx.restore();
         };
         LiteGraph.registerNodeType("datn/sdxl_gen", NodeSDXLGen);
 
@@ -6226,6 +6484,11 @@
             const imageUrl = activeUploadedImageUrl() || this.getInputData(0);
             if (!imageUrl) return;
 
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(8, 48, Math.max(0, this.size[0] - 16), Math.max(0, this.size[1] - 56));
+            ctx.clip();
+
             // 1. Draw input image (cached)
             let previewUrl = imageUrl;
             if (this.properties.crops && this.properties.crops.length > 0) {
@@ -6267,7 +6530,14 @@
 
                     ctx.fillStyle = color;
                     ctx.font = "bold 12px 'Outfit'";
-                    ctx.fillText(`✓ [${crop.name}] ${crop.label}`, 230, y);
+                    drawWrappedCanvasText(
+                        ctx,
+                        `✓ [${crop.name}] ${crop.label}`,
+                        230,
+                        y,
+                        this.size[0] - 245,
+                        { maxLines: 1, lineHeight: 16 }
+                    );
 
                     ctx.fillStyle = "#a1a1aa";
                     ctx.font = "10px 'Fira Code'";
@@ -6314,6 +6584,8 @@
                     } catch (e) {}
                 });
             }
+
+            ctx.restore();
         };
         LiteGraph.registerNodeType("datn/grounded_sam2", NodeGroundedSAM2);
 
@@ -6465,19 +6737,56 @@
         NodeTrellis3D.prototype.onDrawForeground = function (ctx) {
             if (!this.properties.models || this.properties.models.length === 0) return;
 
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(8, 48, Math.max(0, this.size[0] - 16), Math.max(0, this.size[1] - 56));
+            ctx.clip();
+
             ctx.fillStyle = "#818cf8";
             ctx.font = "bold 13px 'Outfit'";
             ctx.fillText("Mô hình GLB trích xuất:", 15, 60);
 
-            this.properties.models.forEach((m, idx) => {
+            const itemHeight = 34;
+            const maxItems = Math.max(1, Math.floor((this.size[1] - 94) / itemHeight));
+            const visibleModels = this.properties.models.slice(0, maxItems);
+            visibleModels.forEach((m, idx) => {
                 ctx.fillStyle = "#34d399";
                 ctx.font = "12px 'Outfit'";
-                ctx.fillText(`✓ [${m.name}] ${m.label}:`, 20, 85 + (idx * 34));
+                drawWrappedCanvasText(
+                    ctx,
+                    `✓ [${m.name}] ${m.label}:`,
+                    20,
+                    85 + (idx * itemHeight),
+                    this.size[0] - 35,
+                    { maxLines: 1, lineHeight: 16 }
+                );
 
                 ctx.fillStyle = "#71717a";
                 ctx.font = "10px 'Fira Code'";
-                ctx.fillText(m.model_url.substring(0, 52) + "...", 25, 99 + (idx * 34));
+                drawWrappedCanvasText(
+                    ctx,
+                    m.model_url ? `${m.model_url}...` : "GLB chưa sẵn sàng",
+                    25,
+                    99 + (idx * itemHeight),
+                    this.size[0] - 40,
+                    { maxLines: 1, lineHeight: 14 }
+                );
             });
+
+            if (this.properties.models.length > visibleModels.length) {
+                ctx.fillStyle = "#a1a1aa";
+                ctx.font = "11px 'Outfit'";
+                drawWrappedCanvasText(
+                    ctx,
+                    `+ ${this.properties.models.length - visibleModels.length} model khác`,
+                    20,
+                    85 + (visibleModels.length * itemHeight),
+                    this.size[0] - 35,
+                    { maxLines: 1, lineHeight: 16 }
+                );
+            }
+
+            ctx.restore();
         };
         NodeTrellis3D.prototype.update3DViewer = async function () {
             const models = (this.properties.models || []).filter((model) => model.model_url);
@@ -6503,14 +6812,43 @@
             const viewerKey = `${sourceUrl}|${index}|${models.length}`;
             if (this._lastTrellisViewerKey === viewerKey) return;
             this._lastTrellisViewerKey = viewerKey;
+
+            viewer.innerHTML = `
+                <div style="color: #d1d5db; font-family: 'Outfit'; display: grid; place-items: center; height: 100%; background: #34373b; font-size: 11px;">
+                    Đang nạp ${model.label || model.name || "mô hình 3D"}...
+                </div>
+            `;
+
+            try {
+                // model-viewer cannot attach Ngrok's bypass header itself. Load
+                // the GLB with fetch first, then give it a local Blob URL.
+                const response = await fetch(sourceUrl, {
+                    headers: { "ngrok-skip-browser-warning": "69420" }
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const blob = await response.blob();
+                const objectUrl = URL.createObjectURL(blob);
+
+                // Ignore an older request if the user changed model meanwhile.
+                if (this._lastTrellisViewerKey !== viewerKey) {
+                    URL.revokeObjectURL(objectUrl);
+                    return;
+                }
+                if (this._trellisObjectUrl) {
+                    URL.revokeObjectURL(this._trellisObjectUrl);
+                }
+                this._trellisObjectUrl = objectUrl;
+
             viewer.innerHTML = `
                 <div class="viewer-stage">
                     <div class="viewer-model-label">${index + 1}/${models.length} · ${model.label || model.name || "3D model"}</div>
                     <model-viewer
-                        src="${sourceUrl}"
+                        src="${objectUrl}"
                         camera-controls
                         auto-rotate
-                        camera-orbit="30deg 72deg 65%"
+                        camera-orbit="30deg 72deg auto"
                         field-of-view="35deg"
                         shadow-intensity="1.2"
                         exposure="1.0"
@@ -6528,6 +6866,21 @@
 
             const modelViewer = viewer.querySelector("model-viewer");
             setModelViewerAutoRotate(modelViewer, true);
+            const fitSingleModel = () => {
+                modelViewer.cameraOrbit = "30deg 72deg auto";
+                modelViewer.fieldOfView = "35deg";
+            };
+            modelViewer.addEventListener("load", fitSingleModel, { once: true });
+            modelViewer.addEventListener("error", () => {
+                if (this._lastTrellisViewerKey !== viewerKey) return;
+                viewer.innerHTML = `
+                    <div style="color: #f09a9f; font-family: 'Outfit'; display: grid; place-items: center; height: 100%; background: #34373b; padding: 10px; text-align: center; font-size: 10px;">
+                        GLB không thể hiển thị
+                    </div>
+                `;
+                writeLog("❌ Preview TRELLIS không thể hiển thị file GLB.", "error");
+            }, { once: true });
+            fitSingleModel();
             const previousButton = viewer.querySelector('[data-action="previous"]');
             const nextButton = viewer.querySelector('[data-action="next"]');
             const switchModel = async (offset) => {
@@ -6563,7 +6916,7 @@
             };
             viewer.querySelector('[data-action="reset"]').onclick = (event) => {
                 event.stopPropagation();
-                modelViewer.cameraOrbit = "30deg 72deg 78%";
+                modelViewer.cameraOrbit = "30deg 72deg auto";
                 modelViewer.fieldOfView = "35deg";
             };
             viewer.querySelector('[data-action="download"]').onclick = async (event) => {
@@ -6575,6 +6928,16 @@
                 }
             };
             this.position3DViewer();
+            } catch (error) {
+                if (this._lastTrellisViewerKey !== viewerKey) return;
+                viewer.innerHTML = `
+                    <div style="color: #f09a9f; font-family: 'Outfit'; display: grid; place-items: center; height: 100%; background: #34373b; padding: 10px; text-align: center; font-size: 10px;">
+                        Không thể nạp mô hình 3D
+                    </div>
+                `;
+                writeLog(`❌ Lỗi nạp preview TRELLIS: ${error.message}`, "error");
+                this.position3DViewer();
+            }
         };
 
         NodeTrellis3D.prototype.position3DViewer = function () {
@@ -6582,10 +6945,12 @@
             if (!viewer) return;
             const scale = getCanvasRenderScale();
             const screenPos = graphToContainerPosition([this.pos[0] + 10, this.pos[1] + 72]);
+            const width = Math.max(92, (this.size[0] - 20) * scale);
+            const height = Math.max(72, (this.size[1] - 84) * scale);
             viewer.style.left = `${screenPos[0]}px`;
             viewer.style.top = `${screenPos[1]}px`;
-            viewer.style.width = `${Math.max(92, (this.size[0] - 20) * scale)}px`;
-            viewer.style.height = `${Math.max(72, (this.size[1] - 84) * scale)}px`;
+            viewer.style.width = `${width}px`;
+            viewer.style.height = `${height}px`;
             viewer.style.setProperty("--viewer-label-size", "11px");
             viewer.style.setProperty("--viewer-font-size", "10px");
             viewer.style.setProperty("--viewer-gap", "5px");
@@ -6594,8 +6959,10 @@
             viewer.style.setProperty("--viewer-pad-x", "8px");
             viewer.style.setProperty("--viewer-button-pad-x", "5px");
             viewer.style.setProperty("--viewer-radius", "16px");
-            viewer.dataset.compact = "false";
-            keepDomNodeElementReadable(viewer, scale);
+            viewer.style.transform = "none";
+            viewer.style.transformOrigin = "top left";
+            viewer.style.setProperty("--viewer-ui-scale", "1");
+            viewer.dataset.compact = String(width < 280 || height < 110);
             viewer.style.display = this.flags?.collapsed ? "none" : "block";
         };
 
@@ -6719,23 +7086,37 @@
             if (!hasScene && !hasError && !hasModels) return;
             const color = hasScene ? "#34d399" : (hasError ? "#f09a9f" : "#a1a1aa");
 
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(8, 150, Math.max(0, this.size[0] - 16), Math.max(0, this.size[1] - 158));
+            ctx.clip();
+
             ctx.fillStyle = color;
             ctx.font = `600 ${Math.max(13, 11 / zoom)}px Inter, 'Segoe UI', sans-serif`;
-            ctx.fillText(hasScene ? "✓ 3D scene ready" : (hasError ? "Scene failed" : status), 18, 174);
+            drawWrappedCanvasText(
+                ctx,
+                hasScene ? "✓ 3D scene ready" : (hasError ? "Scene failed" : status),
+                18,
+                174,
+                this.size[0] - 36,
+                { maxLines: 1, lineHeight: 16 }
+            );
 
             ctx.fillStyle = "#a1a1aa";
             ctx.font = `${Math.max(12, 10 / zoom)}px Inter, 'Segoe UI', sans-serif`;
-            ctx.fillText(`Models: ${this.properties.modelCount || 0}`, 18, 196);
+            drawWrappedCanvasText(ctx, `Models: ${this.properties.modelCount || 0}`, 18, 196, this.size[0] - 36, { maxLines: 1 });
 
             if (hasScene) {
                 ctx.fillStyle = "#71717a";
                 ctx.font = `${Math.max(11, 9 / zoom)}px 'Fira Code', monospace`;
-                ctx.fillText("scene_combined.glb", 18, 218);
+                drawWrappedCanvasText(ctx, "scene_combined.glb", 18, 218, this.size[0] - 36, { maxLines: 1 });
             } else if (this.properties.error) {
                 ctx.fillStyle = "#f09a9f";
                 ctx.font = `${Math.max(11, 9 / zoom)}px Inter, 'Segoe UI', sans-serif`;
-                ctx.fillText(String(this.properties.error).slice(0, 58), 18, 218);
+                drawWrappedCanvasText(ctx, String(this.properties.error), 18, 218, this.size[0] - 36, { maxLines: 1 });
             }
+
+            ctx.restore();
         };
 
         // Update overlay interactive 3D view on DOM
@@ -6792,7 +7173,7 @@
                             <button class="viewer-btn" id="btn-spin-${this.id}">Stop Spin</button>
                             <button class="viewer-btn" id="btn-reset-${this.id}">Reset View</button>
                             <button class="viewer-btn" id="btn-scene-${this.id}">Tải GLB</button>
-                            <button class="viewer-btn" id="btn-download-${this.id}" style="background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%); color: white; border-color: rgba(255,255,255,0.2);">📦 Tải gói ZIP</button>
+                            <button class="viewer-btn" data-secondary-action id="btn-download-${this.id}" style="background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%); color: white; border-color: rgba(255,255,255,0.2);">📦 Tải gói ZIP</button>
                         </div>
                     </div>
                     `;
@@ -6919,8 +7300,10 @@
             viewer.style.setProperty("--viewer-pad-x", "8px");
             viewer.style.setProperty("--viewer-button-pad-x", "5px");
             viewer.style.setProperty("--viewer-radius", "16px");
-            viewer.dataset.compact = "false";
-            keepDomNodeElementReadable(viewer, scale);
+            viewer.style.transform = "none";
+            viewer.style.transformOrigin = "top left";
+            viewer.style.setProperty("--viewer-ui-scale", "1");
+            viewer.dataset.compact = String(w < 280 || h < 110);
 
             if (this.flags?.collapsed) {
                 viewer.style.display = "none";
@@ -7027,6 +7410,10 @@
         NodeTrellis3D.prototype.onRemoved = function () {
             const viewer = document.getElementById(`trellis-viewer-${this.id}`);
             if (viewer) viewer.remove();
+            if (this._trellisObjectUrl) {
+                URL.revokeObjectURL(this._trellisObjectUrl);
+                this._trellisObjectUrl = "";
+            }
         };
 
         LiteGraph.registerNodeType("datn/scene_combiner", NodeSceneCombiner);
