@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v21-soft-floor-warning"
+BACKEND_BUILD = "gemini-metric-layout-v22-preserve-multi-object-inventory"
 
 allowed_origins = [
     origin.strip()
@@ -365,6 +365,26 @@ def _contains_prompt_term(text: str, terms: tuple[str, ...]) -> bool:
     )
 
 
+def _is_strict_single_object_prompt(prompt: str) -> bool:
+    """Recognize a true one-object inventory, not a no-extra-objects clause."""
+    normalized = " ".join(str(prompt).lower().split())
+    exactly_one_mentions = len(
+        re.findall(r"(?<!\w)exactly\s+one(?!\w)", normalized)
+    )
+    return (
+        exactly_one_mentions == 1
+        and any(
+            marker in normalized
+            for marker in (
+                "no other object",
+                "no extra object",
+                "without other object",
+                "standalone",
+            )
+        )
+    )
+
+
 def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
     """Append short geometry guards without bloating the CLIP prompt."""
     source = source_prompt.lower()
@@ -650,18 +670,7 @@ def _gemini_scene_graph(prompt: str) -> dict | None:
     # hallucinates a prop. Prefer the label mentioned in the first inventory
     # sentence, then fall back to Gemini's first object.
     prompt_lower = prompt.lower()
-    strict_single = (
-        "exactly one" in prompt_lower
-        and any(
-            marker in prompt_lower
-            for marker in (
-                "no other object",
-                "no extra object",
-                "without other object",
-                "standalone",
-            )
-        )
-    )
+    strict_single = _is_strict_single_object_prompt(prompt_lower)
     if strict_single and len(clean_objects) > 1:
         inventory_sentence = re.split(r"[.;]", prompt_lower, maxsplit=1)[0]
         selected_index = next(

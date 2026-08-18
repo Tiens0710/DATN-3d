@@ -56,6 +56,28 @@ def load_generator_helpers():
 
 
 class ObjectAssetGuardTests(unittest.TestCase):
+    def test_no_extra_objects_does_not_collapse_a_two_object_inventory(self):
+        source = Path("server.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        selected = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_is_strict_single_object_prompt"
+        ]
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), "inventory_guard", "exec"), namespace)
+        is_single = namespace["_is_strict_single_object_prompt"]
+
+        self.assertFalse(
+            is_single(
+                "Exactly one wooden sofa and exactly one rectangular coffee table, "
+                "with no extra objects."
+            )
+        )
+        self.assertTrue(
+            is_single("Exactly one wooden armchair, standalone, with no extra objects.")
+        )
+
     def test_vietnamese_sofa_does_not_add_a_separate_chair_guard(self):
         source = Path("server.py").read_text(encoding="utf-8")
         module = ast.parse(source)
