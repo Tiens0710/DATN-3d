@@ -3583,6 +3583,8 @@
         let uploadedImageUrl = "";
         let uploadedImageName = "";
         let currentRunId = "";
+        let imageUploadInFlight = null;
+        let imageUploadInFlightFile = null;
         let activePipelineController = null;
         let pipelineStopRequested = false;
         let appApiKey = localStorage.getItem("datn-app-api-key") || "";
@@ -5291,7 +5293,7 @@
             uploadedPreviewUrl = "";
         }
 
-        async function uploadImageFile(file, { resetLabels = true } = {}) {
+        async function performImageUploadFile(file, { resetLabels = true } = {}) {
             if (!file) return;
             selectedUploadFile = file;
             if (!file.type.startsWith("image/")) {
@@ -5361,6 +5363,35 @@
                     uploadButton.disabled = false;
                     uploadButton.innerHTML = originalUploadButton;
                     window.lucide?.createIcons();
+                }
+            }
+        }
+
+        async function uploadImageFile(file, options = {}) {
+            if (!file) return;
+            // Selecting an image starts an upload immediately.  If the user
+            // presses Run before it finishes, reuse that exact promise instead
+            // of deleting its freshly-created run and uploading to a stale id.
+            if (imageUploadInFlight) {
+                if (imageUploadInFlightFile === file) {
+                    return imageUploadInFlight;
+                }
+                try {
+                    await imageUploadInFlight;
+                } catch (_) {
+                    // The next selected file still deserves a clean attempt.
+                }
+            }
+
+            const uploadPromise = performImageUploadFile(file, options);
+            imageUploadInFlight = uploadPromise;
+            imageUploadInFlightFile = file;
+            try {
+                return await uploadPromise;
+            } finally {
+                if (imageUploadInFlight === uploadPromise) {
+                    imageUploadInFlight = null;
+                    imageUploadInFlightFile = null;
                 }
             }
         }
@@ -6451,6 +6482,9 @@
                     this.properties.detectedLayout = data.layout || {};
                     this.setOutputData(0, this.properties.crops);
                     this.setOutputData(1, this.properties.detectedLayout);
+                    (Array.isArray(data.warnings) ? data.warnings : []).forEach((warning) => {
+                        writeLog(`⚠️ ${warning}`, "warning");
+                    });
                     if (data.image_analysis?.objects?.length) {
                         this.properties.labels = data.image_analysis.objects
                             .map((item) => item.label)

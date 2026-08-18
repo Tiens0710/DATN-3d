@@ -1120,6 +1120,7 @@ def api_run_sam2(request: Sam2Request):
             input_path = str(upload_path)
         effective_layout = request.layout
         scene_graph = None
+        warnings = []
 
         if source_mode == "uploaded" and request.auto_detect:
             try:
@@ -1131,20 +1132,29 @@ def api_run_sam2(request: Sam2Request):
                 ) from exc
             if not image_analysis["reconstructable"]:
                 reason = image_analysis.get("reason") or "the image is not suitable for single-image 3D"
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        "Uploaded image is not suitable for 3D reconstruction: "
-                        f"{reason}. Use a clear photo or render of a complete physical object."
-                    ),
+                warning = (
+                    "Gemini đánh giá ảnh upload có rủi ro cho dựng 3D: "
+                    f"{reason}. Hệ thống vẫn tiếp tục theo yêu cầu của người dùng; "
+                    "kết quả phụ thuộc vào chất lượng cắt nền."
                 )
-            scene_graph = parse_scene_graph_from_objects(
-                request.prompt.strip() or "uploaded physical objects",
-                image_analysis["objects"],
-                parser_source="gemini_image_analysis",
-            )
-            effective_layout = compute_layout(scene_graph)
-            worker_auto_detect = False
+                warnings.append(warning)
+                image_analysis["warning"] = warning
+                image_analysis["proceeding_despite_risk"] = True
+
+            # Gemini is advisory for user-provided images.  When it can name
+            # objects, use those labels even if it flags a render/illustration.
+            # If it cannot name anything, leave auto-detection enabled so DINO
+            # gets a chance to find the foreground instead of hard-rejecting.
+            if image_analysis["objects"]:
+                scene_graph = parse_scene_graph_from_objects(
+                    request.prompt.strip() or "uploaded physical objects",
+                    image_analysis["objects"],
+                    parser_source="gemini_image_analysis",
+                )
+                effective_layout = compute_layout(scene_graph)
+                worker_auto_detect = False
+            else:
+                worker_auto_detect = True
 
         if (
             not effective_layout.get("layout")
@@ -1192,6 +1202,7 @@ def api_run_sam2(request: Sam2Request):
                 "prompt": request.prompt,
                 "layout": effective_layout,
                 "image_analysis": image_analysis,
+                "warnings": warnings,
                 "crops": crops,
             },
         )
@@ -1202,6 +1213,7 @@ def api_run_sam2(request: Sam2Request):
             "scene_graph": scene_graph,
             "layout": effective_layout,
             "image_analysis": image_analysis,
+            "warnings": warnings,
             "run_id": request.run_id,
             "preview_url": f"/runs/{request.run_id}/crops/sam2_visual.png",
         }
