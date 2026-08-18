@@ -38,7 +38,7 @@ SD35_LORA_PATH = os.environ.get(
 ).strip()
 SD35_LORA_SCALE = float(os.environ.get("SD35_LORA_SCALE", "0.2"))
 
-app = FastAPI(title="DATN SD3.5 Worker", version="1.0.1")
+app = FastAPI(title="DATN SD3.5 Worker", version="1.0.2")
 pipeline = None
 pipeline_device = None
 load_error = None
@@ -355,7 +355,8 @@ def generate(payload: GenerateRequest) -> dict:
                     with torch.inference_mode():
                         for job in jobs:
                             print(
-                                f"Generating isolated object: {job['name']} {job['label']}",
+                                f"Generating isolated object: {job['name']} {job['label']} "
+                                f"seed={job['seed']}",
                                 flush=True,
                             )
                             image = pipeline(

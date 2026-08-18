@@ -28,6 +28,10 @@ OBJECT_SANITIZE_TIMEOUT = float(
 WORKER_OFFLOAD_TIMEOUT = float(
     os.environ.get("WORKER_OFFLOAD_TIMEOUT", "600")
 )
+OBJECT_GENERATION_MAX_ATTEMPTS = max(
+    2,
+    int(os.environ.get("OBJECT_GENERATION_MAX_ATTEMPTS", "4")),
+)
 
 
 _OBJECT_ALIASES = {
@@ -249,7 +253,8 @@ def _object_prompt(
             "one headboard, side rails and feet visible. "
         ),
         "nightstand": (
-            "Full low bedside nightstand; short compact body, one or two drawers and feet visible. "
+            "Full low, wide bedside nightstand; width clearly greater than total height, "
+            "one rectangular top, one compact drawer and four short legs visible. "
         ),
         "floor lamp": (
             "Exactly one freestanding floor lamp, eye-level front three-quarter view, "
@@ -260,11 +265,22 @@ def _object_prompt(
         category,
         "Complete object, eye-level front three-quarter view, all structural parts visible. ",
     )
+    recovery_instruction = ""
+    if generation_attempt >= 1:
+        recovery_instruction = (
+            "Use a plain conventional mass-produced design with a clear literal silhouette; "
+            "no artistic interpretation, stretched parts or unusual proportions. "
+        )
+    if generation_attempt >= 2:
+        recovery_instruction += (
+            "Prioritize correct category geometry over decorative details. "
+        )
     studio_background = _isolation_background(label, generation_attempt)
     positive = (
         f"Exactly one standalone {descriptor}. "
         f"{geometry_instruction}"
         f"{detail_instruction}"
+        f"{recovery_instruction}"
         "Eye-level front three-quarter product photo, centered, fully visible, realistic proportions. "
         f"{studio_background}."
     )
@@ -274,7 +290,10 @@ def _object_prompt(
         "table": "rug attached to table, floor attached to legs, malformed tabletop, ",
         "chair": "stool, bench, missing backrest, ",
         "bed": "empty bed frame, missing mattress, bare slats, bench, crib, ",
-        "nightstand": "tall dresser, chest of drawers, wardrobe, cabinet tower, ",
+        "nightstand": (
+            "tall nightstand, narrow nightstand, tall dresser, chest of drawers, "
+            "wardrobe, cabinet tower, elongated vertical supports, headboard, bed frame, "
+        ),
     }.get(category, "")
     negative = (
         f"{category_negative}extra object, duplicate, {excluded}, cropped, top-down, malformed, fused parts, "
@@ -508,7 +527,7 @@ def generate_object_images(
     # Validate each image with GroundingDINO and retain one SAM2 instance before
     # the contact sheet is exposed to the frontend or sent to TRELLIS.
     pending_objects = [dict(item, generation_attempt=0) for item in objects]
-    for attempt in range(3):
+    for attempt in range(OBJECT_GENERATION_MAX_ATTEMPTS):
         try:
             jobs = _sanitize_generated_jobs(jobs)
         except RuntimeError as generation_error:
@@ -516,7 +535,7 @@ def generate_object_images(
                 pending_objects,
                 generation_error,
             )
-            if not retry_objects or attempt >= 2:
+            if not retry_objects or attempt >= OBJECT_GENERATION_MAX_ATTEMPTS - 1:
                 attempts_made = attempt + 1
                 raise RuntimeError(
                     f"Object isolation failed after {attempts_made} SD3.5 "
@@ -525,12 +544,33 @@ def generate_object_images(
                     f"Details: {generation_error}"
                 ) from generation_error
         else:
+            blocked_jobs = {
+                str(job.get("name", "")): list(job.get("quality_blockers") or [])
+                for job in jobs
+                if job.get("quality_blockers")
+            }
             warned_names = {
                 str(job.get("name", ""))
                 for job in jobs
                 if job.get("retry_recommended")
             }
-            if not warned_names or attempt >= 2:
+            if not warned_names:
+                break
+            if attempt >= OBJECT_GENERATION_MAX_ATTEMPTS - 1:
+                if blocked_jobs:
+                    details = "; ".join(
+                        f"{name}: {', '.join(messages)}"
+                        for name, messages in blocked_jobs.items()
+                    )
+                    raise RuntimeError(
+                        "Object geometry validation failed after "
+                        f"{OBJECT_GENERATION_MAX_ATTEMPTS} independent SD3.5 samples. "
+                        "The malformed object was blocked before TRELLIS. "
+                        f"Details: {details}"
+                    )
+                # Soft warnings such as a possible shadow/floor attachment
+                # must not cause an endless regeneration loop.  The generic
+                # alpha cleanup and mesh floor guard still run afterwards.
                 break
             retry_objects = []
             for item in pending_objects:

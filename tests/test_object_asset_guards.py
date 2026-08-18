@@ -117,7 +117,7 @@ class ObjectAssetGuardTests(unittest.TestCase):
 
         self.assertIn("mattress visibly covering the frame", bed_positive)
         self.assertIn("missing mattress", bed_negative)
-        self.assertIn("short compact body", nightstand_positive)
+        self.assertIn("width clearly greater than total height", nightstand_positive)
         self.assertIn("tall dresser", nightstand_negative)
 
     def test_clean_background_retry_uses_a_different_seed(self):
@@ -213,6 +213,26 @@ class ObjectAssetGuardTests(unittest.TestCase):
 
         self.assertIsNotNone(guard(block, "floor lamp"))
         self.assertIsNone(guard(lamp, "floor lamp"))
+
+    def test_nightstand_shape_guard_rejects_a_tall_stretched_asset(self):
+        source = Path("worker_sam2_dino.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        selected = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"_mask_extent", "_category_shape_warning"}
+        ]
+        namespace = {"np": np}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), "shape_guard", "exec"), namespace)
+        guard = namespace["_category_shape_warning"]
+
+        stretched = np.zeros((240, 160), dtype=np.uint8)
+        stretched[20:225, 50:110] = 255
+        compact = np.zeros((180, 240), dtype=np.uint8)
+        compact[35:150, 35:205] = 255
+
+        self.assertIsNotNone(guard(stretched, "nightstand"))
+        self.assertIsNone(guard(compact, "nightstand"))
 
     def test_text_flow_crop_is_tight_not_a_full_transparent_canvas(self):
         save_crop = load_crop_helper()

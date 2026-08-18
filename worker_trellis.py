@@ -15,6 +15,10 @@ os.environ.setdefault("SPCONV_ALGO", "native")
 os.environ.setdefault("ATTN_BACKEND", "xformers")
 os.environ.setdefault("SPARSE_ATTN", "xformers")
 os.environ.setdefault("MPLBACKEND", "agg")
+# A T4 has just enough VRAM for TRELLIS-image-large.  Expandable allocator
+# segments make successive object generations much less prone to failing on a
+# fragmented 1--2 GiB allocation even when the total reusable memory is enough.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 sys.modules["triton"] = None
 
 TRELLIS_ROOT = "/kaggle/working/TRELLIS"
@@ -28,7 +32,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 
-app = FastAPI(title="DATN TRELLIS Worker", version="1.2.3")
+app = FastAPI(title="DATN TRELLIS Worker", version="1.3.0")
 pipeline = None
 pipeline_device = None
 variant_pipeline = None
@@ -47,11 +51,14 @@ TRELLIS_VARIANT_SLAT_STEPS = int(
 )
 TRELLIS_TEXTURE_SIZE = int(os.environ.get("TRELLIS_TEXTURE_SIZE", "1024"))
 TRELLIS_SIMPLIFY = float(os.environ.get("TRELLIS_SIMPLIFY", "0.98"))
-TRELLIS_TEXTURE_MODE = os.environ.get("TRELLIS_TEXTURE_MODE", "opt").lower()
-TRELLIS_TEXTURE_VIEWS = int(os.environ.get("TRELLIS_TEXTURE_VIEWS", "64"))
+TRELLIS_TEXTURE_MODE = os.environ.get("TRELLIS_TEXTURE_MODE", "fast").lower()
+TRELLIS_TEXTURE_VIEWS = int(os.environ.get("TRELLIS_TEXTURE_VIEWS", "32"))
 TRELLIS_BAKE_RESOLUTION = int(
-    os.environ.get("TRELLIS_BAKE_RESOLUTION", "768")
+    os.environ.get("TRELLIS_BAKE_RESOLUTION", "512")
 )
+TRELLIS_OFFLOAD_BETWEEN_REQUESTS = os.environ.get(
+    "TRELLIS_OFFLOAD_BETWEEN_REQUESTS", "1"
+).lower() in {"1", "true", "yes", "on"}
 TRELLIS_FILL_HOLES = os.environ.get("TRELLIS_FILL_HOLES", "0").lower() in {
     "1",
     "true",
@@ -204,6 +211,8 @@ def _safe_empty_cache(name: str) -> None:
     gc.collect()
     try:
         torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.ipc_collect()
     except Exception as exc:
         _log(
             f"{name}: CUDA cleanup failed but original result/error is preserved: "
@@ -374,6 +383,7 @@ def health() -> dict:
             "texture_views": TRELLIS_TEXTURE_VIEWS,
             "bake_resolution": TRELLIS_BAKE_RESOLUTION,
             "fill_holes": TRELLIS_FILL_HOLES,
+            "offload_between_requests": TRELLIS_OFFLOAD_BETWEEN_REQUESTS,
         },
     }
 
@@ -532,7 +542,26 @@ def generate(payload: GenerateRequest) -> dict:
             if "image" in locals():
                 del image
             gc.collect()
-            _safe_empty_cache(name)
+            # ``empty_cache`` cannot release live model tensors.  Keeping the
+            # 12+ GiB image pipeline resident after object 1 leaves too little
+            # contiguous memory for object 2 on a T4.  Move every model to CPU
+            # between requests so each crop starts from the same clean VRAM
+            # state; the next request moves it back under the same lock.
+            if (
+                TRELLIS_OFFLOAD_BETWEEN_REQUESTS
+                and pipeline is not None
+                and pipeline_device != "cpu"
+            ):
+                try:
+                    _move_pipeline("cpu")
+                except Exception as offload_exc:
+                    _log(
+                        f"{name}: pipeline offload after request failed: "
+                        f"{type(offload_exc).__name__}: {offload_exc}"
+                    )
+                    _safe_empty_cache(name)
+            else:
+                _safe_empty_cache(name)
             _log(f"{name}: request cleanup; {_cuda_memory()}")
 
     return {"model_path": str(output_path)}

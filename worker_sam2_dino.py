@@ -48,7 +48,7 @@ AUTO_DETECTION_CAPTION = (
     "coffee table. dining table. furniture."
 )
 
-app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.2")
+app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.3")
 dino_model = None
 sam_predictor = None
 dino_load_image = None
@@ -568,8 +568,17 @@ def _category_shape_warning(alpha: np.ndarray, label: str) -> str | None:
         if middle_fill > 0.42:
             return "floor lamp is a solid block instead of shade, thin stem and base"
     if "nightstand" in normalized or "bedside table" in normalized:
-        if height / max(1, width) > 1.45:
+        if height / max(1, width) > 1.20:
             return "nightstand is too tall and resembles a chest of drawers"
+    elif "coffee table" in normalized:
+        if height / max(1, width) > 1.05:
+            return "coffee table is too tall or narrow for a conventional low table"
+    elif "sofa" in normalized or "couch" in normalized:
+        if width / max(1, height) < 1.15:
+            return "sofa silhouette is too narrow or vertically stretched"
+    elif "bed" in normalized and "bedside" not in normalized:
+        if width / max(1, height) < 1.05:
+            return "bed silhouette is too narrow or vertically stretched"
     return None
 
 
@@ -1350,6 +1359,7 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
         width, height = source_image.size
         detector_fallback = False
         quality_warnings = []
+        quality_blockers = []
         if candidates:
             selected = candidates[0]
             selected_box = selected["box"]
@@ -1362,6 +1372,7 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 )
                 if semantic_error:
                     quality_warnings.append(semantic_error)
+                    quality_blockers.append(semantic_error)
             except Exception as semantic_exc:
                 # This query is a quality hint, not part of the core DINO+SAM
                 # isolation path. A weak/conflicting auxiliary prediction must
@@ -1434,6 +1445,7 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
         shape_warning = _category_shape_warning(alpha, label)
         if shape_warning:
             quality_warnings.append(shape_warning)
+            quality_blockers.append(shape_warning)
 
         alpha_image = Image.fromarray(alpha)
         content_box = alpha_image.getbbox() or tuple(selected_box)
@@ -1465,6 +1477,7 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 "backdrop_checked": True,
                 "detector_fallback": detector_fallback,
                 "quality_warnings": quality_warnings,
+                "quality_blockers": quality_blockers,
                 "retry_recommended": bool(quality_warnings),
             }
         )

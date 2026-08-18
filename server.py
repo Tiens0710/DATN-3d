@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v17-bed-nightstand-shapes"
+BACKEND_BUILD = "gemini-metric-layout-v19-object-shape-recovery"
 
 allowed_origins = [
     origin.strip()

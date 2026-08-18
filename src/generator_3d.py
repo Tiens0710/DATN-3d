@@ -14,6 +14,7 @@ TRELLIS_WORKER_URL = os.environ.get(
 TRELLIS_WORKER_TIMEOUT = float(
     os.environ.get("TRELLIS_WORKER_TIMEOUT", "1200")
 )
+TRELLIS_OOM_RETRIES = max(0, int(os.environ.get("TRELLIS_OOM_RETRIES", "1")))
 SD35_WORKER_URL = os.environ.get(
     "SD35_WORKER_URL",
     "http://127.0.0.1:8001",
@@ -38,6 +39,11 @@ def _response_error_detail(response) -> str:
     except ValueError:
         pass
     return response.text.strip()
+
+
+def _is_cuda_oom_error(detail: str) -> bool:
+    normalized = str(detail or "").lower()
+    return "outofmemoryerror" in normalized or "cuda out of memory" in normalized
 
 
 def _check_worker_ready() -> None:
@@ -164,23 +170,38 @@ def generate_3d_models(
             crop_path = str(_path_within(crop_path, allowed_root))
         _validate_reconstructable_crop(crop_path, str(crop.get("label", name)))
 
-        try:
-            response = requests.post(
-                f"{TRELLIS_WORKER_URL}/generate",
-                json={
-                    "crop_path": crop_path,
-                    "name": name,
-                    "output_dir": multi_glb_dir,
-                },
-                timeout=TRELLIS_WORKER_TIMEOUT,
-            )
-            response.raise_for_status()
-            result = response.json()
-        except requests.RequestException as exc:
-            detail = _response_error_detail(exc.response)
-            raise RuntimeError(
-                f"TRELLIS worker failed for {name}: {detail or exc}"
-            ) from exc
+        request_payload = {
+            "crop_path": crop_path,
+            "name": name,
+            "output_dir": multi_glb_dir,
+        }
+        result = None
+        for attempt in range(TRELLIS_OOM_RETRIES + 1):
+            try:
+                response = requests.post(
+                    f"{TRELLIS_WORKER_URL}/generate",
+                    json=request_payload,
+                    timeout=TRELLIS_WORKER_TIMEOUT,
+                )
+                response.raise_for_status()
+                result = response.json()
+                break
+            except requests.RequestException as exc:
+                detail = _response_error_detail(exc.response)
+                if attempt < TRELLIS_OOM_RETRIES and _is_cuda_oom_error(
+                    detail or str(exc)
+                ):
+                    # The worker's finally block has already discarded request
+                    # tensors.  Force a model offload as a second safety net,
+                    # then retry only this crop instead of losing earlier GLBs.
+                    _offload_worker(TRELLIS_WORKER_URL, "TRELLIS")
+                    continue
+                raise RuntimeError(
+                    f"TRELLIS worker failed for {name}: {detail or exc}"
+                ) from exc
+
+        if result is None:
+            raise RuntimeError(f"TRELLIS worker returned no result for {name}")
 
         model_path = result.get("model_path")
         if not model_path or not Path(model_path).is_file():
