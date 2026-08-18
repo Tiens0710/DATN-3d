@@ -38,7 +38,7 @@ SD35_LORA_PATH = os.environ.get(
 ).strip()
 SD35_LORA_SCALE = float(os.environ.get("SD35_LORA_SCALE", "0.2"))
 
-app = FastAPI(title="DATN SD3.5 Worker", version="1.0.0")
+app = FastAPI(title="DATN SD3.5 Worker", version="1.0.1")
 pipeline = None
 pipeline_device = None
 load_error = None

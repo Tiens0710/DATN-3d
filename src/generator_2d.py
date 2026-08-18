@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -121,10 +122,10 @@ def _isolation_background(label: str, attempt: int | bool) -> str:
     foreground/background separation, including for white furniture.
     """
     palettes = (
-        "cobalt-blue",
-        "deep teal",
-        "muted plum-purple",
-        "warm burnt-orange",
+        "medium neutral gray",
+        "pale blue-gray",
+        "muted cool gray",
+        "soft desaturated green-gray",
     )
     variant = (sum(ord(char) for char in label) + int(attempt)) % len(palettes)
     colour = palettes[variant]
@@ -175,6 +176,13 @@ def _object_prompt(
         if description.lower() not in generic_descriptions
         else _object_descriptor(label, scene_prompt)
     )
+    # SD3.5 runs without T5-XXL on the T4 worker, leaving the two CLIP text
+    # encoders with a short context window.  A verbose Gemini description used
+    # to push the geometry/background rules beyond that window.  Keep the
+    # object's identity, colour and material, but cap the noun phrase.
+    descriptor_words = descriptor.split()
+    if len(descriptor_words) > 20:
+        descriptor = " ".join(descriptor_words[:20])
     detail_markers = (
         "carv", "ornate", "decor", "inlay", "engrave", "pattern", "motif",
         "floral", "beveled", "bevelled", "panel",
@@ -220,22 +228,17 @@ def _object_prompt(
 
     geometry_instructions = {
         "table": (
-            "Complete table, eye-level front three-quarter view. "
-            f"{table_shape_instruction}"
-            f"{table_base_instruction}, attached apron, every foot visible. "
+            f"Full table; {table_shape_instruction.lower()}"
+            f"{table_base_instruction}, attached apron, all feet visible. "
         ),
         "chair": (
-            "Complete chair, eye-level front three-quarter view, one seat, one backrest, "
-            "connected supports, four legs and every foot visible. "
+            "Full chair; one seat, one backrest, connected supports and four visible legs. "
         ),
         "sofa": (
-            "Complete upholstered sofa, eye-level front three-quarter view, clearly recognizable as a sofa. "
-            "Show two separate seat cushions, two upright back cushions, both arms, base, and feet. "
-            "The cushions must cover the wooden seat and back frame. "
+            "Full upholstered sofa; two seat cushions, two upright back cushions, both arms and feet visible. "
         ),
         "lamp": (
-            "Exactly one freestanding floor lamp, eye-level front three-quarter view, "
-            "with the complete shade, vertical stem, base, and every support visible. "
+            "Full freestanding floor lamp; one shade, a thin vertical stem and one base, all visible. "
         ),
         "floor lamp": (
             "Exactly one freestanding floor lamp, eye-level front three-quarter view, "
@@ -248,22 +251,22 @@ def _object_prompt(
     )
     studio_background = _isolation_background(label, generation_attempt)
     positive = (
-        f"Product photo of exactly one standalone {descriptor}. "
+        f"Exactly one standalone {descriptor}. "
         f"{geometry_instruction}"
         f"{detail_instruction}"
-        f"Centered, fully visible, 70 percent of frame, {studio_background} "
-        "with clear foreground contrast, soft even light, realistic material, accurate proportions. "
-        "A real physical furniture product, never an icon, logo, blueprint, diagram, or wireframe."
+        "Eye-level front three-quarter product photo, centered, fully visible, realistic proportions. "
+        f"{studio_background}."
     )
+    category_negative = {
+        "sofa": "bed, bed frame, bench, empty frame, missing cushions, ",
+        "lamp": "cabinet, column, rectangular block, missing shade, missing stem, missing base, ",
+        "table": "rug attached to table, floor attached to legs, malformed tabletop, ",
+        "chair": "stool, bench, missing backrest, ",
+    }.get(category, "")
     negative = (
-        f"extra object, duplicate {label}, pair, set, {excluded}, cropped, close-up, "
-        "top-down, extreme perspective, malformed geometry, fused parts, floating parts, "
-        "missing legs, extra legs, black silhouette, pure white background, no-contrast background, "
-        "rectangular backdrop, background card, studio panel, product stand, pedestal, platform, "
-        "floor, ground, ground plane, floor plane, rug, carpet, mat, fabric under object, "
-        "cast shadow, reflection, support sheet, connected background, "
-        "wall cutout, clutter, text, watermark, icon, app icon, logo, symbol, blueprint, "
-        "diagram, wireframe, line art, flat graphic, UI element"
+        f"{category_negative}extra object, duplicate, {excluded}, cropped, top-down, malformed, fused parts, "
+        "floor, rug, carpet, platform, shadow, reflection, connected background, panel, "
+        "icon, logo, blueprint, wireframe, text, watermark"
     )
     if detail_requested:
         negative += ", missing requested carving, blank decorative area"
@@ -271,9 +274,24 @@ def _object_prompt(
         negative += ", round tabletop, oval tabletop"
     if category == "table" and not explicit_pedestal:
         negative += ", pedestal table, central leg, three-legged table, cabriole legs"
-    if category == "sofa":
-        negative += ", bed, bed frame, daybed, bench, empty wooden frame, bare seat frame, missing cushions"
     return positive, negative
+
+
+def _stable_object_seed(
+    scene_prompt: str,
+    object_id: str,
+    label: str,
+    attempt: int,
+) -> int:
+    """Derive a stable seed from object identity instead of its list position.
+
+    The previous ``42 + index * 101`` mapping made the third object use the
+    same seed in every scene. A floor lamp in slot three therefore reproduced
+    the same bad rectangular sample on every run.
+    """
+    identity = f"{scene_prompt}|{object_id}|{label}".encode("utf-8")
+    base = int.from_bytes(hashlib.sha256(identity).digest()[:4], "big")
+    return int((base + attempt * 1_000_003) % (2**31 - 1))
 
 
 def build_object_jobs(
@@ -307,10 +325,7 @@ def build_object_jobs(
             "prompt": positive,
             "negative_prompt": negative,
             "image_path": os.path.join(object_image_dir, f"{object_id}.png"),
-            # A clean-background retry must also explore a different diffusion
-            # sample. Keeping the original deterministic seed can reproduce
-            # the same malformed icon/graphic with only a new backdrop.
-            "seed": 42 + index * 101 + attempt * 10_000,
+            "seed": _stable_object_seed(scene_prompt, object_id, label, attempt),
         })
     return jobs
 

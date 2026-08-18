@@ -538,6 +538,30 @@ def _generated_asset_semantic_error(
     return None
 
 
+def _category_shape_warning(alpha: np.ndarray, label: str) -> str | None:
+    """Catch category-specific silhouette failures before image-to-3D."""
+    normalized = " ".join(label.lower().replace("_", " ").split())
+    support = np.asarray(alpha) >= 32
+    extent = _mask_extent(support)
+    if extent is None:
+        return "empty object silhouette"
+    x1, y1, x2, y2 = extent
+    crop = support[y1:y2, x1:x2]
+    height, width = crop.shape
+    if height < 8 or width < 8:
+        return "object silhouette is too small"
+
+    if "lamp" in normalized or "light" in normalized:
+        aspect = height / max(1, width)
+        middle = crop[int(height * 0.28):max(int(height * 0.28) + 1, int(height * 0.76))]
+        middle_fill = float(np.median(middle.mean(axis=1))) if middle.size else 1.0
+        if aspect < 1.25:
+            return "floor lamp silhouette is not tall enough"
+        if middle_fill > 0.42:
+            return "floor lamp is a solid block instead of shade, thin stem and base"
+    return None
+
+
 def _mask_density(mask: np.ndarray, box: list[int]) -> float:
     """Measure foreground density inside a detector box."""
     height, width = mask.shape[:2]
@@ -1396,6 +1420,9 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 "silhouette may contain a rug, floor patch, support sheet, "
                 "or connected background"
             )
+        shape_warning = _category_shape_warning(alpha, label)
+        if shape_warning:
+            quality_warnings.append(shape_warning)
 
         alpha_image = Image.fromarray(alpha)
         content_box = alpha_image.getbbox() or tuple(selected_box)

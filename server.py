@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v14-soft-quality-retry"
+BACKEND_BUILD = "gemini-metric-layout-v15-compact-sd35-prompts"
 
 allowed_origins = [
     origin.strip()
@@ -360,10 +360,15 @@ def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
 
     if any(term in source for term in ("table", "bàn", "ban")):
         guards.append("complete rectangular table with four connected legs visible")
-    if any(term in source for term in ("chair", "ghế", "ghe")):
+    # In Vietnamese, "ghế sofa" contains the generic word "ghế" but it is not
+    # a separate chair. Remove sofa phrases before checking chair markers.
+    chair_source = re.sub(r"\b(?:ghế|ghe)\s+sofa\b", "sofa", source)
+    if any(term in chair_source for term in ("chair", "ghế", "ghe")):
         guards.append("complete chair with seat, backrest, and all legs visible")
     if any(term in source for term in ("sofa", "couch")):
         guards.append("complete sofa with arms, base, and feet visible")
+    if any(term in source for term in ("floor lamp", "standing lamp", "đèn sàn", "den san")):
+        guards.append("complete floor lamp with shade, thin stem, and base visible")
 
     detail_markers = (
         "carv", "ornate", "decor", "inlay", "engrave", "pattern", "motif",

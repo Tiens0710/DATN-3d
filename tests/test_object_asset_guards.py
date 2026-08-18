@@ -1,4 +1,5 @@
 import ast
+import hashlib
 import os
 import re
 import tempfile
@@ -29,6 +30,7 @@ def load_generator_helpers():
     functions = {
         "_object_descriptor",
         "_generation_attempt",
+        "_stable_object_seed",
         "_isolation_background",
         "_object_category",
         "_object_prompt",
@@ -44,6 +46,7 @@ def load_generator_helpers():
             selected.append(node)
     namespace = {
         "os": os,
+        "hashlib": hashlib,
         "re": re,
         "Path": Path,
         "OBJECT_IMAGE_DIR": "/tmp/object_images",
@@ -53,6 +56,25 @@ def load_generator_helpers():
 
 
 class ObjectAssetGuardTests(unittest.TestCase):
+    def test_vietnamese_sofa_does_not_add_a_separate_chair_guard(self):
+        source = Path("server.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        selected = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_ensure_furniture_details"
+        ]
+        namespace = {"re": re}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), "prompt_guard", "exec"), namespace)
+        optimized = namespace["_ensure_furniture_details"](
+            "Một ghế sofa, một bàn trà và một đèn sàn.",
+            "Exactly one sofa, one coffee table and one floor lamp.",
+        )
+
+        self.assertNotIn("complete chair", optimized)
+        self.assertIn("complete sofa", optimized)
+        self.assertIn("complete floor lamp", optimized)
+
     def test_descriptive_coffee_table_uses_table_structure_rules(self):
         helpers = load_generator_helpers()
         positive, negative = helpers["_object_prompt"](
@@ -61,7 +83,7 @@ class ObjectAssetGuardTests(unittest.TestCase):
             ["sofa", "coffee table"],
         )
 
-        self.assertIn("Use a conventional rectangular tabletop", positive)
+        self.assertIn("use a conventional rectangular tabletop", positive)
         self.assertIn("four straight vertical legs", positive)
         self.assertIn("wireframe", negative)
         self.assertIn("round tabletop", negative)
@@ -88,7 +110,15 @@ class ObjectAssetGuardTests(unittest.TestCase):
             )[0]
 
         self.assertNotEqual(original["seed"], retry["seed"])
-        self.assertEqual(retry["seed"] - original["seed"], 10_000)
+        self.assertNotEqual(retry["seed"], original["seed"])
+
+    def test_seed_depends_on_object_identity_not_list_slot(self):
+        helpers = load_generator_helpers()
+        seed = helpers["_stable_object_seed"]
+        self.assertNotEqual(
+            seed("scene", "sofa_1", "sofa", 0),
+            seed("scene", "floor_lamp_3", "floor lamp", 0),
+        )
 
     def test_prompts_reject_ground_and_sofa_bed_shapes(self):
         helpers = load_generator_helpers()
@@ -100,8 +130,8 @@ class ObjectAssetGuardTests(unittest.TestCase):
         )
 
         self.assertIn("rug", table_negative)
-        self.assertIn("ground plane", table_negative)
-        self.assertIn("two separate seat cushions", sofa_positive)
+        self.assertIn("floor", table_negative)
+        self.assertIn("two seat cushions", sofa_positive)
         self.assertIn("bed frame", sofa_negative)
 
     def test_floor_attachment_guard_rejects_a_broad_lower_sheet(self):
@@ -129,6 +159,28 @@ class ObjectAssetGuardTests(unittest.TestCase):
         self.assertTrue(guard(rug))
         self.assertFalse(guard(valid_table))
         self.assertFalse(guard(valid_cabinet))
+
+    def test_floor_lamp_shape_guard_rejects_a_solid_block(self):
+        source = Path("worker_sam2_dino.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        selected = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"_mask_extent", "_category_shape_warning"}
+        ]
+        namespace = {"np": np}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), "shape_guard", "exec"), namespace)
+        guard = namespace["_category_shape_warning"]
+
+        block = np.zeros((220, 160), dtype=np.uint8)
+        block[20:205, 45:115] = 255
+        lamp = np.zeros((220, 160), dtype=np.uint8)
+        lamp[15:55, 35:125] = 255
+        lamp[50:185, 76:84] = 255
+        lamp[180:205, 55:105] = 255
+
+        self.assertIsNotNone(guard(block, "floor lamp"))
+        self.assertIsNone(guard(lamp, "floor lamp"))
 
     def test_text_flow_crop_is_tight_not_a_full_transparent_canvas(self):
         save_crop = load_crop_helper()
