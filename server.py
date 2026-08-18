@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v20-separate-sd35-sam-assets"
+BACKEND_BUILD = "gemini-metric-layout-v21-soft-floor-warning"
 
 allowed_origins = [
     origin.strip()

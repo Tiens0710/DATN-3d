@@ -249,6 +249,24 @@ class ObjectAssetGuardTests(unittest.TestCase):
         self.assertIsNotNone(guard(stretched, "nightstand"))
         self.assertIsNone(guard(compact, "nightstand"))
 
+    def test_floor_mat_detection_is_warning_not_geometry_blocker(self):
+        source = Path("worker_sam2_dino.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        selected = [
+            node for node in module.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_semantic_error_blocks_generation"
+        ]
+        namespace = {}
+        exec(compile(ast.Module(body=selected, type_ignores=[]), "semantic_guard", "exec"), namespace)
+        blocks = namespace["_semantic_error_blocks_generation"]
+
+        self.assertFalse(
+            blocks("detected an unwanted support surface 'floor mat' (0.68)")
+        )
+        self.assertTrue(blocks("bed has no clearly detectable mattress"))
+        self.assertTrue(blocks("the requested sofa is visually a 'bed' (0.71)"))
+
     def test_text_flow_crop_is_tight_not_a_full_transparent_canvas(self):
         save_crop = load_crop_helper()
         image = Image.new("RGB", (400, 400), "white")

@@ -48,7 +48,7 @@ AUTO_DETECTION_CAPTION = (
     "coffee table. dining table. furniture."
 )
 
-app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.4")
+app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.5")
 dino_model = None
 sam_predictor = None
 dino_load_image = None
@@ -544,6 +544,22 @@ def _generated_asset_semantic_error(
     if requires_mattress and mattress_confidence < 0.18:
         return "bed has no clearly detectable mattress"
     return None
+
+
+def _semantic_error_blocks_generation(message: str) -> bool:
+    """Only identity/structure failures should block an SD3.5 candidate.
+
+    GroundingDINO frequently calls a soft studio shadow below furniture a
+    ``floor mat``.  That signal is still useful metadata, but treating it as a
+    hard failure caused four needless regenerations and stopped valid scenes.
+    Background/support remnants are handled by alpha cleanup and the generic
+    TRELLIS floor guard later in the pipeline.
+    """
+    normalized = str(message or "").lower()
+    return (
+        "requested sofa is visually" in normalized
+        or "bed has no clearly detectable mattress" in normalized
+    )
 
 
 def _category_shape_warning(alpha: np.ndarray, label: str) -> str | None:
@@ -1378,7 +1394,8 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 )
                 if semantic_error:
                     quality_warnings.append(semantic_error)
-                    quality_blockers.append(semantic_error)
+                    if _semantic_error_blocks_generation(semantic_error):
+                        quality_blockers.append(semantic_error)
             except Exception as semantic_exc:
                 # This query is a quality hint, not part of the core DINO+SAM
                 # isolation path. A weak/conflicting auxiliary prediction must
@@ -1487,7 +1504,10 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
                 "detector_fallback": detector_fallback,
                 "quality_warnings": quality_warnings,
                 "quality_blockers": quality_blockers,
-                "retry_recommended": bool(quality_warnings),
+                # Retry only genuine identity/shape failures.  Soft warnings
+                # such as a possible floor shadow remain visible in metadata
+                # but must not spend four SD3.5 samples or stop the pipeline.
+                "retry_recommended": bool(quality_blockers),
             }
         )
         sanitized_jobs.append(job)
