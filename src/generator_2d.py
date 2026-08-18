@@ -335,7 +335,10 @@ def build_object_jobs(
     if not objects:
         raise ValueError("The object-wise generator received no objects")
 
-    Path(object_image_dir).mkdir(parents=True, exist_ok=True)
+    raw_dir = Path(object_image_dir) / "raw"
+    sanitized_dir = Path(object_image_dir) / "sanitized"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    sanitized_dir.mkdir(parents=True, exist_ok=True)
     all_labels = [str(item.get("label", "furniture")).lower() for item in objects]
     jobs = []
     for index, item in enumerate(objects, start=1):
@@ -356,7 +359,12 @@ def build_object_jobs(
             "label": label,
             "prompt": positive,
             "negative_prompt": negative,
-            "image_path": os.path.join(object_image_dir, f"{object_id}.png"),
+            # Never let SAM2 overwrite the image produced by SD3.5.  The raw
+            # path is the visual checkpoint for the SD node; the sanitized
+            # path is the RGBA input consumed by the SAM/TRELLIS stages.
+            "image_path": str(raw_dir / f"{object_id}.png"),
+            "raw_image_path": str(raw_dir / f"{object_id}.png"),
+            "sanitized_image_path": str(sanitized_dir / f"{object_id}.png"),
             "seed": _stable_object_seed(scene_prompt, object_id, label, attempt),
         })
     return jobs
@@ -610,9 +618,14 @@ def generate_object_images(
         ]
 
     for job in jobs:
-        image_path = job.get("image_path")
-        if not image_path or not os.path.isfile(image_path):
-            raise FileNotFoundError(image_path or "Missing SD3.5 image path")
+        raw_image_path = job.get("raw_image_path")
+        sanitized_image_path = job.get("image_path")
+        if not raw_image_path or not os.path.isfile(raw_image_path):
+            raise FileNotFoundError(raw_image_path or "Missing raw SD3.5 image path")
+        if not sanitized_image_path or not os.path.isfile(sanitized_image_path):
+            raise FileNotFoundError(
+                sanitized_image_path or "Missing sanitized object image path"
+            )
 
     Path(manifest_path).parent.mkdir(parents=True, exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as file:
@@ -626,7 +639,10 @@ def create_object_contact_sheet(objects: list[dict], output_path: str) -> None:
 
     cards = []
     for item in objects:
-        image = Image.open(item["image_path"]).convert("RGB")
+        # This sheet belongs to the SD3.5 node.  Always render the untouched
+        # diffusion result, never the alpha-matted SAM2 file.
+        image_path = item.get("raw_image_path") or item["image_path"]
+        image = Image.open(image_path).convert("RGB")
         cards.append(ImageOps.contain(image, (480, 480), Image.Resampling.LANCZOS))
     width = 480 * min(2, len(cards))
     sheet = Image.new("RGB", (width, 480 * ((len(cards) + 1) // 2)), "white")

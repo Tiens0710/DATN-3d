@@ -144,6 +144,21 @@ class ObjectAssetGuardTests(unittest.TestCase):
         self.assertNotEqual(original["seed"], retry["seed"])
         self.assertNotEqual(retry["seed"], original["seed"])
 
+    def test_sd35_raw_and_sam2_sanitized_assets_use_different_paths(self):
+        helpers = load_generator_helpers()
+        build_jobs = helpers["build_object_jobs"]
+        with tempfile.TemporaryDirectory() as directory:
+            job = build_jobs(
+                "one wooden nightstand",
+                [{"id": "nightstand_1", "label": "nightstand"}],
+                directory,
+            )[0]
+
+        self.assertEqual(job["image_path"], job["raw_image_path"])
+        self.assertNotEqual(job["raw_image_path"], job["sanitized_image_path"])
+        self.assertIn(f"{os.sep}raw{os.sep}", job["raw_image_path"])
+        self.assertIn(f"{os.sep}sanitized{os.sep}", job["sanitized_image_path"])
+
     def test_seed_depends_on_object_identity_not_list_slot(self):
         helpers = load_generator_helpers()
         seed = helpers["_stable_object_seed"]

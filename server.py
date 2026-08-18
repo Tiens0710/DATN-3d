@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v19-object-shape-recovery"
+BACKEND_BUILD = "gemini-metric-layout-v20-separate-sd35-sam-assets"
 
 allowed_origins = [
     origin.strip()
@@ -1155,7 +1155,12 @@ def api_generate_image(request: ImageGenRequest):
             {
                 "name": item["name"],
                 "label": item["label"],
-                "image_url": f"/runs/{request.run_id}/object_images/{item['name']}.png",
+                "image_url": (
+                    f"/runs/{request.run_id}/object_images/raw/{item['name']}.png"
+                ),
+                "sanitized_image_url": (
+                    f"/runs/{request.run_id}/object_images/sanitized/{item['name']}.png"
+                ),
                 "detected_instances": item.get("detected_instances"),
                 "sanitized": bool(item.get("sanitized", False)),
                 "count_validation": item.get("count_validation", "unknown"),

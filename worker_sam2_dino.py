@@ -48,7 +48,7 @@ AUTO_DETECTION_CAPTION = (
     "coffee table. dining table. furniture."
 )
 
-app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.3")
+app = FastAPI(title="DATN SAM2 + GroundingDINO Worker", version="1.0.4")
 dino_model = None
 sam_predictor = None
 dino_load_image = None
@@ -1350,10 +1350,16 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
     sanitized_jobs = []
     for item in objects:
         job = dict(item)
-        image_path = str(job.get("image_path", ""))
+        image_path = str(job.get("raw_image_path") or job.get("image_path", ""))
+        sanitized_image_path = str(
+            job.get("sanitized_image_path") or job.get("image_path", "")
+        )
         label = str(job.get("label", "object")).strip().lower() or "object"
         if not os.path.isfile(image_path):
             raise FileNotFoundError(image_path or "Missing generated object image")
+        if not sanitized_image_path:
+            raise ValueError("Missing sanitized object output path")
+        Path(sanitized_image_path).parent.mkdir(parents=True, exist_ok=True)
 
         source_image, candidates = _detect_label_instances(image_path, label)
         width, height = source_image.size
@@ -1464,10 +1470,13 @@ def _sanitize_object_images(objects: list[dict]) -> list[dict]:
         paste_x = (width - isolated.width) // 2
         paste_y = (height - isolated.height) // 2
         clean_image.alpha_composite(isolated, (paste_x, paste_y))
-        clean_image.save(image_path)
+        clean_image.save(sanitized_image_path)
 
         job.update(
             {
+                "raw_image_path": image_path,
+                "sanitized_image_path": sanitized_image_path,
+                "image_path": sanitized_image_path,
                 "sanitized": True,
                 "kept_box": selected_box,
                 "kept_confidence": confidence,
