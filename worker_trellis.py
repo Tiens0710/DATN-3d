@@ -28,7 +28,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 
-app = FastAPI(title="DATN TRELLIS Worker", version="1.2.0")
+app = FastAPI(title="DATN TRELLIS Worker", version="1.2.1")
 pipeline = None
 pipeline_device = None
 variant_pipeline = None
@@ -117,7 +117,18 @@ def _load_trellis_input(path: Path) -> Image.Image:
         raise ValueError(
             "TRELLIS input alpha mask covers almost the entire image; refusing to model the background"
         )
-    return image
+    # TRELLIS 1 checks the alpha channel in ``preprocess_image`` but its
+    # DINOv2 encoder later converts the PIL image to RGB and drops alpha.  If
+    # the transparent pixels still contain the original white studio
+    # background, that hidden RGB data becomes visible to the model and can be
+    # reconstructed as a large floor/card.  Match TRELLIS' own rembg path by
+    # premultiplying RGB with alpha: transparent pixels become black and only
+    # the segmented object remains as conditioning content.
+    rgb = np.asarray(image.convert("RGB"), dtype=np.float32)
+    alpha_factor = alpha.astype(np.float32)[..., None] / 255.0
+    rgb = np.clip(np.rint(rgb * alpha_factor), 0, 255).astype(np.uint8)
+    normalized = np.dstack((rgb, alpha))
+    return Image.fromarray(normalized, mode="RGBA")
 
 
 def _safe_empty_cache(name: str) -> None:

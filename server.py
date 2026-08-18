@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v9-upload-mask-repair"
+BACKEND_BUILD = "gemini-metric-layout-v10-alpha-background-safe"
 
 allowed_origins = [
     origin.strip()
@@ -1003,10 +1003,18 @@ async def api_upload_image(
             width, height = image.size
             if width < 32 or height < 32 or width * height > 20_000_000:
                 raise ValueError("Image dimensions must be at least 32px and at most 20 megapixels")
-            rgb = image.convert("RGB")
+            # Preserve a real alpha channel from PNG/WebP uploads.  Flattening
+            # it to RGB here discards an already-correct foreground mask and
+            # forces GroundingDINO/SAM2 to rediscover the object against the
+            # original background.
+            has_alpha = (
+                ("A" in image.getbands() or "transparency" in image.info)
+                and image.convert("RGBA").getchannel("A").getextrema() != (255, 255)
+            )
+            upload_image = image.convert("RGBA" if has_alpha else "RGB")
             filename = f"upload_{uuid.uuid4().hex}.png"
             output_path = paths["root"] / filename
-            rgb.save(output_path, format="PNG")
+            upload_image.save(output_path, format="PNG")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid image: {exc}")
 

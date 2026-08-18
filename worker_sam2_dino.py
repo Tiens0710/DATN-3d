@@ -614,6 +614,83 @@ def _looks_like_inverted_uploaded_mask(
     )
 
 
+def _looks_like_uploaded_background_leak(
+    image: Image.Image,
+    alpha: np.ndarray,
+    box: list[int],
+) -> bool:
+    """Detect a plausible SAM mask that still contains a large studio panel.
+
+    The inverted-mask check above catches the obvious case where SAM marks
+    nearly the whole detector box as foreground.  A more subtle failure is a
+    correct-looking object mask with a connected white floor/card attached to
+    its lower edge.  That mask passes the old density threshold but TRELLIS
+    turns the attached region into a flat mesh.  Only enable this repair when
+    the image border is a stable background and an independent border-colour
+    mask finds a sufficiently large, compact foreground; this keeps white
+    furniture on white backgrounds from being reduced to only its dark edges.
+    """
+    if not _uniform_border(image):
+        return False
+
+    height, width = alpha.shape[:2]
+    reference = _border_background_alpha(image, [0, 0, width, height])
+    if reference is None:
+        return False
+
+    candidate_support = alpha >= 32
+    reference_support = reference >= 32
+    candidate_area = int(candidate_support.sum())
+    reference_area = int(reference_support.sum())
+    if candidate_area == 0 or reference_area < max(256, int(alpha.size * 0.025)):
+        return False
+
+    candidate_extent = _mask_extent(candidate_support)
+    reference_extent = _mask_extent(reference_support)
+    if candidate_extent is None or reference_extent is None:
+        return False
+
+    x1, y1, x2, y2 = [int(value) for value in box]
+    box_width = max(1, x2 - x1)
+    box_height = max(1, y2 - y1)
+    cx1, cy1, cx2, cy2 = candidate_extent
+    rx1, ry1, rx2, ry2 = reference_extent
+    candidate_width = max(1, cx2 - cx1)
+    candidate_height = max(1, cy2 - cy1)
+    reference_width = rx2 - rx1
+    reference_height = ry2 - ry1
+
+    # The independent mask must cover most of the detected object's extent,
+    # while the SAM mask must contain substantially more area than it does.
+    # This is the signature of an object plus a connected background panel.
+    reference_covers_object = (
+        reference_width >= 0.50 * candidate_width
+        and reference_height >= 0.50 * candidate_height
+    )
+    area_excess = candidate_area / max(1, reference_area)
+    if not reference_covers_object or area_excess < 1.35:
+        return False
+
+    dilated_reference = ndimage.binary_dilation(
+        reference_support,
+        structure=np.ones((9, 9), dtype=bool),
+    )
+    excess = np.logical_and(candidate_support, np.logical_not(dilated_reference))
+    excess_ratio = float(excess.sum() / max(1, candidate_area))
+    candidate_density = _mask_density(candidate_support, box)
+    boundary_ratio = _mask_boundary_ratio(candidate_support, box)
+    fills_box = (
+        candidate_width >= 0.78 * box_width
+        and candidate_height >= 0.78 * box_height
+    )
+    return (
+        fills_box
+        and candidate_density >= 0.18
+        and boundary_ratio >= 0.30
+        and excess_ratio >= 0.30
+    )
+
+
 def _uploaded_alpha(
     image: Image.Image,
     box: list[int],
@@ -621,6 +698,21 @@ def _uploaded_alpha(
 ) -> tuple[np.ndarray, float, str]:
     """Get a foreground alpha for an uploaded image without forwarding a bad mask."""
     width, height = image.size
+
+    # If the user supplied a transparent PNG, it is already a stronger
+    # foreground signal than a second DINO/SAM prediction.  Reuse it directly
+    # after the same cleanup used for SAM masks; this also avoids turning a
+    # valid transparent upload into a white-background detection problem.
+    if "A" in image.getbands():
+        supplied_alpha = np.asarray(image.getchannel("A"), dtype=np.uint8)
+        if _is_reusable_alpha(supplied_alpha):
+            cleaned = _clean_alpha(supplied_alpha, [0, 0, width, height])
+            if _is_reusable_alpha(cleaned) and not _looks_like_rectangular_backdrop(
+                cleaned,
+                [0, 0, width, height],
+            ):
+                return cleaned, 1.0, "uploaded-alpha"
+
     prediction_error = None
     try:
         alpha, _best_mask, mask_score, method = _predict_refined_alpha(
@@ -628,9 +720,15 @@ def _uploaded_alpha(
             box,
             label=label,
         )
-        if not _looks_like_inverted_uploaded_mask(image, alpha, box):
+        inverted_mask = _looks_like_inverted_uploaded_mask(image, alpha, box)
+        leaked_background = _looks_like_uploaded_background_leak(image, alpha, box)
+        if not inverted_mask and not leaked_background:
             return alpha, float(mask_score), method
-        prediction_error = "SAM2 selected the plain background as foreground"
+        prediction_error = (
+            "SAM2 selected the plain background as foreground"
+            if inverted_mask
+            else "SAM2 mask still contains a large connected background panel"
+        )
     except Exception as exc:
         prediction_error = str(exc)
 
@@ -1372,8 +1470,12 @@ def _segment_uploaded(
 
     image_source, image_tensor = dino_load_image(image_path)
     height, width = image_source.shape[:2]
-    source_image = Image.open(image_path).convert("RGB")
-    sam_predictor.set_image(np.asarray(source_image))
+    with Image.open(image_path) as opened_image:
+        has_alpha = "A" in opened_image.getbands() or "transparency" in opened_image.info
+        source_image = opened_image.convert("RGBA" if has_alpha else "RGB")
+    # SAM2 expects an RGB array, while _uploaded_alpha may reuse a preserved
+    # alpha channel from a transparent upload.
+    sam_predictor.set_image(np.asarray(source_image.convert("RGB")))
 
     if auto_detect:
         boxes, logits, phrases = _predict_dino(
