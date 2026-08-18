@@ -53,7 +53,7 @@ app = FastAPI(
     version="1.4.0",
 )
 
-BACKEND_BUILD = "gemini-metric-layout-v16-exact-object-inventory"
+BACKEND_BUILD = "gemini-metric-layout-v17-bed-nightstand-shapes"
 
 allowed_origins = [
     origin.strip()
@@ -384,6 +384,19 @@ def _ensure_furniture_details(source_prompt: str, optimized_prompt: str) -> str:
         ("floor lamp", "floor lamps", "standing lamp", "đèn sàn", "den san"),
     ):
         guards.append("complete floor lamp with shade, thin stem, and base visible")
+    bed_source = re.sub(
+        r"(?<!\w)(?:bedside table|nightstand|tủ đầu giường|tu dau giuong)(?!\w)",
+        "nightstand",
+        source,
+        flags=re.IGNORECASE,
+    )
+    if _contains_prompt_term(bed_source, ("bed", "beds", "giường", "giuong")):
+        guards.append("complete bed with a thick mattress visibly covering the frame")
+    if _contains_prompt_term(
+        source,
+        ("nightstand", "nightstands", "bedside table", "tủ đầu giường", "tu dau giuong"),
+    ):
+        guards.append("short compact bedside nightstand, not a tall dresser")
 
     detail_markers = (
         "carv", "ornate", "decor", "inlay", "engrave", "pattern", "motif",

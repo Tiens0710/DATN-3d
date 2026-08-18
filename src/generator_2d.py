@@ -145,6 +145,10 @@ def _object_category(label: str) -> str:
     protection.
     """
     normalized = " ".join(str(label).lower().replace("_", " ").split())
+    if "nightstand" in normalized or "bedside table" in normalized:
+        return "nightstand"
+    if "bed" in normalized and "bedside" not in normalized:
+        return "bed"
     if "table" in normalized or "desk" in normalized:
         return "table"
     if "chair" in normalized or "stool" in normalized:
@@ -240,6 +244,13 @@ def _object_prompt(
         "lamp": (
             "Full freestanding floor lamp; one shade, a thin vertical stem and one base, all visible. "
         ),
+        "bed": (
+            "Full complete bed; one thick horizontal mattress visibly covering the frame, "
+            "one headboard, side rails and feet visible. "
+        ),
+        "nightstand": (
+            "Full low bedside nightstand; short compact body, one or two drawers and feet visible. "
+        ),
         "floor lamp": (
             "Exactly one freestanding floor lamp, eye-level front three-quarter view, "
             "with the complete shade, vertical stem, base, and every support visible. "
@@ -262,6 +273,8 @@ def _object_prompt(
         "lamp": "cabinet, column, rectangular block, missing shade, missing stem, missing base, ",
         "table": "rug attached to table, floor attached to legs, malformed tabletop, ",
         "chair": "stool, bench, missing backrest, ",
+        "bed": "empty bed frame, missing mattress, bare slats, bench, crib, ",
+        "nightstand": "tall dresser, chest of drawers, wardrobe, cabinet tower, ",
     }.get(category, "")
     negative = (
         f"{category_negative}extra object, duplicate, {excluded}, cropped, top-down, malformed, fused parts, "

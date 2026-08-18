@@ -512,8 +512,11 @@ def _generated_asset_semantic_error(
     """
     normalized = " ".join(label.lower().replace("_", " ").split())
     confusers = ["rug", "carpet", "floor mat"]
+    requires_mattress = "bed" in normalized and "bedside" not in normalized
     if "sofa" in normalized or "couch" in normalized:
         confusers.extend(["bed", "bed frame"])
+    if requires_mattress:
+        confusers.append("mattress")
 
     _source, image_tensor = dino_load_image(image_path)
     _boxes, logits, phrases = _predict_dino(
@@ -522,6 +525,7 @@ def _generated_asset_semantic_error(
         box_threshold=0.22,
         text_threshold=0.16,
     )
+    mattress_confidence = 0.0
     for index, phrase in enumerate(phrases):
         detected = str(phrase).strip().lower()
         score_tensor = logits[index]
@@ -530,11 +534,15 @@ def _generated_asset_semantic_error(
             if getattr(score_tensor, "ndim", 0)
             else score_tensor.item()
         )
-        if any(term in detected for term in ("rug", "carpet", "floor mat")):
+        if "mattress" in detected:
+            mattress_confidence = max(mattress_confidence, score)
+        elif any(term in detected for term in ("rug", "carpet", "floor mat")):
             if score >= 0.34:
                 return f"detected an unwanted support surface '{detected}' ({score:.2f})"
         elif ("bed" in detected) and score >= max(0.34, target_confidence * 1.05):
             return f"the requested sofa is visually a '{detected}' ({score:.2f})"
+    if requires_mattress and mattress_confidence < 0.18:
+        return "bed has no clearly detectable mattress"
     return None
 
 
@@ -559,6 +567,9 @@ def _category_shape_warning(alpha: np.ndarray, label: str) -> str | None:
             return "floor lamp silhouette is not tall enough"
         if middle_fill > 0.42:
             return "floor lamp is a solid block instead of shade, thin stem and base"
+    if "nightstand" in normalized or "bedside table" in normalized:
+        if height / max(1, width) > 1.45:
+            return "nightstand is too tall and resembles a chest of drawers"
     return None
 
 

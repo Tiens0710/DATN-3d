@@ -106,6 +106,20 @@ class ObjectAssetGuardTests(unittest.TestCase):
         self.assertIn("wireframe", negative)
         self.assertIn("round tabletop", negative)
 
+    def test_bed_and_nightstand_receive_specific_shape_rules(self):
+        helpers = load_generator_helpers()
+        bed_positive, bed_negative = helpers["_object_prompt"](
+            "bed", "one wooden bed with a white mattress", ["bed", "nightstand"]
+        )
+        nightstand_positive, nightstand_negative = helpers["_object_prompt"](
+            "nightstand", "one low wooden nightstand", ["bed", "nightstand"]
+        )
+
+        self.assertIn("mattress visibly covering the frame", bed_positive)
+        self.assertIn("missing mattress", bed_negative)
+        self.assertIn("short compact body", nightstand_positive)
+        self.assertIn("tall dresser", nightstand_negative)
+
     def test_clean_background_retry_uses_a_different_seed(self):
         helpers = load_generator_helpers()
         build_jobs = helpers["build_object_jobs"]
