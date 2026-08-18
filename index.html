@@ -5695,7 +5695,6 @@
         function NodeSceneGraph() {
             this.addInput("prompt", "string");
             this.addOutput("scene_graph", "object");
-            this.addOutput("optimized_prompt", "string");
             this.properties = { graphData: null };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
@@ -5719,7 +5718,6 @@
 
             if (this._lastPrompt === inputPrompt && this.properties.graphData) {
                 this.setOutputData(0, this.properties.graphData);
-                this.setOutputData(1, inputPrompt);
                 return;
             }
 
@@ -5736,7 +5734,6 @@
                     const data = await res.json();
                     this.properties.graphData = data;
                     this.setOutputData(0, data);
-                    this.setOutputData(1, inputPrompt);
                     writeLog("✅ Trích xuất Scene Graph thành công!", "success");
                 } else {
                     const errText = await res.text();
@@ -5801,9 +5798,7 @@
         // Node 3: 2D Layout Generator (Bounding Box layout rules)
         function NodeLayout2D() {
             this.addInput("scene_graph", "object");
-            this.addInput("optimized_prompt", "string");
             this.addOutput("layout", "object");
-            this.addOutput("optimized_prompt", "string");
             this.properties = { layoutData: null };
             this.addWidget("button", "▶ Run to here", () => {
                 if (window.runPipelineUntil) window.runPipelineUntil(this);
@@ -5816,7 +5811,6 @@
         NodeLayout2D.title_color = "rgba(106, 77, 199, 0.85)";
         NodeLayout2D.prototype.onExecute = async function () {
             const graphData = this.getInputData(0);
-            const optimizedPrompt = this.getInputData(1) || "";
             if (!graphData) {
                 writeLog("❌ 2D Layout Generator: Thiếu dữ liệu đầu vào scene_graph!", "error");
                 throw new Error("Thiếu dữ liệu đầu vào scene_graph");
@@ -5828,7 +5822,6 @@
 
             if (this._lastGraph === graphData && this.properties.layoutData) {
                 this.setOutputData(0, this.properties.layoutData);
-                this.setOutputData(1, optimizedPrompt);
                 return;
             }
 
@@ -5845,7 +5838,6 @@
                     const data = await res.json();
                     this.properties.layoutData = data;
                     this.setOutputData(0, data);
-                    this.setOutputData(1, optimizedPrompt);
                     writeLog("✅ Đã sinh tọa độ bố cục 2D.", "success");
                 } else {
                     const errText = await res.text();
@@ -6049,9 +6041,8 @@
         // Node 5: SD3.5 Image Generator
         function NodeSDXLGen() {
             this.addInput("prompt", "string");
-            this.addInput("object_layout", "object");
+            this.addInput("scene_graph", "object");
             this.addOutput("image_url", "string");
-            this.addOutput("layout", "object");
 
             this.properties = {
                 imageUrl: ""
@@ -6244,7 +6235,16 @@
         // above so SD3.5 receives the optimizer output exactly once.
         NodeSDXLGen.prototype.onExecute = async function () {
             const prompt = this.getInputData(0);
-            const objectLayout = this.getInputData(1) || {};
+            const sceneGraph = this.getInputData(1) || {};
+            const objectLayout = {
+                objects: Array.isArray(sceneGraph.objects)
+                    ? sceneGraph.objects
+                    : (sceneGraph.nodes || []).map((node, index) => ({
+                        id: node.id || `object_${index + 1}`,
+                        label: node.label || node.full || `object_${index + 1}`,
+                        description: node.description || node.full || node.label || "",
+                    })),
+            };
             if (!prompt) throw new Error("Thiếu prompt cho SD3.5");
             if (!isConnected) throw new Error("Chưa kết nối GPU Kaggle");
 
@@ -6253,7 +6253,6 @@
                 this.properties.objectImages = [];
                 this._imageObj = null;
                 this.setOutputData(0, uploadedImageUrl);
-                this.setOutputData(1, objectLayout);
                 this.loadPreviewImage(uploadedImageUrl);
                 writeLog(
                     `Đã chọn ảnh ${uploadedImageName || "upload"}; bỏ qua SD3.5 và dùng ảnh gốc.`,
@@ -6266,7 +6265,6 @@
             const requestKey = JSON.stringify({ runId: currentRunId, prompt, objectLayout });
             if (this._lastRequestKey === requestKey && this.properties.imageUrl) {
                 this.setOutputData(0, this.properties.imageUrl);
-                this.setOutputData(1, objectLayout);
                 if (this._previewRequestedUrl !== this.properties.imageUrl) {
                     this.loadPreviewImage(this.properties.imageUrl);
                 }
@@ -6296,7 +6294,6 @@
             this.properties.objectImages = data.images || [];
             this._imageObj = null;
             this.setOutputData(0, this.properties.imageUrl);
-            this.setOutputData(1, objectLayout);
             this.loadPreviewImage(this.properties.imageUrl);
             const correctedImages = this.properties.objectImages.filter(
                 (item) => Number(item.detected_instances || 0) > 1 && item.sanitized
@@ -6639,9 +6636,7 @@
         // Node 6: TRELLIS 3D Single-Object Reconstruction
         function NodeTrellis3D() {
             this.addInput("crops_data", "object");
-            this.addInput("relation_layout", "object");
             this.addOutput("models_data", "object");
-            this.addOutput("relation_layout", "object");
             this.properties = {
                 models: [],
                 viewerModelIndex: 0,
@@ -6674,7 +6669,6 @@
         NodeTrellis3D.title_color = "rgba(21, 101, 192, 0.85)";
         NodeTrellis3D.prototype.onExecute = async function () {
             const cropsData = this.getInputData(0);
-            const relationLayout = this.getInputData(1) || {};
             if (!cropsData) {
                 writeLog("❌ TRELLIS 3D Generator: Thiếu dữ liệu vật thể crops_data!", "error");
                 throw new Error("Thiếu dữ liệu vật thể crops_data");
@@ -6686,7 +6680,6 @@
 
             if (this._lastCrops === cropsData && this.properties.models.length > 0) {
                 this.setOutputData(0, this.properties.models);
-                this.setOutputData(1, relationLayout);
                 return;
             }
 
@@ -6766,7 +6759,6 @@
                     }
                     this._lastTrellisViewerKey = "";
                     this.setOutputData(0, this.properties.models);
-                    this.setOutputData(1, relationLayout);
                     const firstModel = this.properties.models.find((model) => model.model_url);
                     if (firstModel) {
                         await this.update3DViewer();
@@ -7537,56 +7529,54 @@
                 requestAnimationFrame(() => fitGraphToView(72));
                 writeLog("Flow hình ảnh đã được nạp: Upload → SAM2 → TRELLIS → Scene.", "info");
             } else {
-                // Keep every data dependency moving left-to-right. Prompt and
-                // layout metadata are relayed through the intermediate nodes
-                // so the canvas has no long diagonal cables crossing cards.
+                // Keep the semantic branches explicit: the scene graph feeds
+                // object generation, while the 2D layout feeds segmentation
+                // labels/boxes and the final spatial scene assembly.
                 const nodePrompt = LiteGraph.createNode("datn/input_prompt");
-                nodePrompt.pos = [60, 300];
+                nodePrompt.pos = [60, 360];
                 graph.add(nodePrompt);
 
                 const nodeOptimizer = LiteGraph.createNode("datn/prompt_optimizer");
-                nodeOptimizer.pos = [420, 300];
+                nodeOptimizer.pos = [420, 360];
                 graph.add(nodeOptimizer);
 
                 const nodeSceneGraph = LiteGraph.createNode("datn/scene_graph");
-                nodeSceneGraph.pos = [860, 300];
+                nodeSceneGraph.pos = [850, 650];
                 graph.add(nodeSceneGraph);
 
                 const nodeLayout = LiteGraph.createNode("datn/layout_2d");
-                nodeLayout.pos = [1260, 270];
+                nodeLayout.pos = [1250, 650];
                 graph.add(nodeLayout);
 
                 const nodeSDXL = LiteGraph.createNode("datn/sdxl_gen");
-                nodeSDXL.pos = [1700, 190];
+                nodeSDXL.pos = [850, 120];
                 graph.add(nodeSDXL);
 
                 const nodeSAM2 = LiteGraph.createNode("datn/grounded_sam2");
-                nodeSAM2.pos = [2200, 200];
+                nodeSAM2.pos = [1350, 120];
                 graph.add(nodeSAM2);
 
                 const nodeTrellis = LiteGraph.createNode("datn/trellis_3d");
-                nodeTrellis.pos = [2700, 200];
+                nodeTrellis.pos = [1850, 120];
                 graph.add(nodeTrellis);
 
                 const nodeCombiner = LiteGraph.createNode("datn/scene_combiner");
-                nodeCombiner.pos = [2700, 560];
+                nodeCombiner.pos = [1850, 560];
                 graph.add(nodeCombiner);
 
                 nodePrompt.connect(0, nodeOptimizer, 0);
+                nodeOptimizer.connect(0, nodeSDXL, 0);
                 nodeOptimizer.connect(0, nodeSceneGraph, 0);
                 nodeSceneGraph.connect(0, nodeLayout, 0);
-                nodeSceneGraph.connect(1, nodeLayout, 1);
-                nodeLayout.connect(1, nodeSDXL, 0);
-                nodeLayout.connect(0, nodeSDXL, 1);
+                nodeSceneGraph.connect(0, nodeSDXL, 1);
                 nodeSDXL.connect(0, nodeSAM2, 0);
-                nodeSDXL.connect(1, nodeSAM2, 1);
+                nodeLayout.connect(0, nodeSAM2, 1);
                 nodeSAM2.connect(0, nodeTrellis, 0);
-                nodeSAM2.connect(1, nodeTrellis, 1);
                 nodeTrellis.connect(0, nodeCombiner, 0);
-                nodeTrellis.connect(1, nodeCombiner, 1);
+                nodeLayout.connect(0, nodeCombiner, 1);
                 updateInputModeUI();
                 requestAnimationFrame(() => fitGraphToView(60));
-                writeLog("Flow văn bản đã được nạp: Prompt → Gemini → Graph → Layout → SD3.5 → SAM2 → TRELLIS → Scene.", "info");
+                writeLog("Flow văn bản đã được nạp: Prompt → Gemini → Scene Graph; Scene Graph → SD3.5 + 2D Layout → SAM2 → TRELLIS → Scene.", "info");
             }
 
             const nodeCount = document.getElementById("graph-node-count");
