@@ -49,7 +49,7 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(RUNS_DIR, exist_ok=True)
 
 app = FastAPI(
-    title="DATN 3D Scene Reconstruction API",
+    title="SpatialFlow 3D Scene API",
     version="1.4.0",
 )
 
@@ -958,7 +958,7 @@ async def stop_background_workers() -> None:
 
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "DATN API is running"}
+    return {"status": "ok", "message": "SpatialFlow API is running"}
 
 
 @app.get("/api/health")

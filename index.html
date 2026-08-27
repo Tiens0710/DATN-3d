@@ -4,7 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DATN - Furniture 3D Studio</title>
+    <title>SpatialFlow — AI 3D Scene Studio</title>
+    <meta name="description" content="Tạo cảnh 3D từ văn bản hoặc hình ảnh với SD3.5, Grounded-SAM2 và TRELLIS.">
+    <meta name="theme-color" content="#090d14">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://unpkg.com">
     <!-- Google Fonts - Outfit -->
     <link
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
@@ -109,7 +114,7 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
             padding: 5px 14px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: border-color 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
         }
 
@@ -135,7 +140,7 @@
             font-size: 13px;
             width: 290px;
             padding: 6px 0;
-            outline: none;
+            outline: 2px solid transparent;
             font-family: 'Fira Code', monospace;
             font-weight: 500;
         }
@@ -150,7 +155,8 @@
             font-weight: 600;
             border-radius: 8px;
             cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease,
+                box-shadow 0.2s ease, transform 0.2s ease, filter 0.2s ease;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -205,7 +211,7 @@
             border-radius: 50%;
             background-color: #f44336;
             display: inline-block;
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
             box-shadow: 0 0 8px #f44336;
         }
 
@@ -461,7 +467,7 @@
             font-size: 12px;
             font-weight: 400;
             resize: none;
-            outline: none;
+            outline: 2px solid transparent;
             box-sizing: border-box;
             overflow: auto;
             transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
@@ -738,7 +744,7 @@
             background: #151618;
             border: 1px solid var(--comfy-border);
             border-radius: 4px;
-            outline: none;
+            outline: 2px solid transparent;
             font-size: 11px;
         }
 
@@ -1044,7 +1050,7 @@
         .server-compact input {
             width: 185px;
             border: 0;
-            outline: 0;
+            outline: 2px solid transparent;
             background: transparent;
             color: #dfe4ed;
             font-family: "Fira Code", monospace;
@@ -2699,8 +2705,9 @@
             font: 10px/1.35 "Fira Code", monospace;
         }
 
-        #variant-prompt:focus {
-            outline: none;
+        #variant-prompt:focus-visible {
+            outline: 2px solid #a89eff;
+            outline-offset: 2px;
             border-color: #9184e8;
             box-shadow: 0 0 0 2px rgba(145, 132, 232, .14);
         }
@@ -3246,28 +3253,31 @@
         }
 
     </style>
+    <link rel="stylesheet" href="product.css">
 </head>
 
 <body>
-
-
+    <a class="skip-link" href="#canvas-container">Đi đến khu vực làm việc</a>
     <div id="app-container">
         <header class="spatial-header">
             <div class="spatial-header-left">
                 <div class="spatial-brand">
-                    <div class="brand-mark" aria-label="DATN logo">D</div>
-                    <div class="brand-name">DATN</div>
+                    <div class="brand-mark" aria-hidden="true"><i data-lucide="sparkles"></i></div>
+                    <div>
+                        <div class="brand-name">SpatialFlow</div>
+                        <div class="brand-edition">AI 3D STUDIO</div>
+                    </div>
                 </div>
                 <div class="project-context">
-                    <div class="project-name">Furniture 3D Studio</div>
-                    <div class="project-stack">SD3.5 / SAM2 / TRELLIS</div>
+                    <div class="project-name">Trình tạo cảnh 3D</div>
+                    <div class="project-stack">TEXT &amp; IMAGE → GLB</div>
                 </div>
                 <nav class="spatial-nav" aria-label="Menu chính">
                 <div class="header-menu-wrap">
-                    <button type="button" id="btn-menu-file">File</button>
+                    <button type="button" id="btn-menu-file">Dự án</button>
                     <div class="header-menu-panel" id="file-menu">
-                        <button type="button" id="btn-save-workflow">Save workflow</button>
-                        <button type="button" id="btn-load-workflow">Load workflow</button>
+                        <button type="button" id="btn-save-workflow">Lưu workflow</button>
+                        <button type="button" id="btn-load-workflow">Mở workflow</button>
                     </div>
                 </div>
                 </nav>
@@ -3275,32 +3285,33 @@
 
             <div class="spatial-header-actions">
                 <div class="connection-copy">
-                    <strong id="connection-label">Offline</strong>
-                    <span id="connection-detail">GPU endpoint</span>
+                    <strong id="connection-label">Chưa kết nối</strong>
+                    <span id="connection-detail">GPU CLOUD</span>
                 </div>
                 <div class="server-compact" title="Địa chỉ máy chủ Kaggle/Ngrok">
                     <span class="status-dot" id="status-indicator"></span>
-                    <input type="text" id="ngrok-url" placeholder="Ngrok server URL" value="">
+                    <label class="sr-only" for="ngrok-url">Địa chỉ API Ngrok</label>
+                    <input type="url" inputmode="url" name="api-endpoint" autocomplete="off" spellcheck="false" id="ngrok-url" placeholder="https://…ngrok-free.app" value="">
                 </div>
-                <button id="btn-connect" class="secondary" title="Connect GPU endpoint">
-                    <span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Connect</span></span>
+                <button id="btn-connect" class="secondary" title="Kết nối máy chủ GPU">
+                    <span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Kết nối</span></span>
                 </button>
-                <button id="btn-kaggle-help" class="secondary" title="Environment setup">
-                    <span class="icon-label"><i data-lucide="settings-2"></i><span class="button-copy">Setup</span></span>
+                <button id="btn-kaggle-help" class="secondary" title="Cấu hình hệ thống">
+                    <span class="icon-label"><i data-lucide="settings-2"></i><span class="button-copy">Cấu hình</span></span>
                 </button>
-                <button id="btn-upload-image" class="secondary image-only-control" title="Upload an input image">
-                    <span class="icon-label"><i data-lucide="image-up"></i><span class="button-copy">Upload image</span></span>
+                <button id="btn-upload-image" class="secondary image-only-control" title="Tải ảnh đầu vào">
+                    <span class="icon-label"><i data-lucide="image-up"></i><span class="button-copy">Tải ảnh</span></span>
                 </button>
                 <input id="image-upload-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-                <button id="btn-run" title="Run workflow">
-                    <span class="icon-label"><i data-lucide="play"></i><span class="button-copy">Run</span></span>
+                <button id="btn-run" title="Bắt đầu tạo cảnh 3D">
+                    <span class="icon-label"><i data-lucide="play"></i><span class="button-copy">Tạo cảnh</span></span>
                 </button>
             </div>
         </header>
 
         <div class="workspace-shell spatial-workspace">
             <aside class="app-rail" aria-label="Công cụ">
-                <div class="rail-section-label">Input mode</div>
+                <div class="rail-section-label">Tạo từ</div>
                 <div class="input-mode-switch" role="tablist" aria-label="Chọn loại đầu vào">
                     <button class="input-mode-btn active" id="btn-mode-text" type="button" role="tab" aria-selected="true">
                         <i data-lucide="type"></i><span>Văn bản</span>
@@ -3310,20 +3321,20 @@
                     </button>
                 </div>
                 <div class="mode-description" id="mode-description">
-                    Mô tả cảnh bằng prompt rồi sinh ảnh và mô hình 3D.
+                    Mô tả ý tưởng, hệ thống sẽ tạo từng vật thể và ghép thành cảnh 3D.
                 </div>
                 <div class="rail-divider"></div>
                 <button class="rail-item active" id="btn-rail-graph" type="button">
-                    <span class="rail-icon"><i data-lucide="workflow"></i></span><span>Graph</span>
+                    <span class="rail-icon"><i data-lucide="workflow"></i></span><span>Quy trình</span>
                 </button>
                 <button class="rail-item" id="btn-toggle-library" type="button">
-                    <span class="rail-icon"><i data-lucide="blocks"></i></span><span>Nodes</span>
+                    <span class="rail-icon"><i data-lucide="blocks"></i></span><span>Thư viện</span>
                 </button>
                 <button class="rail-item" id="btn-rail-viewport" type="button">
-                    <span class="rail-icon"><i data-lucide="box"></i></span><span>3D</span>
+                    <span class="rail-icon"><i data-lucide="box"></i></span><span>Xem 3D</span>
                 </button>
                 <button class="rail-item" id="btn-toggle-logs" type="button">
-                    <span class="rail-icon"><i data-lucide="list-tree"></i></span><span>Logs</span>
+                    <span class="rail-icon"><i data-lucide="list-tree"></i></span><span>Hoạt động</span>
                 </button>
             </aside>
 
@@ -3331,31 +3342,31 @@
                 <div class="panel-bar">
                     <div class="panel-heading">
                         <div class="panel-heading-copy">
-                            <strong>Workflow graph</strong>
-                            <span>furniture_scene_v1</span>
+                            <strong>Quy trình tạo cảnh</strong>
+                            <span>SPATIAL PIPELINE</span>
                         </div>
                         <span class="panel-badge" id="graph-node-count">8 nodes</span>
                     </div>
                     <div class="panel-actions">
                         <button class="panel-icon-btn" id="btn-toggle-app-rail" type="button" title="Ẩn thanh sidebar" aria-label="Ẩn thanh sidebar" aria-pressed="false"><i data-lucide="panel-left-close"></i></button>
-                        <button class="panel-icon-btn" id="btn-panel-library" type="button" title="Node library"><i data-lucide="panel-left-open"></i></button>
-                        <button class="panel-icon-btn" id="btn-panel-logs" type="button" title="Execution logs"><i data-lucide="terminal-square"></i></button>
+                        <button class="panel-icon-btn" id="btn-panel-library" type="button" title="Mở thư viện node" aria-label="Mở thư viện node"><i data-lucide="panel-left-open"></i></button>
+                        <button class="panel-icon-btn" id="btn-panel-logs" type="button" title="Mở nhật ký hoạt động" aria-label="Mở nhật ký hoạt động"><i data-lucide="terminal-square"></i></button>
                     </div>
                 </div>
 
                 <main id="canvas-container">
                     <canvas id="graphcanvas"></canvas>
                     <div class="canvas-toolbar">
-                        <span class="canvas-toolbar-label">GRAPH</span>
-                        <button id="btn-fit-view" class="canvas-tool-btn"><span class="icon-label"><i data-lucide="maximize"></i>Fit</span></button>
-                        <button id="btn-zoom-out" class="canvas-tool-btn icon-only" title="Zoom out"><i data-lucide="minus"></i></button>
-                        <button id="btn-zoom-in" class="canvas-tool-btn icon-only" title="Zoom in"><i data-lucide="plus"></i></button>
-                        <button id="btn-reset-workflow" class="canvas-tool-btn"><span class="icon-label"><i data-lucide="rotate-ccw"></i>Reset</span></button>
+                        <span class="canvas-toolbar-label">CANVAS</span>
+                        <button id="btn-fit-view" class="canvas-tool-btn"><span class="icon-label"><i data-lucide="maximize"></i>Vừa khung</span></button>
+                        <button id="btn-zoom-out" class="canvas-tool-btn icon-only" title="Thu nhỏ" aria-label="Thu nhỏ workflow"><i data-lucide="minus"></i></button>
+                        <button id="btn-zoom-in" class="canvas-tool-btn icon-only" title="Phóng to" aria-label="Phóng to workflow"><i data-lucide="plus"></i></button>
+                        <button id="btn-reset-workflow" class="canvas-tool-btn"><span class="icon-label"><i data-lucide="rotate-ccw"></i>Đặt lại</span></button>
                     </div>
                     <div class="canvas-minimap" id="canvas-minimap" aria-label="Workflow minimap"></div>
                     <div class="canvas-statusbar">
-                        <span><strong id="canvas-selection-label">Nothing selected</strong></span>
-                        <span>Double-click: add node&nbsp;&nbsp;•&nbsp;&nbsp;Ctrl + Enter: Run</span>
+                        <span><strong id="canvas-selection-label">Chưa chọn node</strong></span>
+                        <span>Nhấp đúp: thêm node&nbsp;&nbsp;•&nbsp;&nbsp;Ctrl + Enter: tạo cảnh</span>
                         <span id="canvas-zoom-label">Zoom 52%</span>
                     </div>
                 </main>
@@ -3376,25 +3387,25 @@
                 <div class="panel-bar">
                     <div class="panel-heading">
                         <div class="panel-heading-copy">
-                            <strong>Scene viewport</strong>
-                            <span id="spatial-viewport-state">Waiting for output</span>
+                            <strong>Xem trước cảnh 3D</strong>
+                            <span id="spatial-viewport-state" aria-live="polite">Đang chờ kết quả</span>
                         </div>
                         <span class="panel-badge">GLB</span>
                     </div>
                     <div class="panel-actions">
-                        <button class="panel-icon-btn" id="btn-view-reset" type="button" title="Reset camera"><i data-lucide="focus"></i></button>
+                        <button class="panel-icon-btn" id="btn-view-reset" type="button" title="Đặt lại camera" aria-label="Đặt lại camera"><i data-lucide="focus"></i></button>
                         <button class="panel-icon-btn" id="btn-toggle-viewport" type="button" title="Ẩn Scene viewport" aria-label="Ẩn Scene viewport" aria-pressed="false"><i data-lucide="panel-right-close"></i></button>
-                        <button class="panel-icon-btn" id="btn-viewport-options" type="button" title="Viewport options"><i data-lucide="sliders-horizontal"></i></button>
+                        <button class="panel-icon-btn" id="btn-viewport-options" type="button" title="Tùy chọn hiển thị" aria-label="Tùy chọn hiển thị"><i data-lucide="sliders-horizontal"></i></button>
                     </div>
                 </div>
 
                 <div class="pipeline-progress" id="pipeline-progress">
                     <div class="pipeline-step" data-stage="prompt"><span class="pipeline-step-dot">01</span><span class="pipeline-step-label">Prompt</span></div>
-                    <div class="pipeline-step" data-stage="plan"><span class="pipeline-step-dot">02</span><span class="pipeline-step-label">Layout</span></div>
-                    <div class="pipeline-step" data-stage="image"><span class="pipeline-step-dot">03</span><span class="pipeline-step-label">Image</span></div>
-                    <div class="pipeline-step" data-stage="segment"><span class="pipeline-step-dot">04</span><span class="pipeline-step-label">Segment</span></div>
-                    <div class="pipeline-step" data-stage="mesh"><span class="pipeline-step-dot">05</span><span class="pipeline-step-label">3D mesh</span></div>
-                    <div class="pipeline-step" data-stage="scene"><span class="pipeline-step-dot">06</span><span class="pipeline-step-label">Scene</span></div>
+                    <div class="pipeline-step" data-stage="plan"><span class="pipeline-step-dot">02</span><span class="pipeline-step-label">Bố cục</span></div>
+                    <div class="pipeline-step" data-stage="image"><span class="pipeline-step-dot">03</span><span class="pipeline-step-label">Ảnh 2D</span></div>
+                    <div class="pipeline-step" data-stage="segment"><span class="pipeline-step-dot">04</span><span class="pipeline-step-label">Tách vật thể</span></div>
+                    <div class="pipeline-step" data-stage="mesh"><span class="pipeline-step-dot">05</span><span class="pipeline-step-label">Mô hình 3D</span></div>
+                    <div class="pipeline-step" data-stage="scene"><span class="pipeline-step-dot">06</span><span class="pipeline-step-label">Ghép cảnh</span></div>
                 </div>
 
                 <div class="viewport-stage">
@@ -3406,8 +3417,9 @@
                     </div>
                     <div class="viewport-empty" id="spatial-viewport-empty">
                         <div class="viewport-empty-mark"><i data-lucide="box"></i></div>
-                        <strong>Scene preview</strong>
-                        <span>Your generated GLB will appear here when the workflow completes.</span>
+                        <strong>Sẵn sàng biến ý tưởng thành 3D</strong>
+                        <span>Kết nối GPU, nhập mô tả rồi chọn “Tạo cảnh”. Kết quả GLB sẽ xuất hiện tại đây.</span>
+                        <div class="empty-flow" aria-hidden="true"><span>01 Kết nối</span><i data-lucide="arrow-right"></i><span>02 Mô tả</span><i data-lucide="arrow-right"></i><span>03 Tạo 3D</span></div>
                     </div>
                     <model-viewer
                         id="spatial-global-viewer"
@@ -3436,12 +3448,12 @@
                     </div>
 
                     <div class="viewport-controls">
-                        <div class="control-title">View Controls</div>
-                        <button class="view-control-btn" id="btn-view-spin" type="button"><i data-lucide="rotate-3d"></i>Rotate</button>
-                        <button class="view-control-btn" id="btn-view-front" type="button"><i data-lucide="move-horizontal"></i>Front</button>
-                        <button class="view-control-btn" id="btn-view-top" type="button"><i data-lucide="arrow-down-to-line"></i>Top</button>
-                        <button class="view-control-btn" id="btn-view-side" type="button"><i data-lucide="panel-right"></i>Side</button>
-                        <button class="view-control-btn" id="btn-view-material" type="button"><i data-lucide="palette"></i>Material</button>
+                        <div class="control-title">Điều khiển góc nhìn</div>
+                        <button class="view-control-btn" id="btn-view-spin" type="button"><i data-lucide="rotate-3d"></i>Tự xoay</button>
+                        <button class="view-control-btn" id="btn-view-front" type="button"><i data-lucide="move-horizontal"></i>Chính diện</button>
+                        <button class="view-control-btn" id="btn-view-top" type="button"><i data-lucide="arrow-down-to-line"></i>Từ trên</button>
+                        <button class="view-control-btn" id="btn-view-side" type="button"><i data-lucide="panel-right"></i>Bên hông</button>
+                        <button class="view-control-btn" id="btn-view-material" type="button"><i data-lucide="palette"></i>Vật liệu</button>
                     </div>
 
                     <div class="material-controls is-hidden" id="material-controls" aria-label="Material editor">
@@ -3492,7 +3504,7 @@
                             </label>
                             <label class="material-field">
                                 <span>Mô tả thay đổi</span>
-                                <textarea id="variant-prompt" rows="3" placeholder="Ví dụ: dark walnut wood with a soft cream fabric seat" disabled></textarea>
+                                <textarea id="variant-prompt" name="variant-prompt" autocomplete="off" rows="3" placeholder="Ví dụ: dark walnut wood with a soft cream fabric seat…" disabled></textarea>
                             </label>
                             <button class="material-action-btn primary" id="btn-trellis-variant" type="button" disabled>Tạo biến thể 3D</button>
                             <small id="variant-editor-status">Chạy xong TRELLIS để bật chức năng này.</small>
@@ -3500,9 +3512,9 @@
                     </div>
 
                     <div class="scene-telemetry" aria-label="Scene telemetry">
-                        <div class="telemetry-row"><span>Status</span><strong id="scene-meta-status">IDLE</strong></div>
-                        <div class="telemetry-row"><span>Objects</span><strong id="scene-meta-objects">0</strong></div>
-                        <div class="telemetry-row"><span>Format</span><strong>GLB / PBR</strong></div>
+                        <div class="telemetry-row"><span>Trạng thái</span><strong id="scene-meta-status">IDLE</strong></div>
+                        <div class="telemetry-row"><span>Vật thể</span><strong id="scene-meta-objects">0</strong></div>
+                        <div class="telemetry-row"><span>Định dạng</span><strong>GLB / PBR</strong></div>
                         <div class="telemetry-row"><span>Seed</span><strong>42</strong></div>
                     </div>
 
@@ -3518,7 +3530,8 @@
                 <button class="sidebar-tab" disabled>Assets</button>
             </div>
             <div class="sidebar-content">
-                <input id="node-search" class="node-search" type="search" placeholder="Search nodes...">
+                <label class="sr-only" for="node-search">Tìm node</label>
+                <input id="node-search" class="node-search" name="node-search" autocomplete="off" type="search" placeholder="Tìm node…">
                 <div class="palette-heading">Input</div>
                 <div class="node-palette">
                     <button class="node-palette-item" data-node-type="datn/input_prompt">
@@ -3561,13 +3574,13 @@
 
         <aside class="right-sidebar" id="execution-drawer">
             <div id="log-panel">
-                <h3>Execution Log
+                <h3>Nhật ký hoạt động
                     <div class="log-actions">
-                        <span id="btn-copy-logs">Copy</span>
-                        <span id="btn-clear-logs">Clear</span>
+                        <button type="button" id="btn-copy-logs">Sao chép</button>
+                        <button type="button" id="btn-clear-logs">Xóa</button>
                     </div>
                 </h3>
-                <div id="log-content">Chưa kết nối máy chủ Kaggle. Nhập link Ngrok và nhấn Connect để bắt đầu.</div>
+                <div id="log-content" aria-live="polite">Chưa kết nối máy chủ GPU. Nhập địa chỉ Ngrok và chọn “Kết nối” để bắt đầu.</div>
             </div>
         </aside>
     </div>
@@ -3617,19 +3630,19 @@
             document.getElementById("status-indicator")?.classList.remove("connected");
             const label = document.getElementById("connection-label");
             const detail = document.getElementById("connection-detail");
-            if (label) label.innerText = "Offline";
+            if (label) label.innerText = "Chưa kết nối";
             if (detail) detail.innerText = reason;
 
             const connectButton = document.getElementById("btn-connect");
             if (connectButton) {
                 connectButton.innerHTML =
-                    '<span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Connect</span></span>';
+                    '<span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Kết nối</span></span>';
                 window.lucide?.createIcons();
             }
 
             if (wasConnected && !heartbeatFailureLogged) {
                 writeLog(
-                    `⚠️ ${reason}. Hãy kiểm tra hoặc khởi động lại cell FastAPI trên Kaggle rồi Connect lại.`,
+                    `⚠️ ${reason}. Hãy kiểm tra hoặc khởi động lại FastAPI trên Kaggle rồi kết nối lại.`,
                     "warning"
                 );
                 heartbeatFailureLogged = true;
@@ -3659,16 +3672,16 @@
                 if (!isConnected) {
                     isConnected = true;
                     document.getElementById("status-indicator")?.classList.add("connected");
-                    document.getElementById("connection-label").innerText = "GPU ready";
+                    document.getElementById("connection-label").innerText = "GPU sẵn sàng";
                     document.getElementById("btn-connect").innerHTML =
-                        '<span class="icon-label"><i data-lucide="check"></i><span class="button-copy">Connected</span></span>';
+                        '<span class="icon-label"><i data-lucide="check"></i><span class="button-copy">Đã kết nối</span></span>';
                     window.lucide?.createIcons();
                 }
                 document.getElementById("connection-detail").innerText = data.version || "API online";
                 heartbeatFailureLogged = false;
             } catch (error) {
                 setConnectionOffline(
-                    error.name === "AbortError" ? "Heartbeat timeout" : "Kaggle API disconnected"
+                    error.name === "AbortError" ? "Kết nối quá thời gian" : "API Kaggle đã ngắt kết nối"
                 );
             } finally {
                 clearTimeout(timeout);
@@ -3864,7 +3877,7 @@
             const emptyState = document.getElementById("spatial-viewport-empty");
             if (emptyState) emptyState.style.display = "flex";
             const stateLabel = document.getElementById("spatial-viewport-state");
-            if (stateLabel) stateLabel.textContent = "Waiting for output";
+            if (stateLabel) stateLabel.textContent = "Đang chờ kết quả";
             const sceneStatus = document.getElementById("scene-meta-status");
             if (sceneStatus) sceneStatus.textContent = "IDLE";
             const objectCount = document.getElementById("scene-meta-objects");
@@ -3958,7 +3971,7 @@
             setModelViewerAutoRotate(globalViewer, true);
             if (emptyState) emptyState.style.display = "none";
             const finalScene = Boolean(sceneUrl);
-            if (stateLabel) stateLabel.textContent = finalScene ? "Scene ready" : "3D mesh preview";
+            if (stateLabel) stateLabel.textContent = finalScene ? "Cảnh 3D đã sẵn sàng" : "Đang xem mô hình 3D";
             if (sceneStatus) sceneStatus.textContent = finalScene ? "READY" : "PREVIEW";
             const trellisNode = graph?.findNodesByType?.("datn/trellis_3d")?.[0];
             refreshVariantSourceOptions(trellisNode?.properties?.models || []);
@@ -3971,7 +3984,7 @@
         function setSpatialViewportError(message) {
             const stateLabel = document.getElementById("spatial-viewport-state");
             const sceneStatus = document.getElementById("scene-meta-status");
-            if (stateLabel) stateLabel.textContent = message || "Preview failed";
+            if (stateLabel) stateLabel.textContent = message || "Không thể xem trước";
             if (sceneStatus) sceneStatus.textContent = "ERROR";
         }
 
@@ -5071,15 +5084,15 @@
                     backendUrl = url;
                     isConnected = true;
                     document.getElementById("status-indicator").classList.add("connected");
-                    document.getElementById("connection-label").innerText = "GPU ready";
+                    document.getElementById("connection-label").innerText = "GPU sẵn sàng";
                     document.getElementById("connection-detail").innerText = data.version || "API online";
                     document.getElementById("btn-connect").innerHTML =
-                        '<span class="icon-label"><i data-lucide="check"></i><span class="button-copy">Connected</span></span>';
+                        '<span class="icon-label"><i data-lucide="check"></i><span class="button-copy">Đã kết nối</span></span>';
                     window.lucide?.createIcons();
                     startBackendHeartbeat();
                     localStorage.setItem("datn-ngrok-url", url);
                     if (data.auth_enabled && !appApiKey) {
-                        writeLog("Backend requires an API key. Enter it in Setup before running.", "warning");
+                        writeLog("Backend yêu cầu API key. Hãy nhập key trong phần Cấu hình trước khi tạo cảnh.", "warning");
                     }
                     writeLog(
                         `✅ Đã kết nối thành công! Phiên bản: ${data.version || '1.0.0'}`
@@ -5101,10 +5114,10 @@
                 isConnected = false;
                 localStorage.removeItem("datn-ngrok-url");
                 document.getElementById("status-indicator").classList.remove("connected");
-                document.getElementById("connection-label").innerText = "Offline";
-                document.getElementById("connection-detail").innerText = "Connection failed";
+                document.getElementById("connection-label").innerText = "Chưa kết nối";
+                document.getElementById("connection-detail").innerText = "Kết nối thất bại";
                 document.getElementById("btn-connect").innerHTML =
-                    '<span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Connect</span></span>';
+                    '<span class="icon-label"><i data-lucide="plug"></i><span class="button-copy">Kết nối</span></span>';
                 window.lucide?.createIcons();
                 const message = e.name === "AbortError"
                     ? "timeout sau 15 giây"
@@ -5649,8 +5662,11 @@
                 textarea = document.createElement("textarea");
                 textarea.id = textareaId;
                 textarea.className = "node-textarea";
+                textarea.name = "scene-prompt";
+                textarea.setAttribute("aria-label", "Mô tả cảnh 3D");
+                textarea.setAttribute("autocomplete", "off");
                 textarea.value = this.properties.prompt;
-                textarea.placeholder = "Nhập mô tả tiếng Anh tại đây...";
+                textarea.placeholder = "Nhập mô tả cảnh tại đây…";
 
                 textarea.addEventListener("input", () => {
                     this.properties.prompt = textarea.value;
@@ -7226,7 +7242,7 @@
                         auto-rotate 
                         camera-orbit="30deg 72deg auto"
                         field-of-view="40deg"
-                        alt="DATN Interactive 3D Scene Combined Output"
+                        alt="SpatialFlow interactive 3D scene output"
                         shadow-intensity="1.5"
                         exposure="1.0"
                         style="background-color: transparent; width: 100%; height: 100%;">
@@ -7440,8 +7456,8 @@
             const selectedNodes = Object.values(canvas.selected_nodes || {});
             if (selectionLabel) {
                 selectionLabel.textContent = selectedNodes.length
-                    ? `${selectedNodes.length === 1 ? "Selected" : `${selectedNodes.length} selected`}: ${selectedNodes[0].title || selectedNodes[0].type}`
-                    : "Nothing selected";
+                    ? `${selectedNodes.length === 1 ? "Đã chọn" : `Đã chọn ${selectedNodes.length} node`}: ${selectedNodes[0].title || selectedNodes[0].type}`
+                    : "Chưa chọn node";
             }
             renderMiniMap();
 
@@ -7499,8 +7515,8 @@
             const description = document.getElementById("mode-description");
             if (description) {
                 description.textContent = imageMode
-                    ? "Tải ảnh, nhập nhãn vật thể trong node SAM2 rồi dựng scene 3D."
-                    : "Mô tả cảnh bằng prompt rồi sinh ảnh và mô hình 3D.";
+                    ? "Tải một ảnh rõ nét, hệ thống sẽ tách vật thể và dựng thành mô hình 3D."
+                    : "Mô tả ý tưởng, hệ thống sẽ tạo từng vật thể và ghép thành cảnh 3D.";
             }
 
             const progress = document.getElementById("pipeline-progress");
@@ -7508,12 +7524,12 @@
             const promptLabel = document.querySelector('.pipeline-step[data-stage="prompt"] .pipeline-step-label');
             const planLabel = document.querySelector('.pipeline-step[data-stage="plan"] .pipeline-step-label');
             const imageLabel = document.querySelector('.pipeline-step[data-stage="image"] .pipeline-step-label');
-            if (promptLabel) promptLabel.textContent = imageMode ? "Input image" : "Prompt";
-            if (planLabel) planLabel.textContent = "Layout";
-            if (imageLabel) imageLabel.textContent = "Image";
+            if (promptLabel) promptLabel.textContent = imageMode ? "Ảnh đầu vào" : "Prompt";
+            if (planLabel) planLabel.textContent = "Bố cục";
+            if (imageLabel) imageLabel.textContent = "Ảnh 2D";
 
             const runButton = document.getElementById("btn-run");
-            if (runButton) runButton.title = imageMode ? "Run image workflow" : "Run text workflow";
+            if (runButton) runButton.title = imageMode ? "Tạo 3D từ ảnh" : "Tạo cảnh 3D từ mô tả";
         }
 
         function setupGraphForMode(mode = inputMode) {
@@ -7632,9 +7648,9 @@
             btnRun.disabled = false;
             btnRun.style.opacity = "1";
             btnRun.style.cursor = "pointer";
-            btnRun.title = "Stop pipeline";
+            btnRun.title = "Dừng tạo cảnh";
             btnRun.setAttribute("aria-busy", "true");
-            btnRun.innerHTML = `<span class="icon-label"><i data-lucide="square"></i><span class="button-copy">Stop</span></span>`;
+            btnRun.innerHTML = `<span class="icon-label"><i data-lucide="square"></i><span class="button-copy">Dừng</span></span>`;
             window.lucide?.createIcons();
             
             writeLog("🏁 Bắt đầu thực thi toàn bộ quy trình (Queue Prompt)...", "system");
@@ -7731,7 +7747,7 @@
                 btnRun.style.cursor = "pointer";
                 btnRun.removeAttribute("aria-busy");
                 btnRun.innerHTML = originalHTML;
-                btnRun.title = inputMode === "image" ? "Run image workflow" : "Run text workflow";
+                btnRun.title = inputMode === "image" ? "Tạo 3D từ ảnh" : "Tạo cảnh 3D từ mô tả";
                 window.lucide?.createIcons();
             }
         };
@@ -7771,9 +7787,9 @@
             const originalHTML = btnRun.innerHTML;
 
             btnRun.disabled = false;
-            btnRun.title = "Stop pipeline";
+            btnRun.title = "Dừng tạo cảnh";
             btnRun.setAttribute("aria-busy", "true");
-            btnRun.innerHTML = `<span class="icon-label"><i data-lucide="square"></i><span class="button-copy">Stop</span></span>`;
+            btnRun.innerHTML = `<span class="icon-label"><i data-lucide="square"></i><span class="button-copy">Dừng</span></span>`;
             window.lucide?.createIcons();
             try {
                 if (inputMode === "text") {
@@ -7812,7 +7828,7 @@
                 btnRun.disabled = false;
                 btnRun.removeAttribute("aria-busy");
                 btnRun.innerHTML = originalHTML;
-                btnRun.title = inputMode === "image" ? "Run image workflow" : "Run text workflow";
+                btnRun.title = inputMode === "image" ? "Tạo 3D từ ảnh" : "Tạo cảnh 3D từ mô tả";
                 canvas.draw(true, true);
             }
         }
@@ -7965,13 +7981,13 @@
     </script>
 
     <!-- Kaggle Help Modal Overlay -->
-    <div id="kaggle-modal"
+    <div id="kaggle-modal" role="dialog" aria-modal="true" aria-labelledby="kaggle-modal-title"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); z-index: 99999; align-items: center; justify-content: center;">
         <div
             style="background: rgba(30, 30, 35, 0.75); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; width: 720px; max-height: 85vh; padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.6); position: relative; font-family: 'Outfit', sans-serif; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
-            <span id="close-modal"
-                style="position: absolute; top: 16px; right: 20px; font-size: 24px; color: var(--text-muted); cursor: pointer; transition: color 0.2s;">&times;</span>
-            <h2
+            <button type="button" id="close-modal" aria-label="Đóng bảng cấu hình"
+                style="position: absolute; top: 12px; right: 14px; width:36px; height:36px; min-height:36px; padding:0; justify-content:center; font-size: 24px; color: var(--text-muted); cursor: pointer; transition: color 0.2s ease, background-color 0.2s ease; background:transparent; box-shadow:none;">&times;</button>
+            <h2 id="kaggle-modal-title"
                 style="margin-top: 0; font-size: 18px; color: white; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px; font-weight: 600;">
                 📖 Hướng dẫn & Code chạy trên Kaggle</h2>
 
@@ -7979,7 +7995,7 @@
                 <label for="app-api-key" style="display:block; color:#d9e2ee; font-size:12px; margin-bottom:6px;">
                     Backend API key (APP_API_KEY)
                 </label>
-                <input id="app-api-key" type="password" autocomplete="off" placeholder="Leave empty only for private development"
+                <input id="app-api-key" name="app-api-key" type="password" autocomplete="off" placeholder="Để trống khi chỉ chạy thử nghiệm riêng tư…"
                     style="width:100%; box-sizing:border-box; margin-bottom:16px; padding:10px 12px; color:white; background:#111820; border:1px solid #334353; border-radius:6px;">
                 <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6;">
                     Bạn có thể chạy dự án trực tiếp trên Kaggle GPU bằng cách sử dụng file Notebook

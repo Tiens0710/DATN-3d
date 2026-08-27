@@ -1,0 +1,615 @@
+/* SpatialFlow product layer
+   Loaded after the legacy stylesheet so the application can evolve without
+   changing LiteGraph rendering and pipeline behaviour. */
+
+:root {
+    color-scheme: dark;
+    --product-bg: #090d14;
+    --product-surface: #101620;
+    --product-surface-raised: #151d29;
+    --product-surface-hover: #1b2533;
+    --product-border: #263244;
+    --product-border-strong: #3a4960;
+    --product-text: #f5f7fb;
+    --product-muted: #91a0b4;
+    --product-faint: #647287;
+    --product-primary: #7c6df2;
+    --product-primary-hover: #8e81f7;
+    --product-green: #45c59b;
+    --product-danger: #e26d7d;
+    --product-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
+}
+
+html,
+body {
+    background:
+        radial-gradient(circle at 12% -10%, rgba(124, 109, 242, 0.14), transparent 32%),
+        radial-gradient(circle at 88% 0%, rgba(69, 197, 155, 0.08), transparent 28%),
+        var(--product-bg);
+    color: var(--product-text);
+    -webkit-tap-highlight-color: rgba(124, 109, 242, 0.2);
+}
+
+button,
+input,
+select,
+textarea {
+    touch-action: manipulation;
+}
+
+input,
+select,
+textarea,
+.node-textarea,
+#log-content {
+    user-select: text;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid #a89eff;
+    outline-offset: 2px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.skip-link {
+    position: fixed;
+    z-index: 100000;
+    top: 10px;
+    left: 12px;
+    padding: 10px 14px;
+    border-radius: 9px;
+    color: #fff;
+    background: var(--product-primary);
+    box-shadow: var(--product-shadow);
+    transform: translateY(-160%);
+    transition: transform 160ms ease;
+}
+
+.skip-link:focus {
+    transform: translateY(0);
+}
+
+header.spatial-header {
+    height: 68px;
+    min-height: 68px;
+    padding: 0 18px;
+    background: rgba(9, 13, 20, 0.92);
+    border-bottom: 1px solid rgba(79, 96, 120, 0.42);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(18px) saturate(130%);
+}
+
+.spatial-header-left {
+    gap: 16px;
+}
+
+.spatial-brand {
+    min-width: auto;
+    gap: 11px;
+    padding-right: 18px;
+    border-right: 1px solid var(--product-border);
+}
+
+.brand-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.34), transparent 36%),
+        linear-gradient(145deg, #8e7eff, #6658da);
+    box-shadow: 0 10px 28px rgba(95, 78, 215, 0.38);
+}
+
+.brand-mark svg {
+    width: 19px;
+    height: 19px;
+    stroke-width: 2.2;
+}
+
+.brand-name {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    line-height: 1.05;
+}
+
+.brand-edition {
+    margin-top: 4px;
+    color: #8274f3;
+    font-family: "Fira Code", monospace;
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+.project-context {
+    padding-right: 4px;
+}
+
+.project-name {
+    color: #dce3ee;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.project-stack {
+    margin-top: 2px;
+    color: var(--product-faint);
+    font-size: 8px;
+    letter-spacing: 0.45px;
+}
+
+.spatial-nav button {
+    min-height: 36px;
+    color: var(--product-muted);
+}
+
+.spatial-nav button:hover {
+    color: #fff;
+    background: var(--product-surface-raised);
+}
+
+.connection-copy {
+    min-width: 76px;
+}
+
+.connection-copy strong {
+    color: #e5ebf4;
+    font-size: 10px;
+}
+
+.connection-copy span {
+    color: var(--product-faint);
+    font-size: 8px;
+    letter-spacing: 0.45px;
+}
+
+.server-compact {
+    width: min(25vw, 320px);
+    height: 42px;
+    border-color: var(--product-border);
+    border-radius: 11px;
+    background: rgba(16, 22, 32, 0.92);
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.server-compact:focus-within {
+    border-color: rgba(124, 109, 242, 0.75);
+    box-shadow: 0 0 0 3px rgba(124, 109, 242, 0.12);
+}
+
+.server-compact input {
+    color: #dce3ed;
+    font-size: 11px;
+}
+
+.server-compact input::placeholder {
+    color: #5f6c7e;
+}
+
+.spatial-header-actions {
+    gap: 9px;
+}
+
+.spatial-header-actions button {
+    height: 42px;
+    min-height: 42px;
+    padding: 9px 14px;
+    border-radius: 10px;
+    transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease,
+        box-shadow 160ms ease, transform 160ms ease;
+}
+
+#btn-connect,
+#btn-kaggle-help,
+#btn-upload-image {
+    color: #d7dee9;
+    background: var(--product-surface);
+    border-color: var(--product-border);
+}
+
+#btn-connect:hover,
+#btn-kaggle-help:hover,
+#btn-upload-image:hover {
+    color: #fff;
+    background: var(--product-surface-hover);
+    border-color: var(--product-border-strong);
+}
+
+#btn-run {
+    min-width: 112px;
+    background: linear-gradient(135deg, #8172f4, #6557d8);
+    border-color: rgba(177, 167, 255, 0.62);
+    box-shadow: 0 12px 28px rgba(86, 69, 205, 0.32);
+}
+
+#btn-run:hover {
+    background: linear-gradient(135deg, #9184f7, #7465e4);
+    box-shadow: 0 14px 34px rgba(86, 69, 205, 0.42);
+    transform: translateY(-1px);
+}
+
+.status-dot {
+    background: var(--product-danger);
+    box-shadow: 0 0 12px rgba(226, 109, 125, 0.58);
+}
+
+.status-dot.connected {
+    background: var(--product-green);
+    box-shadow: 0 0 12px rgba(69, 197, 155, 0.56);
+}
+
+.workspace-shell.spatial-workspace {
+    gap: 12px;
+    padding: 12px;
+    background: transparent;
+}
+
+.app-rail,
+.graph-panel,
+.viewport-panel {
+    border-color: var(--product-border);
+    border-radius: 14px;
+    background: rgba(15, 21, 31, 0.96);
+    box-shadow: var(--product-shadow);
+}
+
+.app-rail {
+    padding: 16px 11px;
+}
+
+.rail-section-label {
+    padding: 0 9px 10px;
+    color: #69778b;
+    font-size: 9px;
+}
+
+.input-mode-switch {
+    gap: 7px;
+}
+
+.input-mode-btn {
+    min-height: 48px;
+    padding: 9px 11px;
+    border-radius: 10px;
+    transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.input-mode-btn:hover {
+    background: var(--product-surface-raised);
+    border-color: var(--product-border);
+}
+
+.input-mode-btn.active {
+    background: linear-gradient(135deg, rgba(124, 109, 242, 0.28), rgba(124, 109, 242, 0.1));
+    border-color: rgba(147, 134, 247, 0.64);
+    box-shadow: inset 3px 0 0 #998bf9;
+}
+
+.mode-description {
+    margin: 12px 2px 4px;
+    padding: 11px 12px;
+    border: 1px solid rgba(61, 77, 98, 0.72);
+    border-radius: 10px;
+    color: #8e9bad;
+    background: rgba(11, 16, 24, 0.62);
+    font-size: 11px;
+    line-height: 1.55;
+    text-wrap: pretty;
+}
+
+.rail-item {
+    min-height: 48px;
+    border-radius: 9px;
+    color: #8795a8;
+    transition: color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.rail-item:hover {
+    color: #f7f9fc;
+    background: var(--product-surface-raised);
+}
+
+.rail-item.active {
+    color: #fff;
+    background: rgba(124, 109, 242, 0.15);
+    box-shadow: inset 3px 0 0 var(--product-primary);
+}
+
+.panel-bar {
+    height: 54px;
+    min-height: 54px;
+    padding: 0 14px 0 16px;
+    background: linear-gradient(180deg, rgba(25, 34, 47, 0.98), rgba(19, 27, 38, 0.98));
+    border-bottom-color: var(--product-border);
+}
+
+.panel-heading-copy strong {
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.panel-heading-copy span {
+    color: #718097;
+    font-size: 8px;
+    letter-spacing: 0.4px;
+}
+
+.panel-badge {
+    border-color: #344257;
+    border-radius: 6px;
+    color: #a7b3c4;
+    background: #0d131c;
+}
+
+.panel-icon-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    border-radius: 8px;
+    color: #8997a9;
+}
+
+.panel-icon-btn:hover {
+    color: #fff;
+    background: var(--product-surface-hover);
+}
+
+#canvas-container {
+    background-color: #0b1018;
+    background-image:
+        linear-gradient(rgba(117, 139, 169, 0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(117, 139, 169, 0.07) 1px, transparent 1px),
+        radial-gradient(circle, rgba(154, 174, 201, 0.15) 1px, transparent 1px);
+}
+
+.canvas-toolbar,
+.canvas-statusbar,
+.canvas-minimap {
+    border-color: #35445a;
+    background: rgba(13, 19, 28, 0.94);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.canvas-tool-btn {
+    transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.pipeline-progress {
+    background: #0e151f;
+    border-bottom-color: var(--product-border);
+}
+
+.pipeline-step {
+    min-width: 0;
+}
+
+.pipeline-step-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.viewport-stage {
+    background:
+        radial-gradient(circle at 52% 24%, rgba(104, 113, 128, 0.26), transparent 42%),
+        linear-gradient(180deg, #373c43 0%, #30353b 46%, #252a30 100%);
+}
+
+.viewport-empty {
+    width: min(440px, calc(100% - 48px));
+    text-align: center;
+}
+
+.viewport-empty-mark {
+    width: 68px;
+    height: 68px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(163, 151, 255, 0.45);
+    border-radius: 20px;
+    color: #b2a8ff;
+    background: rgba(21, 27, 39, 0.75);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
+}
+
+.viewport-empty strong {
+    font-size: 18px;
+    text-wrap: balance;
+}
+
+.viewport-empty > span {
+    max-width: 390px;
+    color: #a3adba;
+    line-height: 1.55;
+    text-wrap: pretty;
+}
+
+.empty-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 18px;
+    color: #8491a3;
+    font-family: "Fira Code", monospace;
+    font-size: 9px;
+}
+
+.empty-flow svg {
+    width: 12px;
+    height: 12px;
+    color: #6659d7;
+}
+
+.viewport-controls,
+.scene-telemetry,
+.material-controls {
+    border-color: rgba(53, 68, 88, 0.88);
+    background: rgba(12, 18, 27, 0.92);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+}
+
+.view-control-btn,
+.material-action-btn,
+.viewport-download {
+    transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease,
+        box-shadow 150ms ease, transform 150ms ease;
+}
+
+.view-control-btn:hover {
+    color: #fff;
+    background: var(--product-surface-hover);
+}
+
+.viewport-download {
+    border-color: rgba(147, 134, 247, 0.7);
+    background: rgba(17, 23, 34, 0.94);
+}
+
+.viewport-download:hover {
+    background: #7566df;
+    box-shadow: 0 12px 28px rgba(89, 72, 207, 0.3);
+    transform: translateY(-1px);
+}
+
+.node-search {
+    min-height: 42px;
+    border-radius: 9px;
+}
+
+.node-palette-item {
+    min-height: 42px;
+    border-radius: 9px;
+    overflow-wrap: anywhere;
+}
+
+.right-sidebar,
+.left-sidebar,
+#kaggle-modal > div {
+    overscroll-behavior: contain;
+}
+
+.log-actions button {
+    min-height: 30px;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 6px;
+    color: #8d9bad;
+    background: transparent;
+    box-shadow: none;
+    font-size: 11px;
+}
+
+.log-actions button:hover {
+    color: #fff;
+    background: var(--product-surface-hover);
+}
+
+#log-content {
+    overflow-wrap: anywhere;
+}
+
+@media (min-width: 861px) {
+    .workspace-shell.spatial-workspace {
+        grid-template-columns: 188px minmax(0, 1fr);
+    }
+
+    .viewport-panel {
+        top: 12px;
+        right: 12px;
+        bottom: 12px;
+        width: var(--viewport-width);
+        max-width: calc(100% - 204px);
+    }
+}
+
+@media (max-width: 1180px) {
+    .project-context,
+    .connection-copy,
+    #btn-kaggle-help .button-copy {
+        display: none;
+    }
+
+    .server-compact {
+        width: min(32vw, 250px);
+    }
+}
+
+@media (max-width: 860px) {
+    header.spatial-header {
+        height: auto;
+        min-height: 64px;
+        padding: 10px 12px;
+        gap: 10px;
+    }
+
+    .spatial-brand {
+        padding-right: 0;
+        border-right: 0;
+    }
+
+    .spatial-nav,
+    .server-compact {
+        display: none;
+    }
+
+    .workspace-shell.spatial-workspace {
+        padding: 8px;
+    }
+
+    .app-rail {
+        padding: 10px;
+    }
+
+    .pipeline-step-label {
+        display: none;
+    }
+}
+
+@media (max-width: 560px) {
+    .brand-edition,
+    #btn-connect .button-copy,
+    #btn-kaggle-help,
+    #btn-upload-image .button-copy {
+        display: none;
+    }
+
+    #btn-run {
+        min-width: 94px;
+    }
+
+    .spatial-header-actions button {
+        padding-inline: 11px;
+    }
+
+    .empty-flow {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
